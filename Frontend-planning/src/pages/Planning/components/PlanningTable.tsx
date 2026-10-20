@@ -25,14 +25,20 @@ const numberCol = (
   field: keyof PlanningRow,
   headerName: string,
   strong = false,
+  transform?: (value: number) => number,
 ): GridColDef<PlanningRow> => ({
   field,
   headerName,
   type: "number",
   flex: 1,
   minWidth: 110,
+  ...(transform && { valueGetter: (value: number) => (value == null ? value : transform(value)) }),
   renderCell: ({ value }) => <NumberCell value={value} strong={strong} />,
 });
+
+// Ship แสดงเป็นค่าบวกเสมอ / Net Required ถ้ามีค่าให้แสดงติดลบ
+export const shipDisplay = (v: number) => Math.abs(v);
+export const netDisplay = (v: number) => (v ? -Math.abs(v) : 0);
 
 const STATUS_STYLE: Record<PlanningStatus, { label: string; color: string }> = {
   ready: { label: "Ready", color: "var(--color-success)" },
@@ -73,8 +79,8 @@ const columns: GridColDef<PlanningRow>[] = [
   numberCol("po_bal", "PO Bal"),
   numberCol("unmovement", "Unmovement"),
   numberCol("f_g", "F/G"),
-  numberCol("ship_pcs", "Ship (pcs)"),
-  numberCol("net_required_pcs", "Net Required", true),
+  numberCol("ship_pcs", "Ship (pcs)", false, shipDisplay),
+  numberCol("net_required_pcs", "Net Required", true, netDisplay),
   numberCol("rem_unmovement", "Rem Unmove"),
   numberCol("rem_fg", "Rem F/G"),
   {

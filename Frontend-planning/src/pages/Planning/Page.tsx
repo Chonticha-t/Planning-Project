@@ -6,7 +6,7 @@ import { PLANNING_SUMMARY_API, PLANNING_TABLE_API } from "./api/config";
 import type { ApiResponse, PlanningFilter, PlanningRow, PlanningSummaryRow } from "./types";
 import SummaryCards from "./components/SummaryCards";
 import FilterBar from "./components/FilterBar";
-import PlanningTable from "./components/PlanningTable";
+import PlanningTable, { netDisplay, shipDisplay } from "./components/PlanningTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 
 const EMPTY_FILTER: PlanningFilter = { status: "", prd_name: "", startdate: "", stopdate: "" };
@@ -60,8 +60,8 @@ const Planning = () => {
         "PO Bal": r.po_bal,
         Unmovement: r.unmovement,
         "F/G": r.f_g,
-        "Ship (pcs)": r.ship_pcs,
-        "Net Required": r.net_required_pcs,
+        "Ship (pcs)": shipDisplay(r.ship_pcs),
+        "Net Required": netDisplay(r.net_required_pcs),
         "Rem Unmove": r.rem_unmovement,
         "Rem F/G": r.rem_fg,
         Status: r.status,
