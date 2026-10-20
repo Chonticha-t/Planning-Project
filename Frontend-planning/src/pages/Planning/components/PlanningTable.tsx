@@ -1,4 +1,4 @@
-import { DataGrid, GridColDef } from "@mui/x-data-grid";
+import { DataGrid, GridColDef, GridColumnGroupingModel } from "@mui/x-data-grid";
 import { ClipboardList } from "lucide-react";
 import type { PlanningRow, PlanningStatus } from "../types";
 
@@ -10,7 +10,6 @@ interface PlanningTableProps {
 const num = (value: number) =>
   value == null ? "" : Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
-// ตัวเลข: ชิดขวา ใช้ tabular-nums ให้หลักตรงกัน และทำค่า 0 ให้จางลง
 const NumberCell = ({ value, strong }: { value: number; strong?: boolean }) => (
   <span
     className={`tabular-nums ${
@@ -32,11 +31,22 @@ const numberCol = (
   type: "number",
   flex: 1,
   minWidth: 110,
+  align: "center",
+  headerAlign: "center",
   ...(transform && { valueGetter: (value: number) => (value == null ? value : transform(value)) }),
   renderCell: ({ value }) => <NumberCell value={value} strong={strong} />,
 });
 
-// Ship แสดงเป็นค่าบวกเสมอ / Net Required ถ้ามีค่าให้แสดงติดลบ
+// Inventory columns — same as numberCol but with bg-class for color banding
+const invCol = (
+  field: keyof PlanningRow,
+  headerName: string,
+): GridColDef<PlanningRow> => ({
+  ...numberCol(field, headerName),
+  headerClassName: "inv-header",
+  cellClassName: "inv-cell",
+});
+
 export const shipDisplay = (v: number) => Math.abs(v);
 export const netDisplay = (v: number) => (v ? -Math.abs(v) : 0);
 
@@ -77,22 +87,45 @@ const columns: GridColDef<PlanningRow>[] = [
     renderCell: ({ value }) => <span className="tabular-nums text-base-content/70">{value}</span>,
   },
   numberCol("po_bal", "PO Bal"),
-  numberCol("unmovement", "Unmovement"),
-  numberCol("f_g", "F/G"),
-  numberCol("ship_pcs", "Ship (pcs)", false, shipDisplay),
+  // ── Inventory group ──────────────────────────
+  invCol("unmovement", "Unmovement"),
+  invCol("rem_unmovement", "Rem Unmove"),
+  invCol("f_g", "F/G"),
+  invCol("rem_fg", "Rem F/G"),
+  // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true, netDisplay),
-  numberCol("rem_unmovement", "Rem Unmove"),
-  numberCol("rem_fg", "Rem F/G"),
   {
     field: "status",
     headerName: "Status",
+    align: "center",
+    headerAlign: "center",
     flex: 1.1,
     minWidth: 150,
     renderCell: ({ value }) => <StatusPill value={value} />,
   },
 ];
 
+const columnGroupingModel: GridColumnGroupingModel = [
+  {
+    groupId: "inventory",
+    headerName: "Inventory",
+    headerAlign: "center",
+    headerClassName: "inv-group",
+    children: [
+      { field: "unmovement" },
+      { field: "rem_unmovement" },
+      { field: "f_g" },
+      { field: "rem_fg" },
+    ],
+  },
+];
+
 const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
+
+// สีพื้น Inventory — โทนฟ้าอ่อนๆ ที่ดูดีทั้ง light และ dark theme
+const invBgHeader = "color-mix(in oklab, var(--color-info) 14%, var(--color-base-200))";
+const invBgCell   = "color-mix(in oklab, var(--color-info) 6%, transparent)";
+const invBgGroup  = "color-mix(in oklab, var(--color-info) 18%, var(--color-base-200))";
 
 const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
   return (
@@ -107,14 +140,16 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
         </span>
       </div>
 
-      <div style={{ height: "calc(100vh - 260px)", minHeight: 520 }}>
+      <div className="datagrid-outer" style={{ height: "calc(100vh - 260px)", minHeight: 520, position: "relative" }}>
         <DataGrid
           rows={rows}
           columns={columns}
+          columnGroupingModel={columnGroupingModel}
           loading={loading}
           getRowId={(r) => `${r.prd_name}|${r.due_date}`}
           rowHeight={44}
-          columnHeaderHeight={40}
+          resizeThrottleMs={0}
+          columnHeaderHeight={56}
           disableRowSelectionOnClick
           disableColumnMenu
           initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
@@ -127,7 +162,7 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": "var(--color-base-200)",
 
-            // Header
+            // ── Header ──────────────────────────────
             "& .MuiDataGrid-columnHeader": {
               backgroundColor: "var(--color-base-200)",
               px: 2,
@@ -139,10 +174,33 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
               textTransform: "uppercase",
               color: "color-mix(in oklab, var(--color-base-content) 55%, transparent)",
             },
+
+            // ── Inventory: group header row ──────────
+            "& .MuiDataGrid-columnHeaderGroupCell": {
+              backgroundColor: "var(--color-base-200)",
+            },
+            "& .MuiDataGrid-columnHeader.inv-group":
+              {
+                backgroundColor: invBgGroup,
+              },
+
+            // ── Inventory: sub-header cells ──────────
+            "& .MuiDataGrid-columnHeader.inv-header": {
+              backgroundColor: invBgHeader,
+            },
+
+            // ── Inventory: data cells ────────────────
+            "& .MuiDataGrid-cell.inv-cell": {
+              backgroundColor: invBgCell,
+            },
+            "& .MuiDataGrid-row:hover .MuiDataGrid-cell.inv-cell": {
+              backgroundColor: `color-mix(in oklab, var(--color-info) 10%, transparent)`,
+            },
+
             "& .MuiDataGrid-columnSeparator": { display: "none" },
             "& .MuiDataGrid-sortIcon": { opacity: 0.5 },
 
-            // Cells / rows
+            // ── Cells / rows ─────────────────────────
             "& .MuiDataGrid-cell": { px: 2, borderColor: border },
             "& .MuiDataGrid-row:hover": {
               backgroundColor: "color-mix(in oklab, var(--color-base-content) 4%, transparent)",
@@ -150,7 +208,7 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
             "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
               { outline: "none" },
 
-            // Footer
+            // ── Footer ───────────────────────────────
             "& .MuiDataGrid-footerContainer": {
               borderTop: `1px solid ${border}`,
               minHeight: 48,
@@ -161,6 +219,7 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
                 color: "color-mix(in oklab, var(--color-base-content) 65%, transparent)",
               },
             "& .MuiDataGrid-overlay": { backgroundColor: "transparent" },
+            "& .MuiDataGrid-virtualScroller": { willChange: "transform" },
           }}
         />
       </div>

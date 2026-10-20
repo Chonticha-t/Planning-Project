@@ -222,3 +222,19 @@ html, body {
         font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
     }
 }
+
+/* กัน layout ขยับตอนเปิด modal (เช่น ตัวเลือกธีม)
+   daisyUI จะใส่ scrollbar-gutter: stable ให้ :root ตอนมี modal เปิด
+   แต่ layout เราใช้ h-screen overflow-hidden ทำให้ root ไม่มี scrollbar อยู่แล้ว
+   เลยกลายเป็นเว้นที่ว่างด้านขวาเพิ่ม → ทั้งหน้าหดแล้วเด้งกลับ */
+:root {
+    scrollbar-gutter: auto;
+}
+
+/* ── Sidebar animation: freeze DataGrid overflow to prevent column stutter ── */
+html[data-sidebar-animating] .datagrid-outer {
+  overflow: hidden !important;
+}
+html[data-sidebar-animating] .datagrid-outer * {
+  pointer-events: none;
+}

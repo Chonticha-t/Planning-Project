@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { flushSync } from "react-dom";
 import { BrowserRouter } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "react-hot-toast";
@@ -14,13 +15,16 @@ function App() {
   const [themeColors, setThemeColors] = useState<any>({});
 
   useEffect(() => {
-    const update = () => setThemeColors(getThemeColors());
-    update();
-    const ob = observeThemeChanges(update);
+    setThemeColors(getThemeColors());
+    // flushSync: ให้ MUI อัปเดตสีในเฟรมเดียวกับที่ daisyUI เปลี่ยน data-theme
+    // ไม่งั้นจะมี 1 เฟรมที่ MUI ยังเป็นสีธีมเก่า → เห็นเป็นกระพริบ
+    const ob = observeThemeChanges(() =>
+      flushSync(() => setThemeColors(getThemeColors()))
+    );
     return () => ob.disconnect();
   }, []);
 
-  const theme = createTheme({
+  const theme = useMemo(() => createTheme({
     breakpoints: { values: { xs: 375, sm: 534, md: 640, lg: 1072, xl: 1520 } },
     typography: { fontFamily: "'Inter Variable', 'sans-serif'" },
     palette: {
@@ -53,11 +57,11 @@ function App() {
         },
       },
     },
-  });
+  }), [themeColors]);
 
   return (
     <ThemeProvider_mui theme={theme}>
-      <ThemeProvider>
+      <ThemeProvider disableTransitionOnChange>
         <BrowserRouter>
           <AppRoutes />
           <Toaster

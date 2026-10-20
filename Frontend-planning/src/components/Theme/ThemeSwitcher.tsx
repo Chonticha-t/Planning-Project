@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "motion/react";
@@ -51,12 +51,22 @@ const ThemeSwitcher = () => {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  // เก็บธีมที่เลือกไว้ก่อน แล้วค่อย setTheme หลัง modal ปิดเสร็จ
+  // ถ้าเปลี่ยนธีมระหว่าง modal กำลัง fade out ทั้งหน้าจะกระพริบ
+  const pendingTheme = useRef<Theme | null>(null);
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
 
   const modal = (
-    <AnimatePresence>
+    <AnimatePresence
+      onExitComplete={() => {
+        if (pendingTheme.current) {
+          setTheme(pendingTheme.current);
+          pendingTheme.current = null;
+        }
+      }}
+    >
       {isOpen && (
         <motion.dialog
           key="theme-modal"
@@ -67,7 +77,7 @@ const ThemeSwitcher = () => {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ type: "spring", damping: 15, stiffness: 200 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
         >
           <motion.div
             onClick={(e) => e.stopPropagation()}
@@ -122,7 +132,7 @@ const ThemeSwitcher = () => {
                     ${theme === t ? "ring-2 ring-primary" : ""}
                   `}
                   onClick={() => {
-                    setTheme(t);
+                    pendingTheme.current = t;
                     setIsOpen(false);
                   }}
                 >

@@ -1,5 +1,5 @@
 import { Menu } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import FujiLogo from "../assets/pic/Fuji.png";
 import LogoText from "../Components/Other/LogoText";
 
@@ -11,14 +11,12 @@ interface DrawerHeaderProps {
 const DrawerHeader = ({ isOpen, toggleDrawer }: DrawerHeaderProps) => {
   return (
     <div className="flex items-center justify-between p-3 border-b border-base-300 overflow-hidden h-14 bg-base-200">
-      <AnimatePresence mode="wait">
-        {isOpen ? (
+      {isOpen ? (
           <motion.div
             key="fujikura"
-            initial={{ x: -40, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 40, opacity: 0 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2, delay: 0.1 }}
             className="flex items-center gap-2 font-bold text-lg text-nowrap select-none"
           >
             {/* โลโก้ Fuji */}
@@ -40,7 +38,6 @@ const DrawerHeader = ({ isOpen, toggleDrawer }: DrawerHeaderProps) => {
             <Menu />
           </motion.button>
         )}
-      </AnimatePresence>
 
       {/* ปุ่ม hamburger ด้านขวา */}
       {isOpen && (
