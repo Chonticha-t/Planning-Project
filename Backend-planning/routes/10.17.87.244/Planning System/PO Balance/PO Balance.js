@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
 
-const { pool_smart } = require("../../../config");
+const { pool_smart } = require("../../config");
 const query = (text, params) => pool_smart.query(text, params);
 
 // GET /api_p1/planning/table?status=ready&prd_name=ABC&startdate=2026-10-01&stopdate=2026-10-31
-router.get("/", async (req, res) => {
+router.get("/table", async (req, res) => {
   const { status, prd_name, startdate, stopdate } = req.query;
 
   // สร้างเงื่อนไขตาม filter ที่ส่งมา (ใช้ $1, $2 ... กัน SQL injection)
@@ -61,6 +61,64 @@ router.get("/", async (req, res) => {
     return res.status(500).json({
       status: "ERROR",
       message: "Internal Server Error",
+    });
+  }
+});
+
+// GET /api_p1/planning/summary — สรุปจำนวนแถว / ยอดที่ต้องผลิต แยกตาม status
+router.get("/summary", async (req, res) => {
+  try {
+    const queryStr = `
+      SELECT
+        status,
+        COUNT(*)::int                        AS total_rows,
+        COUNT(DISTINCT prd_name)::int        AS total_products,
+        COALESCE(SUM(po_bal), 0)::float8     AS po_bal,
+        COALESCE(SUM(net_required_pcs), 0)::float8 AS net_required_pcs,
+        to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+      FROM planning.planning
+      GROUP BY status
+      ORDER BY status
+    `;
+
+    const { rows } = await query(queryStr);
+
+    return res.json({
+      status: "OK",
+      data: rows,
+      message: rows.length > 0 ? "Data found." : "No data found.",
+    });
+  } catch (err) {
+    console.error("Database error:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      message: "Internal Server Error",
+    });
+  }
+});
+
+// GET /api_p1/planning/distinct_product — รายชื่อ product สำหรับ dropdown
+router.get("/distinct_product", async (req, res) => {
+  try {
+    const queryStr = `
+      SELECT DISTINCT prd_name
+      FROM planning.planning
+      ORDER BY prd_name
+    `;
+
+    const result = await query(queryStr);
+
+    return res.json({
+      status: "OK",
+      data: result.rows,
+      message: result.rows.length > 0 ? "Data found" : "No data found",
+    });
+  } catch (err) {
+    console.error(err.message);
+    return res.json({
+      status: "ERROR",
+      data: [],
+      message: err.message,
     });
   }
 });

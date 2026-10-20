@@ -1,12 +1,9 @@
 const express = require("express");
 const app = express();
 
-const table = require("../../../routes/10.17.87.244/smart/planning/planning/Table");
-const summary = require("../../../routes/10.17.87.244/smart/planning/planning/summary");
-const distinct_product = require("../../../routes/10.17.87.244/smart/planning/planning/distinct_product");
+// 10.17.87.244 / Planning System / หน้า PO Balance
+const po_balance = require("../../../routes/10.17.87.244/Planning System/PO Balance/PO Balance");
 
-app.use("/table", table);
-app.use("/summary", summary);
-app.use("/distinct_product", distinct_product);
+app.use("/", po_balance);
 
 module.exports = app;
