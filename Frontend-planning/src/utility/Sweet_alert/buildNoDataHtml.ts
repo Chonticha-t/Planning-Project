@@ -31,7 +31,7 @@ export const buildNoDataHtmlDev = (opts: {
 
       ${tipsList
       ? `<div class="rounded-xl border border-warning/30 bg-warning/10 p-3">
-              <div class="text-xs opacity-60 mb-1">คำแนะนำ</div>
+              <div class="text-xs opacity-60 mb-1">Suggestion</div>
               ${tipsList}
             </div>`
       : ""
@@ -62,7 +62,7 @@ export const buildNoDataHtmlPRD = (opts: {
 
       ${tipsList
       ? `<div class="rounded-xl border border-warning/30 bg-warning/10 p-3">
-              <div class="text-xs opacity-60 mb-1">คำแนะนำ</div>
+              <div class="text-xs opacity-60 mb-1">Suggestion</div>
               ${tipsList}
             </div>`
       : ""

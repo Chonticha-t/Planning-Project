@@ -16,30 +16,30 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
 
   const cards = [
     {
-      title: "PO ทั้งหมด",
+      title: "Total PO",
       value: fmt(totalRows),
       sub: `PO Balance ${fmt(totalPo)} pcs`,
       icon: Package,
       color: "text-info",
     },
     {
-      title: "Ready (สต็อกพอ)",
+      title: "Ready (Stock Sufficient)",
       value: fmt(ready?.total_rows ?? 0),
       sub: `${fmt(ready?.total_products ?? 0)} products`,
       icon: CheckCircle2,
       color: "text-success",
     },
     {
-      title: "Production Plan (ต้องผลิต)",
+      title: "Production Plan (To Produce)",
       value: fmt(plan?.total_rows ?? 0),
       sub: `Net Required ${fmt(plan?.net_required_pcs ?? 0)} pcs`,
       icon: Factory,
       color: "text-error",
     },
     {
-      title: "คำนวณล่าสุด",
+      title: "Last Calculated",
       value: updatedAt === "-" ? "-" : updatedAt.slice(11, 16),
-      sub: updatedAt === "-" ? "ยังไม่มีข้อมูล" : updatedAt.slice(0, 10),
+      sub: updatedAt === "-" ? "No data yet" : updatedAt.slice(0, 10),
       icon: Clock,
       color: "text-base-content/70",
     },

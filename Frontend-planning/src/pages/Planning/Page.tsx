@@ -32,7 +32,7 @@ const Planning = () => {
       setSummary(sum.data.data ?? []);
     } catch (err) {
       console.error(err);
-      toast.error("ดึงข้อมูลไม่สำเร็จ ตรวจสอบว่า Backend เปิดอยู่");
+      toast.error("Failed to fetch data. Please check that the backend is running.");
     } finally {
       setLoading(false);
     }
@@ -49,7 +49,7 @@ const Planning = () => {
 
   const handleExport = () => {
     if (rows.length === 0) {
-      toast("ไม่มีข้อมูลให้ export");
+      toast("No data to export");
       return;
     }
     exportToExcel({

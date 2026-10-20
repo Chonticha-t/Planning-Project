@@ -19,34 +19,9 @@ interface ModernSingleDatePickerProps {
   variant?: "glass-dark" | "glass-light";
 }
 
-const thaiMonths = [
-  "มกราคม",
-  "กุมภาพันธ์",
-  "มีนาคม",
-  "เมษายน",
-  "พฤษภาคม",
-  "มิถุนายน",
-  "กรกฎาคม",
-  "สิงหาคม",
-  "กันยายน",
-  "ตุลาคม",
-  "พฤศจิกายน",
-  "ธันวาคม",
-];
-
-const thaiMonthsShort = [
-  "ม.ค.",
-  "ก.พ.",
-  "มี.ค.",
-  "เม.ย.",
-  "พ.ค.",
-  "มิ.ย.",
-  "ก.ค.",
-  "ส.ค.",
-  "ก.ย.",
-  "ต.ค.",
-  "พ.ย.",
-  "ธ.ค.",
+const englishMonthsShort = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 const englishMonths = [
@@ -64,15 +39,7 @@ const englishMonths = [
   "December",
 ];
 
-const weekDays = [
-  { th: "อา", en: "Su" },
-  { th: "จ", en: "Mo" },
-  { th: "อ", en: "Tu" },
-  { th: "พ", en: "We" },
-  { th: "พฤ", en: "Th" },
-  { th: "ศ", en: "Fr" },
-  { th: "ส", en: "Sa" },
-];
+const weekDays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
   value,
@@ -143,10 +110,10 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
   };
 
   const formatDisplay = (dStr: string) => {
-    if (!dStr) return "เลือกวันที่";
+    if (!dStr) return "Select date";
     const [y, m, d] = dStr.split("-");
     const mIdx = parseInt(m, 10) - 1;
-    const mName = thaiMonthsShort[mIdx] || m;
+    const mName = englishMonthsShort[mIdx] || m;
     return `${d} ${mName} ${y}`;
   };
 
@@ -208,7 +175,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
               ? "hover:bg-white/20 text-blue-100 hover:text-white"
               : "hover:bg-slate-100 text-slate-500 hover:text-blue-600"
           }`}
-          title="วันก่อนหน้า (-1 วัน)"
+          title="Previous day (-1 day)"
         >
           <ChevronLeft size={16} />
         </button>
@@ -256,7 +223,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
               ? "hover:bg-white/20 text-blue-100 hover:text-white"
               : "hover:bg-slate-100 text-slate-500 hover:text-blue-600"
           }`}
-          title="วันถัดไป (+1 วัน)"
+          title="Next day (+1 day)"
         >
           <ChevronRight size={16} />
         </button>
@@ -277,11 +244,8 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
                 <span>Modern Calendar</span>
               </div>
               <h4 className="text-base font-black text-slate-900 tracking-tight mt-0.5">
-                {thaiMonths[month]}{" "}
+                {englishMonths[month]}{" "}
                 <span className="text-blue-600 font-extrabold">{year}</span>
-                <span className="text-xs text-slate-400 font-medium ml-1.5">
-                  ({englishMonths[month]})
-                </span>
               </h4>
             </div>
 
@@ -291,7 +255,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
                 type="button"
                 onClick={prevMonth}
                 className="flex h-7 w-7 items-center justify-center rounded-xl bg-white text-slate-700 hover:bg-blue-600 hover:text-white transition-all shadow-xs cursor-pointer active:scale-90"
-                title="เดือนก่อนหน้า"
+                title="Previous month"
               >
                 <ChevronLeft size={15} />
               </button>
@@ -299,7 +263,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
                 type="button"
                 onClick={nextMonth}
                 className="flex h-7 w-7 items-center justify-center rounded-xl bg-white text-slate-700 hover:bg-blue-600 hover:text-white transition-all shadow-xs cursor-pointer active:scale-90"
-                title="เดือนถัดไป"
+                title="Next month"
               >
                 <ChevronRight size={15} />
               </button>
@@ -318,7 +282,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
               }`}
             >
               <Zap size={13} className={value === todayStr ? "text-amber-300" : "text-amber-500"} />
-              <span>วันนี้ (Today)</span>
+              <span>Today</span>
             </button>
 
             <button
@@ -327,7 +291,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-all cursor-pointer"
             >
               <RotateCcw size={12} className="text-slate-500" />
-              <span>เมื่อวาน</span>
+              <span>Yesterday</span>
             </button>
           </div>
 
@@ -340,7 +304,7 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
                   i === 0 ? "text-rose-500" : i === 6 ? "text-blue-500" : "text-slate-400"
                 }`}
               >
-                {d.th}
+                {d}
               </div>
             ))}
           </div>
@@ -395,14 +359,14 @@ export const ModernSingleDatePicker: React.FC<ModernSingleDatePickerProps> = ({
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
             <span className="flex items-center gap-1 text-blue-600 font-semibold">
               <CalendarCheck size={13} />
-              <span>เลือก: {formatDisplay(value)}</span>
+              <span>Selected: {formatDisplay(value)}</span>
             </span>
             <button
               type="button"
               onClick={() => setIsOpen(false)}
               className="text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
             >
-              ปิด (Done)
+              Done
             </button>
           </div>
         </div>

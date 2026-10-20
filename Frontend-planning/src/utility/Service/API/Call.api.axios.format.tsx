@@ -25,10 +25,10 @@ const handleWarningResponse = (
 ) => {
   Swal.fire({
     title: data?.status || "Warning",
-    text: data?.message || "ไม่พบข้อมูลที่ต้องการ",
+    text: data?.message || "Requested data not found",
     icon: "warning",
     html: buildNoDataHtmlPRD({
-      subtitle: data?.message || "ไม่พบข้อมูลที่ต้องการ",
+      subtitle: data?.message || "Requested data not found",
       endpoint: `${import.meta.env.VITE_API_IP}${path_api}`,
       method,
       params,
@@ -76,8 +76,8 @@ const Callapiaxiosformat = async ({
   try {
     if (show_toast) {
       Swal_Process_loading({
-        title: "กำลังดำเนินการ",
-        message: "กรุณารอสักครู่",
+        title: "Processing",
+        message: "Please wait a moment",
         icon: "⚡",
       });
     }

@@ -173,7 +173,7 @@ export const ModernMonthPicker: React.FC<ModernMonthPickerProps> = ({
               ? "hover:bg-white/20 text-blue-100 hover:text-white"
               : "hover:bg-slate-100 text-slate-500 hover:text-blue-600"
           }`}
-          title={mode === "year" ? "ปีก่อนหน้า (-1 ปี)" : "เดือนก่อนหน้า (-1 เดือน)"}
+          title={mode === "year" ? "Previous year (-1 year)" : "Previous month (-1 month)"}
         >
           <ChevronLeft size={16} />
         </button>
@@ -221,7 +221,7 @@ export const ModernMonthPicker: React.FC<ModernMonthPickerProps> = ({
               ? "hover:bg-white/20 text-blue-100 hover:text-white"
               : "hover:bg-slate-100 text-slate-500 hover:text-blue-600"
           }`}
-          title={mode === "year" ? "ปีถัดไป (+1 ปี)" : "เดือนถัดไป (+1 เดือน)"}
+          title={mode === "year" ? "Next year (+1 year)" : "Next month (+1 month)"}
         >
           <ChevronRight size={16} />
         </button>

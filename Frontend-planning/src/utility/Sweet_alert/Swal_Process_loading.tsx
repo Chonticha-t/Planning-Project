@@ -6,8 +6,8 @@ const Swal_Process_loading = (options?: {
   icon?: string;
 }) => {
   const {
-    title = "กำลังดำเนินการ",
-    message = "กรุณารอสักครู่ ระบบกำลังประมวลผลข้อมูลของคุณ",
+    title = "Processing",
+    message = "Please wait, the system is processing your data",
     icon = "⚡",
   } = options || {};
 
@@ -46,7 +46,7 @@ const Swal_Process_loading = (options?: {
           <div class="flex items-center justify-center gap-3">
             <div class="w-2 h-2 bg-success rounded-full animate-pulse"></div>
             <span class="text-sm text-base-content/60 font-medium">
-              กำลังเชื่อมต่อกับเซิร์ฟเวอร์...
+              Connecting to server...
             </span>
           </div>
         </div>

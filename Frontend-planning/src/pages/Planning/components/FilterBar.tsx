@@ -32,7 +32,7 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
               <Search size={14} className="opacity-50" />
               <input
                 type="text"
-                placeholder="ค้นหาชื่อ product"
+                placeholder="Search product name"
                 value={filter.prd_name}
                 onChange={(e) => set("prd_name", e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onSearch()}
@@ -46,7 +46,7 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
               value={filter.status}
               onChange={(e) => set("status", e.target.value)}
             >
-              <option value="">ทั้งหมด</option>
+              <option value="">All</option>
               <option value="ready">ready</option>
               <option value="production plan">production plan</option>
             </select>
@@ -74,11 +74,11 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
           <div className="flex gap-2">
             <button className="btn btn-sm btn-primary" onClick={onSearch} disabled={loading}>
               {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
-              ค้นหา
+              Search
             </button>
             <button className="btn btn-sm btn-ghost" onClick={onReset} disabled={loading}>
               <RotateCcw size={16} />
-              ล้าง
+              Clear
             </button>
           </div>
 
