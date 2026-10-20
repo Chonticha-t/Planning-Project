@@ -31,8 +31,8 @@ export const routes_planning: AppRoute[] = [
   {
     path: `${BASE}/production-plan`,
     element: <Planning />,
-    label: "Production Plan",
-    Title: "PRODUCTION PLAN",
+    label: "PO BALANCE",
+    Title: "PO BALANCE",
     isDefault: true,
     icon: ClipboardList,
   },

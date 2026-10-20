@@ -37,14 +37,14 @@ const numberCol = (
   renderCell: ({ value }) => <NumberCell value={value} strong={strong} />,
 });
 
-// Inventory columns — same as numberCol but with bg-class for color banding
+// Inventory columns — same as numberCol; inv-header marks them as grouped (see header centering)
 const invCol = (
   field: keyof PlanningRow,
   headerName: string,
+  edge?: "inv-first" | "inv-last",
 ): GridColDef<PlanningRow> => ({
   ...numberCol(field, headerName),
-  headerClassName: "inv-header",
-  cellClassName: "inv-cell",
+  headerClassName: edge ? `inv-header ${edge}` : "inv-header",
 });
 
 export const shipDisplay = (v: number) => Math.abs(v);
@@ -88,10 +88,10 @@ const columns: GridColDef<PlanningRow>[] = [
   },
   numberCol("po_bal", "PO Bal"),
   // ── Inventory group ──────────────────────────
-  invCol("unmovement", "Unmovement"),
+  invCol("unmovement", "Unmovement", "inv-first"),
   invCol("rem_unmovement", "Rem Unmove"),
   invCol("f_g", "F/G"),
-  invCol("rem_fg", "Rem F/G"),
+  invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true, netDisplay),
   {
@@ -120,12 +120,12 @@ const columnGroupingModel: GridColumnGroupingModel = [
   },
 ];
 
+const GROUP_HEADER_H = 28;
+
 const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
 
-// สีพื้น Inventory — โทนฟ้าอ่อนๆ ที่ดูดีทั้ง light และ dark theme
-const invBgHeader = "color-mix(in oklab, var(--color-info) 14%, var(--color-base-200))";
-const invBgCell   = "color-mix(in oklab, var(--color-info) 6%, transparent)";
-const invBgGroup  = "color-mix(in oklab, var(--color-info) 18%, var(--color-base-200))";
+// สีพื้นช่อง INVENTORY — เทาตามธีม (base-content จางๆ) เข้มกว่าพื้นหัวตารางนิดเดียว ไม่แย่งสีกับ Status
+const invBgGroup = "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
 
 const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
   return (
@@ -133,7 +133,7 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
       <div className="flex items-center justify-between px-5 py-4 border-b border-base-300">
         <div className="flex items-center gap-2.5">
           <ClipboardList size={18} className="text-base-content/60" />
-          <h2 className="font-semibold text-base-content">Production Plan</h2>
+          <h2 className="font-semibold text-base-content">PO BALANCE</h2>
         </div>
         <span className="text-xs text-base-content/60 tabular-nums">
           {rows.length.toLocaleString("en-US")} rows
@@ -149,7 +149,8 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
           getRowId={(r) => `${r.prd_name}|${r.due_date}`}
           rowHeight={44}
           resizeThrottleMs={0}
-          columnHeaderHeight={56}
+          columnHeaderHeight={36}
+          columnGroupHeaderHeight={GROUP_HEADER_H}
           disableRowSelectionOnClick
           disableColumnMenu
           initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
@@ -175,26 +176,35 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
               color: "color-mix(in oklab, var(--color-base-content) 55%, transparent)",
             },
 
+            // คอลัมน์ที่ไม่มีกลุ่ม (Product, Due Date, PO Bal, Net Required, Status)
+            // DataGrid วางชื่อไว้แถวล่าง → ดันขึ้นครึ่งหนึ่งของแถวกลุ่ม ให้อยู่กลางหัวตารางทั้ง 2 แถว
+            "& .MuiDataGrid-columnHeader:not(.inv-header):not(.MuiDataGrid-columnHeader--filledGroup):not(.MuiDataGrid-columnHeader--emptyGroup)":
+              {
+                overflow: "visible",
+                "& .MuiDataGrid-columnHeaderTitleContainer": {
+                  transform: `translateY(-${GROUP_HEADER_H / 2}px)`,
+                },
+              },
+
             // ── Inventory: group header row ──────────
             "& .MuiDataGrid-columnHeaderGroupCell": {
               backgroundColor: "var(--color-base-200)",
             },
-            "& .MuiDataGrid-columnHeader.inv-group":
-              {
-                backgroundColor: invBgGroup,
-              },
-
-            // ── Inventory: sub-header cells ──────────
-            "& .MuiDataGrid-columnHeader.inv-header": {
-              backgroundColor: invBgHeader,
+            // ใส่สีเฉพาะช่อง INVENTORY — คอลัมน์ย่อยกับข้อมูลใช้พื้นปกติ
+            "& .MuiDataGrid-columnHeader.inv-group": {
+              backgroundColor: invBgGroup,
+              px: 0,
             },
-
-            // ── Inventory: data cells ────────────────
-            "& .MuiDataGrid-cell.inv-cell": {
-              backgroundColor: invBgCell,
+            // เส้นคั่นใต้ INVENTORY — สี/ความหนาเดียวกับเส้นขอบซ้ายขวา
+            "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer": {
+              borderBottom: `1px solid ${border}`,
             },
-            "& .MuiDataGrid-row:hover .MuiDataGrid-cell.inv-cell": {
-              backgroundColor: `color-mix(in oklab, var(--color-info) 10%, transparent)`,
+            // เส้นบางๆ ขอบซ้าย/ขวาของกลุ่ม Inventory (ทั้งแถว INVENTORY และหัวคอลัมน์ย่อย)
+            "& .MuiDataGrid-columnHeader.inv-group, & .MuiDataGrid-columnHeader.inv-first": {
+              borderLeft: `1px solid ${border}`,
+            },
+            "& .MuiDataGrid-columnHeader.inv-group, & .MuiDataGrid-columnHeader.inv-last": {
+              borderRight: `1px solid ${border}`,
             },
 
             "& .MuiDataGrid-columnSeparator": { display: "none" },

@@ -14,7 +14,7 @@ const DrawerMenu = ({ isOpen, toggleDrawer }: DrawerMenuProps) => {
       <DrawerMenuGroup
         isOpen={isOpen}
         toggleDrawer={toggleDrawer}
-        title="Planning"
+      title="PLANNING SYSTEM"
         icon={CalendarRange}
         links={routes_planning}
       />

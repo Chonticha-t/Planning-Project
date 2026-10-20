@@ -20,7 +20,7 @@ const DrawerFooter = ({ isOpen }: DrawerFooterProps) => {
           <>
             <div className="flex flex-col text-left leading-tight">
               <span className="font-semibold text-base-content/90">
-                © {new Date().getFullYear()} PLANNING P1
+                © {new Date().getFullYear()} FUJIKURA P1
               </span>
               <span className="text-[11px] opacity-70">
                 Fujikura Electronics (Thailand) Ltd.
