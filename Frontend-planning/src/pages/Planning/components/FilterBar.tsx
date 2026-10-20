@@ -1,4 +1,5 @@
 import { Search, RotateCcw, FileSpreadsheet, RefreshCw } from "lucide-react";
+import type { ReactNode } from "react";
 import type { PlanningFilter } from "../types";
 
 interface FilterBarProps {
@@ -10,6 +11,14 @@ interface FilterBarProps {
   loading: boolean;
 }
 
+// label อยู่บน input เสมอ (daisyUI 5 ไม่มี form-control / label-text แล้ว)
+const Field = ({ label, className = "", children }: { label: string; className?: string; children: ReactNode }) => (
+  <div className={`flex flex-col gap-1 ${className}`}>
+    <span className="text-xs font-medium text-base-content/70">{label}</span>
+    {children}
+  </div>
+);
+
 const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: FilterBarProps) => {
   const set = (key: keyof PlanningFilter, value: string) =>
     onChange({ ...filter, [key]: value });
@@ -17,23 +26,23 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
   return (
     <div className="card bg-base-100 border border-base-300 shadow-sm">
       <div className="card-body p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="form-control">
-            <span className="label-text text-xs mb-1">Product</span>
-            <input
-              type="text"
-              placeholder="ค้นหาชื่อ product"
-              className="input input-sm input-bordered w-56"
-              value={filter.prd_name}
-              onChange={(e) => set("prd_name", e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && onSearch()}
-            />
-          </label>
+        <div className="flex flex-wrap items-end gap-4">
+          <Field label="Product" className="w-full sm:w-60">
+            <label className="input input-sm w-full">
+              <Search size={14} className="opacity-50" />
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อ product"
+                value={filter.prd_name}
+                onChange={(e) => set("prd_name", e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onSearch()}
+              />
+            </label>
+          </Field>
 
-          <label className="form-control">
-            <span className="label-text text-xs mb-1">Status</span>
+          <Field label="Status" className="w-full sm:w-44">
             <select
-              className="select select-sm select-bordered w-44"
+              className="select select-sm w-full"
               value={filter.status}
               onChange={(e) => set("status", e.target.value)}
             >
@@ -41,27 +50,26 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
               <option value="ready">ready</option>
               <option value="production plan">production plan</option>
             </select>
-          </label>
+          </Field>
 
-          <label className="form-control">
-            <span className="label-text text-xs mb-1">Due date ตั้งแต่</span>
-            <input
-              type="date"
-              className="input input-sm input-bordered"
-              value={filter.startdate}
-              onChange={(e) => set("startdate", e.target.value)}
-            />
-          </label>
-
-          <label className="form-control">
-            <span className="label-text text-xs mb-1">ถึง</span>
-            <input
-              type="date"
-              className="input input-sm input-bordered"
-              value={filter.stopdate}
-              onChange={(e) => set("stopdate", e.target.value)}
-            />
-          </label>
+          <Field label="Due date" className="w-full sm:w-auto">
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                className="input input-sm w-full sm:w-40"
+                value={filter.startdate}
+                onChange={(e) => set("startdate", e.target.value)}
+              />
+              <span className="text-base-content/50">–</span>
+              <input
+                type="date"
+                className="input input-sm w-full sm:w-40"
+                value={filter.stopdate}
+                min={filter.startdate || undefined}
+                onChange={(e) => set("stopdate", e.target.value)}
+              />
+            </div>
+          </Field>
 
           <div className="flex gap-2">
             <button className="btn btn-sm btn-primary" onClick={onSearch} disabled={loading}>
@@ -74,7 +82,7 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
             </button>
           </div>
 
-          <button className="btn btn-sm btn-success ml-auto" onClick={onExport} disabled={loading}>
+          <button className="btn btn-sm btn-success btn-outline ml-auto" onClick={onExport} disabled={loading}>
             <FileSpreadsheet size={16} />
             Export Excel
           </button>

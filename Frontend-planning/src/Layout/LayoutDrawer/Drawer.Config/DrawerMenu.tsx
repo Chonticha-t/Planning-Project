@@ -1,8 +1,7 @@
+import { CalendarRange } from "lucide-react";
 import DrawerMenuGroup from "../Components/DrawerMenuGroup";
 
 import { routes_planning } from "@/routes/config";
-
-import production_app from "@/assets/icon/menuDrawer/production/production-app.png";
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -16,7 +15,7 @@ const DrawerMenu = ({ isOpen, toggleDrawer }: DrawerMenuProps) => {
         isOpen={isOpen}
         toggleDrawer={toggleDrawer}
         title="Planning"
-        icon={production_app}
+        icon={CalendarRange}
         links={routes_planning}
       />
     </nav>
