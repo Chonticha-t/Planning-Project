@@ -1,0 +1,29 @@
+# ครอบทั้งโปรเจกต์ (Frontend-planning / Backend-planning มี .gitignore ของตัวเองอีกชั้น)
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies / build
+node_modules/
+dist/
+dev-dist/
+dist-ssr/
+
+# Logs
+logs/
+*.log
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code (ค่าเครื่องตัวเอง)
+.claude/settings.local.json

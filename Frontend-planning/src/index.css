@@ -1,0 +1,224 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+@import "@fontsource/luckiest-guy";
+@import '@fontsource-variable/inter';
+@import '@fontsource/bangers';
+
+@import "tailwindcss";
+
+@theme {
+    --breakpoint-xs: 375px;
+    --breakpoint-sm: 534px;
+    --breakpoint-md: 640px;
+    --breakpoint-lg: 1072px;
+    --breakpoint-xl: 1520px;
+    --breakpoint-2xl: 1872px;
+    --font-luckiest-guy: "Luckiest Guy", "cursive";
+    --font-Inter: "Inter Variable", "Noto Sans Thai", "Prompt", "Leelawadee UI", sans-serif;
+    --font-Bangers: 'Bangers', cursive;
+}
+
+@plugin "daisyui" {
+    themes: all;
+    /* root: ":root";
+    include: ;
+    exclude: ;
+    prefix: ;
+    logs: true; */
+}
+
+@plugin "daisyui/theme" {
+    name: "custom";
+    default: false;
+    prefersdark: false;
+    color-scheme: "dark";
+    --color-base-100: oklch(29% 0.149 302.717);
+    --color-base-200: oklch(38% 0.176 304.987);
+    --color-base-300: oklch(43% 0.218 303.724);
+    --color-base-content: oklch(94% 0.033 307.174);
+    --color-primary: oklch(84% 0.143 164.978);
+    --color-primary-content: oklch(26% 0.051 172.552);
+    --color-secondary: oklch(87% 0.15 154.449);
+    --color-secondary-content: oklch(26% 0.065 152.934);
+    --color-accent: oklch(85% 0.138 181.071);
+    --color-accent-content: oklch(27% 0.046 192.524);
+    --color-neutral: oklch(29% 0.149 302.717);
+    --color-neutral-content: oklch(97% 0.014 308.299);
+    --color-info: oklch(62% 0.214 259.815);
+    --color-info-content: oklch(97% 0.014 254.604);
+    --color-success: oklch(70% 0.14 182.503);
+    --color-success-content: oklch(98% 0.014 180.72);
+    --color-warning: oklch(76% 0.188 70.08);
+    --color-warning-content: oklch(98% 0.022 95.277);
+    --color-error: oklch(64% 0.246 16.439);
+    --color-error-content: oklch(96% 0.015 12.422);
+    --radius-selector: 1rem;
+    --radius-field: 1rem;
+    --radius-box: 0.5rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+    name: "calm-day";
+    default: true;
+    prefersdark: false;
+    color-scheme: "light";
+    --color-base-100: oklch(98.36% 0.009 102.39);
+    /* Soft Linen White */
+    --color-base-200: oklch(94.49% 0.015 102.7);
+    --color-base-300: oklch(90.58% 0.022 103.04);
+    --color-base-content: oklch(35.32% 0.026 89.17);
+    /* Warm Dark Gray */
+    --color-primary: oklch(72.76% 0.08 153.64);
+    /* Sage Green */
+    --color-primary-content: oklch(99.03% 0.008 135.21);
+    --color-secondary: oklch(84.4% 0.05 98.71);
+    /* Sandy Beige */
+    --color-secondary-content: oklch(35.32% 0.026 89.17);
+    --color-accent: oklch(78.53% 0.06 228.84);
+    /* Dusty Sky Blue */
+    --color-accent-content: oklch(27.48% 0.023 252.73);
+    --color-neutral: oklch(84.28% 0.017 101.99);
+    /* Light Stone Gray */
+    --color-neutral-content: oklch(35.32% 0.026 89.17);
+    --color-info: oklch(76.13% 0.1 230.58);
+    --color-info-content: oklch(98.36% 0.009 102.39);
+    --color-success: oklch(74.45% 0.13 147.38);
+    --color-success-content: oklch(98.36% 0.009 102.39);
+    --color-warning: oklch(83.07% 0.1 84.72);
+    --color-warning-content: oklch(42.34% 0.045 77.29);
+    --color-error: oklch(72.93% 0.15 31.54);
+    /* Muted Terracotta */
+    --color-error-content: oklch(98.36% 0.009 102.39);
+    --radius-selector: 0.5rem;
+    --radius-field: 1rem;
+    --radius-box: 1rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+
+@plugin "daisyui/theme" {
+    name: "Dark-Purple";
+    default: false;
+    prefersdark: true;
+    color-scheme: "dark";
+
+    /* 🌑 Background */
+    --color-base-100: oklch(18% 0.03 300);
+    /* deep black-purple */
+    --color-base-200: oklch(24% 0.04 300);
+    --color-base-300: oklch(32% 0.05 305);
+    --color-base-content: oklch(96% 0.02 300);
+    /* near white text */
+
+    /* 🟣 Primary = Neon Purple */
+    --color-primary: oklch(70% 0.20 300);
+    /* vivid purple */
+    --color-primary-content: oklch(15% 0.03 300);
+
+    /* 🟡 Secondary = Pumpkin / Golden Yellow */
+    --color-secondary: oklch(82% 0.21 85);
+    /* bright golden-yellow */
+    --color-secondary-content: oklch(20% 0.05 85);
+
+    /* ✨ Accent = Magenta glow */
+    --color-accent: oklch(75% 0.22 330);
+    --color-accent-content: oklch(20% 0.05 330);
+
+    /* ⚙ Neutral */
+    --color-neutral: oklch(22% 0.04 300);
+    --color-neutral-content: oklch(95% 0.02 300);
+
+    /* 🔵🟢 Feedbacks */
+    --color-info: oklch(68% 0.16 260);
+    /* soft blue-violet */
+    --color-success: oklch(68% 0.14 140);
+    /* muted green */
+    --color-warning: oklch(85% 0.22 85);
+    /* same as golden yellow */
+    --color-error: oklch(65% 0.24 25);
+    /* red-orange blood tone */
+
+    --color-info-content: oklch(15% 0.03 260);
+    --color-success-content: oklch(15% 0.03 140);
+    --color-warning-content: oklch(15% 0.03 85);
+    --color-error-content: oklch(96% 0.02 25);
+
+    /* 💠 Shape */
+    --radius-selector: 1rem;
+    --radius-field: 1rem;
+    --radius-box: 0.75rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* Remove default browser focus outline (black border) from all interactive elements */
+input:focus,
+select:focus,
+textarea:focus,
+button:focus {
+  outline: none;
+}
+
+html, body {
+    font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* Responsive font sizes for different screen sizes */
+@media (min-width: 534px) {
+    html {
+        font-size: 14px;
+        font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
+    }
+}
+
+@media (min-width: 640px) {
+    html {
+        font-size: 16px;
+        font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
+    }
+}
+
+@media (min-width: 1072px) {
+    html {
+        font-size: 14px;
+        font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
+    }
+}
+
+@media (min-width: 1520px) {
+    html {
+        font-size: 14px;
+        font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
+    }
+}
+
+@media (min-width: 1872px) {
+    html {
+        font-size: 16px;
+        font-family: 'Inter Variable', 'Noto Sans Thai', 'Prompt', 'Leelawadee UI', system-ui, -apple-system, sans-serif;
+    }
+}
