@@ -101,7 +101,7 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
         </span>
       </div>
 
-      <div style={{ height: "calc(100vh - 380px)", minHeight: 420 }}>
+      <div style={{ height: "calc(100vh - 260px)", minHeight: 520 }}>
         <DataGrid
           rows={rows}
           columns={columns}
