@@ -7,7 +7,7 @@ import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
 // =========================================
 // 🧭 PAGE IMPORTS (Lazy Loading)
 // =========================================
-const Planning = React.lazy(() => import("@/pages/Planning/Page"));
+const PO_Balance = React.lazy(() => import("@/pages/PO_Balance/main/PO_Balance"));
 
 // =========================================
 // ⚙️ BASE CONFIG
@@ -30,7 +30,7 @@ export type AppRoute = {
 export const routes_planning: AppRoute[] = [
   {
     path: `${BASE}/production-plan`,
-    element: <Planning />,
+    element: <PO_Balance />,
     label: "PO BALANCE",
     Title: "PO BALANCE",
     isDefault: true,

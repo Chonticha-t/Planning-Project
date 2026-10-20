@@ -2,7 +2,7 @@ import { DataGrid, GridColDef, GridColumnGroupingModel } from "@mui/x-data-grid"
 import { ClipboardList } from "lucide-react";
 import type { PlanningRow, PlanningStatus } from "../types";
 
-interface PlanningTableProps {
+interface POBalanceTableProps {
   rows: PlanningRow[];
   loading: boolean;
 }
@@ -127,7 +127,7 @@ const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
 // สีพื้นช่อง INVENTORY — เทาตามธีม (base-content จางๆ) เข้มกว่าพื้นหัวตารางนิดเดียว ไม่แย่งสีกับ Status
 const invBgGroup = "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
 
-const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
+const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
   return (
     <div className="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-base-300">
@@ -237,4 +237,4 @@ const PlanningTable = ({ rows, loading }: PlanningTableProps) => {
   );
 };
 
-export default PlanningTable;
+export default POBalanceTable;

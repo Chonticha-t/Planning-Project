@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 import { registerSW } from "virtual:pwa-register";
-import "./utility/Sweet_alert/Swal_custom.css";
+import "./utility/Service/API/Sweet_alert/Swal_custom.css";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 
 const updateSW = registerSW({
