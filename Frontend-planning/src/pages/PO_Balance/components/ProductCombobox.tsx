@@ -68,7 +68,8 @@ const ProductCombobox = ({ value, options, onChange, onSelect, onEnter }: Produc
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <label className="input input-sm w-full">
+      {/* ปิด outline หนาของ daisyUI ตอน focus เหลือแค่เส้นขอบสี primary บาง ๆ */}
+      <label className="input input-sm w-full focus-within:outline-none focus-within:border-primary">
         <Search size={14} className="opacity-50" />
         <input
           type="text"
