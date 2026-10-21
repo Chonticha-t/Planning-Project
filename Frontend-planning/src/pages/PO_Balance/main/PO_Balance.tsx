@@ -49,6 +49,8 @@ const PO_Balance = () => {
       <FilterBar
         filter={filter}
         products={products}
+        sortModel={sortModel}
+        onSortModelChange={setSortModel}
         onChange={setFilter}
         onSearch={(f = filter) => fetchData(f)}
         onReset={handleReset}

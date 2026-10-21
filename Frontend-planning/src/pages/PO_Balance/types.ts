@@ -14,6 +14,18 @@ export interface PlanningRow {
   updated_at: string;
 }
 
+export const SORT_OPTIONS: { field: keyof PlanningRow; label: string }[] = [
+  { field: "prd_name", label: "Product" },
+  { field: "due_date", label: "Due Date" },
+  { field: "po_bal", label: "PO Bal" },
+  { field: "unmovement", label: "Unmovement" },
+  { field: "rem_unmovement", label: "Rem Unmove" },
+  { field: "f_g", label: "F/G" },
+  { field: "rem_fg", label: "Rem F/G" },
+  { field: "net_required_pcs", label: "Net Required" },
+  { field: "status", label: "Status" },
+];
+
 export interface PlanningSummaryRow {
   status: PlanningStatus;
   total_rows: number;
