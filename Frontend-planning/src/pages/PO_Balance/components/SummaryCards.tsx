@@ -1,4 +1,5 @@
 import { CheckCircle2, Factory, Package, Clock } from "lucide-react";
+import type { ReactNode } from "react";
 import type { PlanningSummaryRow } from "../types";
 import { toDMY } from "../utils";
 
@@ -15,32 +16,50 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
   const totalPo = summary.reduce((sum, s) => sum + s.po_bal, 0);
   const updatedAt = summary.map((s) => s.updated_at).sort().pop() ?? "-";
 
-  const cards = [
+  const cards: {
+    title: string;
+    value: string;
+    sub: ReactNode;
+    icon: typeof Package;
+    color: string;
+  }[] = [
     {
       title: "Total PO",
       value: fmt(totalRows),
-      sub: `PO Balance ${fmt(totalPo)} pcs`,
+      sub: (
+        <span>
+          PO Balance <span className="font-semibold text-info">{fmt(totalPo)} pcs</span>
+        </span>
+      ),
       icon: Package,
       color: "text-info",
     },
     {
       title: "Ready (Stock Sufficient)",
       value: fmt(ready?.total_rows ?? 0),
-      sub: `${fmt(ready?.total_products ?? 0)} products`,
+      sub: (
+        <span>
+          <span className="font-semibold text-success">{fmt(ready?.total_products ?? 0)}</span> products
+        </span>
+      ),
       icon: CheckCircle2,
       color: "text-success",
     },
     {
       title: "Production Plan (To Produce)",
       value: fmt(plan?.total_rows ?? 0),
-      sub: `Net Required ${fmt(plan?.net_required_pcs ?? 0)} pcs`,
+      sub: (
+        <span>
+          Net Required <span className="font-semibold text-error">{fmt(plan?.net_required_pcs ?? 0)} pcs</span>
+        </span>
+      ),
       icon: Factory,
       color: "text-error",
     },
     {
       title: "Last Calculated",
       value: updatedAt === "-" ? "-" : updatedAt.slice(11, 16),
-      sub: updatedAt === "-" ? "No data yet" : toDMY(updatedAt),
+      sub: <span>{updatedAt === "-" ? "No data yet" : toDMY(updatedAt)}</span>,
       icon: Clock,
       color: "text-base-content/70",
     },
