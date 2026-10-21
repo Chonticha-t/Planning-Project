@@ -205,12 +205,18 @@ const FilterBar = ({
   onSortModelChange,
   onChange,
   onSearch,
-  onReset,
+  onReset: _onReset,
   onExport,
   loading,
 }: FilterBarProps) => {
   const set = (key: keyof PlanningFilter, value: string) =>
     onChange({ ...filter, [key]: value });
+
+  const handleClearDate = () => {
+    const next = { ...filter, startdate: "", stopdate: "" };
+    onChange(next);
+    onSearch(next);
+  };
 
   return (
     <div className="card bg-base-100 border border-base-300 shadow-sm">
@@ -248,34 +254,41 @@ const FilterBar = ({
           </Field>
 
           <Field label="Due date" className="w-full sm:w-auto">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
               <input
                 type="date"
-                className="input input-sm w-full sm:w-40 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
+                className="input input-sm w-full sm:w-36 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
                 value={filter.startdate}
                 onChange={(e) => set("startdate", e.target.value)}
               />
               <span className="text-base-content/50">–</span>
               <input
                 type="date"
-                className="input input-sm w-full sm:w-40 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
+                className="input input-sm w-full sm:w-36 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
                 value={filter.stopdate}
                 min={filter.startdate || undefined}
                 onChange={(e) => set("stopdate", e.target.value)}
               />
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => onSearch()}
+                disabled={loading}
+              >
+                {loading ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
+                Search
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={handleClearDate}
+                disabled={loading || (!filter.startdate && !filter.stopdate)}
+              >
+                <RotateCcw size={15} />
+                Clear
+              </button>
             </div>
           </Field>
-
-          <div className="flex gap-2">
-            <button className="btn btn-sm btn-primary" onClick={() => onSearch()} disabled={loading}>
-              {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
-              Search
-            </button>
-            <button className="btn btn-sm btn-ghost" onClick={onReset} disabled={loading}>
-              <RotateCcw size={16} />
-              Clear
-            </button>
-          </div>
 
           <div className="flex items-center gap-2 ml-auto">
             <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
