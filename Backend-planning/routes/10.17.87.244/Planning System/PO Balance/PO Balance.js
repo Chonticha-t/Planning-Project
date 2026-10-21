@@ -38,7 +38,7 @@ router.get("/table", async (req, res) => {
         po_bal::float8                                  AS po_bal,
         unmovement::float8                              AS unmovement,
         f_g::float8                                     AS f_g,
-        ship_pcs::float8                                AS ship_pcs,
+
         net_required_pcs::float8                        AS net_required_pcs,
         rem_unmovement::float8                          AS rem_unmovement,
         rem_fg::float8                                  AS rem_fg,

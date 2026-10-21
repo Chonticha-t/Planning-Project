@@ -5,7 +5,7 @@ import type { PlanningFilter } from "../types";
 import usePOBalance, { EMPTY_FILTER } from "../hooks/usePOBalance";
 import SummaryCards from "../components/SummaryCards";
 import FilterBar from "../components/FilterBar";
-import POBalanceTable, { netDisplay, shipDisplay } from "../components/POBalanceTable";
+import POBalanceTable from "../components/POBalanceTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 
 const PO_Balance = () => {
@@ -30,8 +30,8 @@ const PO_Balance = () => {
         "PO Bal": r.po_bal,
         Unmovement: r.unmovement,
         "F/G": r.f_g,
-        "Ship (pcs)": shipDisplay(r.ship_pcs),
-        "Net Required": netDisplay(r.net_required_pcs),
+
+        "Net Required": r.net_required_pcs,
         "Rem Unmove": r.rem_unmovement,
         "Rem F/G": r.rem_fg,
         Status: r.status,

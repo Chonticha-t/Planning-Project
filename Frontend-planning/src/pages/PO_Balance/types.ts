@@ -6,7 +6,7 @@ export interface PlanningRow {
   po_bal: number;
   unmovement: number;
   f_g: number;
-  ship_pcs: number;
+
   net_required_pcs: number;
   rem_unmovement: number;
   rem_fg: number;

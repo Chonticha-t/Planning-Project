@@ -47,8 +47,9 @@ const invCol = (
   headerClassName: edge ? `inv-header ${edge}` : "inv-header",
 });
 
-export const shipDisplay = (v: number) => Math.abs(v);
-export const netDisplay = (v: number) => (v ? -Math.abs(v) : 0);
+
+// net_required_pcs ได้รับค่าติดลบมาจาก database แล้ว ไม่ต้องแปลงค่า
+export const netDisplay = (v: number) => v;
 
 const STATUS_STYLE: Record<PlanningStatus, { label: string; color: string }> = {
   ready: { label: "Ready", color: "var(--color-success)" },
@@ -93,7 +94,7 @@ const columns: GridColDef<PlanningRow>[] = [
   invCol("f_g", "F/G"),
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
-  numberCol("net_required_pcs", "Net Required", true, netDisplay),
+  numberCol("net_required_pcs", "Net Required", true),
   {
     field: "status",
     headerName: "Status",
