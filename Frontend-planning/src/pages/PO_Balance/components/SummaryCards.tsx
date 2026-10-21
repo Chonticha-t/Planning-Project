@@ -66,7 +66,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       sub: <span>{updatedAt === "-" ? "No data yet" : toDMY(updatedAt)}</span>,
       icon: Clock,
       color: "text-base-content/70",
-      borderColor: "border-base-300",
+      borderColor: "border-base-content/50",
     },
   ];
 
