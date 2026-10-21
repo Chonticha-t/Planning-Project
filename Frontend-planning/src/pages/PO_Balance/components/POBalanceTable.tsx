@@ -1,11 +1,26 @@
-import { DataGrid, GridColDef, GridColumnGroupingModel } from "@mui/x-data-grid";
-import { ClipboardList } from "lucide-react";
+import {
+  DataGrid,
+  GridColDef,
+  GridColumnGroupingModel,
+  GridColumnMenuContainer,
+  GridColumnMenuProps,
+  GridSortDirection,
+  GridSortModel,
+  gridSortModelSelector,
+  useGridApiContext,
+  useGridSelector,
+} from "@mui/x-data-grid";
+import { useRef } from "react";
+import { Divider, ListItemIcon, ListItemText, MenuItem } from "@mui/material";
+import { ArrowDown, ArrowUp, ChevronsUpDown, ClipboardList, X } from "lucide-react";
 import type { PlanningRow, PlanningStatus } from "../types";
 import { toDMY } from "../utils";
 
 interface POBalanceTableProps {
   rows: PlanningRow[];
   loading: boolean;
+  sortModel: GridSortModel;
+  onSortModelChange: (model: GridSortModel) => void;
 }
 
 const num = (value: number) =>
@@ -127,10 +142,74 @@ const GROUP_HEADER_H = 28;
 
 const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
 
-// สีพื้นช่อง INVENTORY — เทาตามธีม (base-content จางๆ) เข้มกว่าพื้นหัวตารางนิดเดียว ไม่แย่งสีกับ Status
 const invBgGroup = "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
 
-const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
+// ไอคอนเปิดเมนู sort ที่หัวคอลัมน์ (แทนลูกศร/จุดสามจุดของ DataGrid)
+const SortMenuIcon = () => <ChevronsUpDown size={14} />;
+
+// ขนาดเมนูให้เท่า dropdown Status (select-sm) ใน FilterBar
+const sortMenuSx = {
+  py: 0.5,
+  minWidth: 140,
+  "& .MuiMenuItem-root": { minHeight: 30, px: 1.5, py: 0.5, fontSize: 13 },
+  "& .MuiListItemIcon-root": { minWidth: 22, color: "inherit" },
+  "& .MuiListItemText-primary": { fontSize: 13 },
+  "& .MuiDivider-root": { my: 0.5 },
+};
+
+// เมนู sort: Ascending / Descending (+ Clear sort เมื่อคอลัมน์นี้ sort อยู่) — กดตัวที่เลือกอยู่ซ้ำก็ยกเลิกได้
+const SortMenu = ({ hideMenu, colDef, ...other }: GridColumnMenuProps) => {
+  const apiRef = useGridApiContext();
+  const sortModel = useGridSelector(apiRef, gridSortModelSelector);
+  const current = sortModel.find((s) => s.field === colDef.field)?.sort ?? null;
+
+  const sortBy = (direction: GridSortDirection) => (e: React.MouseEvent) => {
+    apiRef.current.sortColumn(colDef.field, current === direction ? null : direction);
+    hideMenu(e);
+  };
+
+  return (
+    <GridColumnMenuContainer hideMenu={hideMenu} colDef={colDef} {...other} sx={sortMenuSx}>
+      <MenuItem dense selected={current === "asc"} onClick={sortBy("asc")}>
+        <ListItemIcon>
+          <ArrowUp size={14} />
+        </ListItemIcon>
+        <ListItemText>Ascending</ListItemText>
+      </MenuItem>
+      <MenuItem dense selected={current === "desc"} onClick={sortBy("desc")}>
+        <ListItemIcon>
+          <ArrowDown size={14} />
+        </ListItemIcon>
+        <ListItemText>Descending</ListItemText>
+      </MenuItem>
+      {current && <Divider />}
+      {current && (
+        <MenuItem dense onClick={sortBy(null)}>
+          <ListItemIcon>
+            <X size={14} />
+          </ListItemIcon>
+          <ListItemText>Clear sort</ListItemText>
+        </MenuItem>
+      )}
+    </GridColumnMenuContainer>
+  );
+};
+
+const POBalanceTable = ({ rows, loading, sortModel, onSortModelChange }: POBalanceTableProps) => {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const lastAnchor = useRef<HTMLElement | null>(null);
+
+  // ให้เมนู sort ขึ้นใต้หัวคอลัมน์ ชิดขอบซ้ายของคอลัมน์ (ค่าเดิมของ DataGrid ยึดปุ่ม <> แล้วชิดขวา เลยดูเบี้ยว)
+  // ปุ่ม <> ของคอลัมน์ที่เปิดเมนูอยู่จะมีคลาส menuOpen → หาหัวคอลัมน์จากตรงนั้น
+  // (จำตัวล่าสุดไว้ ตอนเมนูกำลังปิดคลาสหายไปแล้วแต่ popper ยังต้องใช้ตำแหน่ง)
+  const menuAnchor = () => {
+    const header = wrapRef.current
+      ?.querySelector(".MuiDataGrid-menuOpen")
+      ?.closest<HTMLElement>(".MuiDataGrid-columnHeader");
+    if (header) lastAnchor.current = header;
+    return lastAnchor.current as HTMLElement;
+  };
+
   return (
     <div className="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-base-300">
@@ -143,7 +222,18 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
         </span>
       </div>
 
-      <div className="datagrid-outer" style={{ height: "calc(100vh - 260px)", minHeight: 520, position: "relative" }}>
+      <div
+        ref={wrapRef}
+        className="datagrid-outer"
+        style={{ height: "calc(100vh - 260px)", minHeight: 520, position: "relative" }}
+        // DataGrid sort เมื่อคลิกหัวคอลัมน์เสมอ (ปิดแยกไม่ได้) → ตัดคลิกที่หัวคอลัมน์ทิ้ง ยกเว้นปุ่ม <>
+        onClickCapture={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest(".MuiDataGrid-columnHeader") && !target.closest(".MuiDataGrid-menuIcon")) {
+            e.stopPropagation();
+          }
+        }}
+      >
         <DataGrid
           rows={rows}
           columns={columns}
@@ -155,7 +245,10 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
           columnHeaderHeight={36}
           columnGroupHeaderHeight={GROUP_HEADER_H}
           disableRowSelectionOnClick
-          disableColumnMenu
+          sortModel={sortModel}
+          onSortModelChange={onSortModelChange}
+          slots={{ columnMenu: SortMenu, columnMenuIcon: SortMenuIcon }}
+          slotProps={{ basePopper: { material: { anchorEl: menuAnchor, placement: "bottom-start" } } }}
           showColumnVerticalBorder
           showCellVerticalBorder
           initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
@@ -186,7 +279,8 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
             "& .MuiDataGrid-columnHeader:not(.inv-header):not(.MuiDataGrid-columnHeader--filledGroup):not(.MuiDataGrid-columnHeader--emptyGroup)":
               {
                 overflow: "visible",
-                "& .MuiDataGrid-columnHeaderTitleContainer": {
+                // ดันทั้งชื่อคอลัมน์และปุ่ม <> ขึ้นพร้อมกัน
+                "& .MuiDataGrid-columnHeaderDraggableContainer": {
                   transform: `translateY(-${GROUP_HEADER_H / 2}px)`,
                 },
                 // DataGrid รวมช่องแถวบนของคอลัมน์ที่ไม่มีกลุ่มซึ่งอยู่ติดกันเป็นช่องเดียว → ไม่มีเส้นคั่น
@@ -220,7 +314,28 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
             "& .MuiDataGrid-withBorderColor": { borderColor: border },
 
             "& .MuiDataGrid-columnSeparator": { display: "none" },
-            "& .MuiDataGrid-sortIcon": { opacity: 0.5 },
+            // ไม่แสดงลูกศร sort ของ DataGrid — ใช้ปุ่ม <> อย่างเดียว
+            "& .MuiDataGrid-iconButtonContainer": { display: "none" },
+            // ปุ่ม <> เปิดเมนู sort — แสดงตลอด ไม่ต้อง hover และวางชิดชื่อคอลัมน์
+            "& .MuiDataGrid-columnHeader--sortable": {
+              cursor: "default",
+              "& .MuiDataGrid-columnHeaderTitleContainer": { flex: "0 1 auto" },
+              "& .MuiDataGrid-menuIcon": {
+                visibility: "visible",
+                width: "auto",
+                marginLeft: "2px",
+                marginRight: 0,
+              },
+            },
+            "& .MuiDataGrid-columnHeader--sortable.MuiDataGrid-columnHeader--alignCenter .MuiDataGrid-columnHeaderDraggableContainer":
+              { justifyContent: "center" },
+            "& .MuiDataGrid-menuIconButton": {
+              color: "var(--color-base-content)",
+              opacity: 0.6,
+              padding: "2px",
+            },
+            "& .MuiDataGrid-columnHeader--sorted .MuiDataGrid-menuIconButton, & .MuiDataGrid-menuOpen .MuiDataGrid-menuIconButton":
+              { color: "var(--color-primary)", opacity: 1 },
 
             // ── Cells / rows ─────────────────────────
             "& .MuiDataGrid-cell": { px: 2, borderColor: border },
