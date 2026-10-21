@@ -203,6 +203,7 @@ const POBalanceTable = ({
           columnGroupHeaderHeight={GROUP_HEADER_H}
           disableRowSelectionOnClick
           disableColumnMenu
+          slots={{ loadingOverlay: () => null }}
           sortModel={sortModel}
           onSortModelChange={onSortModelChange}
           showColumnVerticalBorder
@@ -271,6 +272,8 @@ const POBalanceTable = ({
             "& .MuiDataGrid-withBorderColor": { borderColor: border },
 
             "& .MuiDataGrid-columnSeparator": { display: "none" },
+            // ซ่อนเส้นโหลด (LinearProgress) ใต้หัวตาราง
+            "& .MuiLinearProgress-root": { display: "none" },
             // ซ่อนไอคอน sort ดั้งเดิมของ DataGrid บนหัวคอลัมน์
             "& .MuiDataGrid-iconButtonContainer": { display: "none" },
             "& .MuiDataGrid-columnHeader--sortable": {

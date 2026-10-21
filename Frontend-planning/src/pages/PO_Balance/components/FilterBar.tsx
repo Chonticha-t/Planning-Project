@@ -235,7 +235,11 @@ const FilterBar = ({
             <select
               className="select select-sm w-full"
               value={filter.status}
-              onChange={(e) => set("status", e.target.value)}
+              onChange={(e) => {
+                const next = { ...filter, status: e.target.value as PlanningFilter["status"] };
+                onChange(next);
+                onSearch(next);
+              }}
             >
               <option value="">All</option>
               <option value="ready">ready</option>
