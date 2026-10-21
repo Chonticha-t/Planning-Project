@@ -99,6 +99,7 @@ const columns: GridColDef<PlanningRow>[] = [
   {
     field: "prd_name",
     headerName: "Product",
+    headerAlign: "center",
     flex: 1.4,
     minWidth: 160,
     renderCell: ({ value }) => (
@@ -108,6 +109,7 @@ const columns: GridColDef<PlanningRow>[] = [
   {
     field: "due_date",
     headerName: "Due Date",
+    headerAlign: "center",
     flex: 1,
     minWidth: 110,
     // value ยังเป็น YYYY-MM-DD เพื่อให้เรียงลำดับถูก — แปลงแค่ตอนแสดง
