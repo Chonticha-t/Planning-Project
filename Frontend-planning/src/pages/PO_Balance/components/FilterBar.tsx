@@ -1,11 +1,13 @@
 import { Search, RotateCcw, FileSpreadsheet, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import type { PlanningFilter } from "../types";
+import ProductCombobox from "./ProductCombobox";
 
 interface FilterBarProps {
   filter: PlanningFilter;
+  products: string[];
   onChange: (filter: PlanningFilter) => void;
-  onSearch: () => void;
+  onSearch: (filter?: PlanningFilter) => void;
   onReset: () => void;
   onExport: () => void;
   loading: boolean;
@@ -19,7 +21,7 @@ const Field = ({ label, className = "", children }: { label: string; className?:
   </div>
 );
 
-const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: FilterBarProps) => {
+const FilterBar = ({ filter, products, onChange, onSearch, onReset, onExport, loading }: FilterBarProps) => {
   const set = (key: keyof PlanningFilter, value: string) =>
     onChange({ ...filter, [key]: value });
 
@@ -28,16 +30,18 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
       <div className="card-body p-4">
         <div className="flex flex-wrap items-end gap-4">
           <Field label="Product" className="w-full sm:w-60">
-            <label className="input input-sm w-full">
-              <Search size={14} className="opacity-50" />
-              <input
-                type="text"
-                placeholder="Search product name"
-                value={filter.prd_name}
-                onChange={(e) => set("prd_name", e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && onSearch()}
-              />
-            </label>
+            <ProductCombobox
+              value={filter.prd_name}
+              options={products}
+              onChange={(v) => set("prd_name", v)}
+              onSelect={(v) => {
+                // ส่ง filter ใหม่ไปตรง ๆ เพราะ state ยังไม่อัปเดตในรอบนี้
+                const next = { ...filter, prd_name: v };
+                onChange(next);
+                onSearch(next);
+              }}
+              onEnter={() => onSearch()}
+            />
           </Field>
 
           <Field label="Status" className="w-full sm:w-44">
@@ -72,7 +76,7 @@ const FilterBar = ({ filter, onChange, onSearch, onReset, onExport, loading }: F
           </Field>
 
           <div className="flex gap-2">
-            <button className="btn btn-sm btn-primary" onClick={onSearch} disabled={loading}>
+            <button className="btn btn-sm btn-primary" onClick={() => onSearch()} disabled={loading}>
               {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
               Search
             </button>

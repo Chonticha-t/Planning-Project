@@ -10,7 +10,7 @@ import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 
 const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
-  const { rows, summary, loading, fetchData } = usePOBalance();
+  const { rows, summary, products, loading, fetchData } = usePOBalance();
 
   const handleReset = () => {
     setFilter(EMPTY_FILTER);
@@ -44,8 +44,9 @@ const PO_Balance = () => {
       <SummaryCards summary={summary} />
       <FilterBar
         filter={filter}
+        products={products}
         onChange={setFilter}
-        onSearch={() => fetchData(filter)}
+        onSearch={(f = filter) => fetchData(f)}
         onReset={handleReset}
         onExport={handleExport}
         loading={loading}

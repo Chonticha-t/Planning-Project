@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 
-import { PO_BALANCE_SUMMARY_API, PO_BALANCE_TABLE_API } from "./api";
+import { PO_BALANCE_DISTINCT_PRODUCT_API, PO_BALANCE_SUMMARY_API, PO_BALANCE_TABLE_API } from "./api";
 import type { ApiResponse, PlanningFilter, PlanningRow, PlanningSummaryRow } from "../types";
 
 export const EMPTY_FILTER: PlanningFilter = { status: "", prd_name: "", startdate: "", stopdate: "" };
@@ -11,6 +11,7 @@ export const EMPTY_FILTER: PlanningFilter = { status: "", prd_name: "", startdat
 const usePOBalance = () => {
   const [rows, setRows] = useState<PlanningRow[]>([]);
   const [summary, setSummary] = useState<PlanningSummaryRow[]>([]);
+  const [products, setProducts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchData = useCallback(async (f: PlanningFilter) => {
@@ -38,7 +39,15 @@ const usePOBalance = () => {
     fetchData(EMPTY_FILTER);
   }, [fetchData]);
 
-  return { rows, summary, loading, fetchData };
+  // รายชื่อ product สำหรับช่องค้นหา (โหลดครั้งเดียว)
+  useEffect(() => {
+    axios
+      .get<ApiResponse<{ prd_name: string }[]>>(PO_BALANCE_DISTINCT_PRODUCT_API)
+      .then((res) => setProducts((res.data.data ?? []).map((r) => r.prd_name).filter(Boolean)))
+      .catch((err) => console.error(err));
+  }, []);
+
+  return { rows, summary, products, loading, fetchData };
 };
 
 export default usePOBalance;
