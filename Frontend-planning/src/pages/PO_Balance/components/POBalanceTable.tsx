@@ -167,7 +167,7 @@ const POBalanceTable = ({
   onSortModelChange,
 }: POBalanceTableProps) => {
   return (
-    <div className="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
+    <div className="card bg-base-100 border border-base-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-base-300">
         <div className="flex items-center gap-2.5">
           <ClipboardList size={18} className="text-base-content/60" />

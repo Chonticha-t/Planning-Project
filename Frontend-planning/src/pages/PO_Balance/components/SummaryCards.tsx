@@ -22,6 +22,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
     sub: ReactNode;
     icon: typeof Package;
     color: string;
+    borderColor: string;
   }[] = [
     {
       title: "Total PO",
@@ -33,6 +34,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       ),
       icon: Package,
       color: "text-info",
+      borderColor: "border-info/60",
     },
     {
       title: "Ready (Stock Sufficient)",
@@ -44,6 +46,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       ),
       icon: CheckCircle2,
       color: "text-success",
+      borderColor: "border-success/60",
     },
     {
       title: "Production Plan (To Produce)",
@@ -55,6 +58,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       ),
       icon: Factory,
       color: "text-error",
+      borderColor: "border-error/60",
     },
     {
       title: "Last Calculated",
@@ -62,13 +66,17 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       sub: <span>{updatedAt === "-" ? "No data yet" : toDMY(updatedAt)}</span>,
       icon: Clock,
       color: "text-base-content/70",
+      borderColor: "border-base-300",
     },
   ];
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-      {cards.map(({ title, value, sub, icon: Icon, color }) => (
-        <div key={title} className="card bg-base-100 border border-base-300 shadow-sm">
+      {cards.map(({ title, value, sub, icon: Icon, color, borderColor }) => (
+        <div
+          key={title}
+          className={`card bg-base-100 border-[1.5px] ${borderColor} shadow-[0_1px_3px_rgba(0,0,0,0.04)]`}
+        >
           <div className="card-body p-4 flex-row items-center gap-4">
             <div className={`p-3 rounded-box bg-base-200 ${color}`}>
               <Icon size={26} />

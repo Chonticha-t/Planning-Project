@@ -22,7 +22,7 @@ interface FilterBarProps {
   onSortModelChange: (model: GridSortModel) => void;
   onChange: (filter: PlanningFilter) => void;
   onSearch: (filter?: PlanningFilter) => void;
-  onReset: () => void;
+  onReset?: () => void;
   onExport: () => void;
   loading: boolean;
 }
@@ -220,7 +220,7 @@ const FilterBar = ({
   };
 
   return (
-    <div className="card bg-base-100 border border-base-300 shadow-sm">
+    <div className="card bg-base-100 border border-base-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       <div className="card-body p-4">
         <div className="flex flex-wrap items-end gap-4">
           <Field label="Product" className="w-full sm:w-60">
