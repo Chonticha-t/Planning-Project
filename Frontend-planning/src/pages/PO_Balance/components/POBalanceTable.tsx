@@ -1,6 +1,7 @@
 import { DataGrid, GridColDef, GridColumnGroupingModel } from "@mui/x-data-grid";
 import { ClipboardList } from "lucide-react";
 import type { PlanningRow, PlanningStatus } from "../types";
+import { toDMY } from "../utils";
 
 interface POBalanceTableProps {
   rows: PlanningRow[];
@@ -85,7 +86,8 @@ const columns: GridColDef<PlanningRow>[] = [
     headerName: "Due Date",
     flex: 1,
     minWidth: 110,
-    renderCell: ({ value }) => <span className="tabular-nums text-base-content/70">{value}</span>,
+    // value ยังเป็น YYYY-MM-DD เพื่อให้เรียงลำดับถูก — แปลงแค่ตอนแสดง
+    renderCell: ({ value }) => <span className="tabular-nums text-base-content/70">{toDMY(value)}</span>,
   },
   numberCol("po_bal", "PO Bal"),
   // ── Inventory group ──────────────────────────
