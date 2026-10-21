@@ -44,7 +44,7 @@ router.get("/table", async (req, res) => {
         rem_fg::float8                                  AS rem_fg,
         status,
         to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS')    AS updated_at
-      FROM planning.planning
+      FROM planning.po_balance
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY due_date, prd_name
     `;
@@ -76,7 +76,7 @@ router.get("/summary", async (req, res) => {
         COALESCE(SUM(po_bal), 0)::float8     AS po_bal,
         COALESCE(SUM(net_required_pcs), 0)::float8 AS net_required_pcs,
         to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-      FROM planning.planning
+      FROM planning.po_balance
       GROUP BY status
       ORDER BY status
     `;
@@ -102,7 +102,7 @@ router.get("/distinct_product", async (req, res) => {
   try {
     const queryStr = `
       SELECT DISTINCT prd_name
-      FROM planning.planning
+      FROM planning.po_balance
       ORDER BY prd_name
     `;
 
