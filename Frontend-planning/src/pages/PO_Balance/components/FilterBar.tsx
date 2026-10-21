@@ -13,6 +13,7 @@ import {
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
 import { SORT_OPTIONS, type PlanningFilter } from "../types";
 import ProductCombobox from "./ProductCombobox";
+import CallyDatePicker from "@/components/CallyCalendar";
 
 interface FilterBarProps {
   filter: PlanningFilter;
@@ -255,19 +256,18 @@ const FilterBar = ({
 
           <Field label="Due date" className="w-full sm:w-auto">
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-              <input
-                type="date"
-                className="input input-sm w-full sm:w-36 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
+              <CallyDatePicker
                 value={filter.startdate}
-                onChange={(e) => set("startdate", e.target.value)}
+                max={filter.stopdate || undefined}
+                placeholder="Start date"
+                onChange={(v) => set("startdate", v)}
               />
               <span className="text-base-content/50">–</span>
-              <input
-                type="date"
-                className="input input-sm w-full sm:w-36 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
+              <CallyDatePicker
                 value={filter.stopdate}
                 min={filter.startdate || undefined}
-                onChange={(e) => set("stopdate", e.target.value)}
+                placeholder="End date"
+                onChange={(v) => set("stopdate", v)}
               />
               <button
                 type="button"
