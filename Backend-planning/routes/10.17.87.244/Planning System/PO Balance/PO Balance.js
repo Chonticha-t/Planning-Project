@@ -65,8 +65,30 @@ router.get("/table", async (req, res) => {
   }
 });
 
-// GET /api_p1/planning/summary — สรุปจำนวนแถว / ยอดที่ต้องผลิต แยกตาม status
+// GET /api_p1/planning/summary — สรุปจำนวนแถว / ยอดที่ต้องผลิต แยกตาม status (รองรับ filter เดียวกับ /table)
 router.get("/summary", async (req, res) => {
+  const { status, prd_name, startdate, stopdate } = req.query;
+
+  const where = [];
+  const params = [];
+
+  if (status) {
+    params.push(status);
+    where.push(`status = $${params.length}`);
+  }
+  if (prd_name) {
+    params.push(`%${prd_name}%`);
+    where.push(`prd_name ILIKE $${params.length}`);
+  }
+  if (startdate) {
+    params.push(startdate);
+    where.push(`due_date >= $${params.length}::date`);
+  }
+  if (stopdate) {
+    params.push(stopdate);
+    where.push(`due_date <= $${params.length}::date`);
+  }
+
   try {
     const queryStr = `
       SELECT
@@ -77,11 +99,12 @@ router.get("/summary", async (req, res) => {
         COALESCE(SUM(net_required_pcs), 0)::float8 AS net_required_pcs,
         to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
       FROM planning.po_balance
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
       GROUP BY status
       ORDER BY status
     `;
 
-    const { rows } = await query(queryStr);
+    const { rows } = await query(queryStr, params);
 
     return res.json({
       status: "OK",

@@ -3,9 +3,52 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 import { PO_BALANCE_DISTINCT_PRODUCT_API, PO_BALANCE_SUMMARY_API, PO_BALANCE_TABLE_API } from "./api";
-import type { ApiResponse, PlanningFilter, PlanningRow, PlanningSummaryRow } from "../types";
+import type { ApiResponse, PlanningFilter, PlanningRow, PlanningStatus, PlanningSummaryRow } from "../types";
 
 export const EMPTY_FILTER: PlanningFilter = { status: "", prd_name: "", startdate: "", stopdate: "" };
+
+// คำนวณ summary จากแถวข้อมูลที่ถูก filter
+export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[] => {
+  const byStatus: Record<
+    string,
+    {
+      total_rows: number;
+      products: Set<string>;
+      po_bal: number;
+      net_required_pcs: number;
+      updated_at: string;
+    }
+  > = {};
+
+  for (const r of rows) {
+    if (!byStatus[r.status]) {
+      byStatus[r.status] = {
+        total_rows: 0,
+        products: new Set(),
+        po_bal: 0,
+        net_required_pcs: 0,
+        updated_at: r.updated_at || "",
+      };
+    }
+    const s = byStatus[r.status];
+    s.total_rows += 1;
+    s.products.add(r.prd_name);
+    s.po_bal += Number(r.po_bal) || 0;
+    s.net_required_pcs += Number(r.net_required_pcs) || 0;
+    if (r.updated_at && (!s.updated_at || r.updated_at > s.updated_at)) {
+      s.updated_at = r.updated_at;
+    }
+  }
+
+  return Object.entries(byStatus).map(([status, s]) => ({
+    status: status as PlanningStatus,
+    total_rows: s.total_rows,
+    total_products: s.products.size,
+    po_bal: s.po_bal,
+    net_required_pcs: s.net_required_pcs,
+    updated_at: s.updated_at,
+  }));
+};
 
 // ดึงข้อมูลตาราง + summary ของหน้า PO Balance
 const usePOBalance = () => {
@@ -20,13 +63,16 @@ const usePOBalance = () => {
       // ส่งเฉพาะ filter ที่มีค่า
       const params = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ""));
 
-      const [table, sum] = await Promise.all([
+      const [table] = await Promise.all([
         axios.get<ApiResponse<PlanningRow[]>>(PO_BALANCE_TABLE_API, { params }),
-        axios.get<ApiResponse<PlanningSummaryRow[]>>(PO_BALANCE_SUMMARY_API),
+        // ส่ง params ไปที่ summary API ด้วยสำหรับ backend
+        axios.get<ApiResponse<PlanningSummaryRow[]>>(PO_BALANCE_SUMMARY_API, { params }).catch(() => null),
       ]);
 
-      setRows(table.data.data ?? []);
-      setSummary(sum.data.data ?? []);
+      const tableData = table.data.data ?? [];
+      setRows(tableData);
+      // คำนวณสรุปยอด CardSum ตามข้อมูลที่ filter ได้ทันที ให้ตรงกับตารางเสมอ
+      setSummary(computeSummaryFromRows(tableData));
     } catch (err) {
       console.error(err);
       toast.error("Failed to fetch data. Please check that the backend is running.");

@@ -89,11 +89,11 @@ const SortByDropdown = ({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`btn btn-sm gap-2 font-medium ${
-          activeField
-            ? "btn-outline btn-primary"
+        className={`btn btn-sm gap-2 font-medium focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary transition-colors ${
+          open || activeField
+            ? "border-primary text-primary"
             : "bg-base-100 border-base-300 text-base-content hover:bg-base-200"
-        }`}
+        } ${activeField ? "btn-outline btn-primary" : ""}`}
       >
         {activeField ? (
           activeDir === "asc" ? (
@@ -233,7 +233,7 @@ const FilterBar = ({
 
           <Field label="Status" className="w-full sm:w-44">
             <select
-              className="select select-sm w-full"
+              className="select select-sm w-full focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
               value={filter.status}
               onChange={(e) => {
                 const next = { ...filter, status: e.target.value as PlanningFilter["status"] };
@@ -251,14 +251,14 @@ const FilterBar = ({
             <div className="flex items-center gap-2">
               <input
                 type="date"
-                className="input input-sm w-full sm:w-40"
+                className="input input-sm w-full sm:w-40 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
                 value={filter.startdate}
                 onChange={(e) => set("startdate", e.target.value)}
               />
               <span className="text-base-content/50">–</span>
               <input
                 type="date"
-                className="input input-sm w-full sm:w-40"
+                className="input input-sm w-full sm:w-40 focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
                 value={filter.stopdate}
                 min={filter.startdate || undefined}
                 onChange={(e) => set("stopdate", e.target.value)}
