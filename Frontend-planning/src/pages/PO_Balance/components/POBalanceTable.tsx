@@ -1,6 +1,7 @@
 import { DataGrid, GridColDef, GridColumnGroupingModel } from "@mui/x-data-grid";
 import { ClipboardList } from "lucide-react";
 import type { PlanningRow, PlanningStatus } from "../types";
+import { toDMY } from "../utils";
 
 interface POBalanceTableProps {
   rows: PlanningRow[];
@@ -85,7 +86,8 @@ const columns: GridColDef<PlanningRow>[] = [
     headerName: "Due Date",
     flex: 1,
     minWidth: 110,
-    renderCell: ({ value }) => <span className="tabular-nums text-base-content/70">{value}</span>,
+    // value ยังเป็น YYYY-MM-DD เพื่อให้เรียงลำดับถูก — แปลงแค่ตอนแสดง
+    renderCell: ({ value }) => <span className="tabular-nums text-base-content/70">{toDMY(value)}</span>,
   },
   numberCol("po_bal", "PO Bal"),
   // ── Inventory group ──────────────────────────
@@ -154,6 +156,8 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
           columnGroupHeaderHeight={GROUP_HEADER_H}
           disableRowSelectionOnClick
           disableColumnMenu
+          showColumnVerticalBorder
+          showCellVerticalBorder
           initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
           pageSizeOptions={[25, 50, 100]}
           sx={{
@@ -185,6 +189,18 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
                 "& .MuiDataGrid-columnHeaderTitleContainer": {
                   transform: `translateY(-${GROUP_HEADER_H / 2}px)`,
                 },
+                // DataGrid รวมช่องแถวบนของคอลัมน์ที่ไม่มีกลุ่มซึ่งอยู่ติดกันเป็นช่องเดียว → ไม่มีเส้นคั่น
+                // เลยต่อเส้นขวาขึ้นไปถึงแถวบน ให้เส้นยาวเต็มหัวตาราง
+                "&::after": {
+                  content: '""',
+                  position: "absolute",
+                  top: -GROUP_HEADER_H,
+                  right: -1,
+                  width: "1px",
+                  height: GROUP_HEADER_H,
+                  backgroundColor: border,
+                  pointerEvents: "none",
+                },
               },
 
             // ── Inventory: group header row ──────────
@@ -200,13 +216,8 @@ const POBalanceTable = ({ rows, loading }: POBalanceTableProps) => {
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer": {
               borderBottom: `1px solid ${border}`,
             },
-            // เส้นบางๆ ขอบซ้าย/ขวาของกลุ่ม Inventory (ทั้งแถว INVENTORY และหัวคอลัมน์ย่อย)
-            "& .MuiDataGrid-columnHeader.inv-group, & .MuiDataGrid-columnHeader.inv-first": {
-              borderLeft: `1px solid ${border}`,
-            },
-            "& .MuiDataGrid-columnHeader.inv-group, & .MuiDataGrid-columnHeader.inv-last": {
-              borderRight: `1px solid ${border}`,
-            },
+            // เส้นคั่นแนวตั้งระหว่างคอลัมน์ (หัวตาราง + ข้อมูล)
+            "& .MuiDataGrid-withBorderColor": { borderColor: border },
 
             "& .MuiDataGrid-columnSeparator": { display: "none" },
             "& .MuiDataGrid-sortIcon": { opacity: 0.5 },

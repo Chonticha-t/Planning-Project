@@ -7,6 +7,7 @@ import SummaryCards from "../components/SummaryCards";
 import FilterBar from "../components/FilterBar";
 import POBalanceTable from "../components/POBalanceTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
+import { toDMY } from "../utils";
 
 const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
@@ -26,7 +27,7 @@ const PO_Balance = () => {
       fileName: "production_plan",
       data: rows.map((r) => ({
         Product: r.prd_name,
-        "Due Date": r.due_date,
+        "Due Date": toDMY(r.due_date),
         "PO Bal": r.po_bal,
         Unmovement: r.unmovement,
         "F/G": r.f_g,

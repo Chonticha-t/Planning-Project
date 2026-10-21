@@ -1,5 +1,6 @@
 import { CheckCircle2, Factory, Package, Clock } from "lucide-react";
 import type { PlanningSummaryRow } from "../types";
+import { toDMY } from "../utils";
 
 interface SummaryCardsProps {
   summary: PlanningSummaryRow[];
@@ -39,7 +40,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
     {
       title: "Last Calculated",
       value: updatedAt === "-" ? "-" : updatedAt.slice(11, 16),
-      sub: updatedAt === "-" ? "No data yet" : updatedAt.slice(0, 10),
+      sub: updatedAt === "-" ? "No data yet" : toDMY(updatedAt),
       icon: Clock,
       color: "text-base-content/70",
     },
