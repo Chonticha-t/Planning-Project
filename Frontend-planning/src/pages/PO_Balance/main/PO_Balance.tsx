@@ -1,5 +1,6 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
+import type { GridSortModel } from "@mui/x-data-grid";
 
 import type { PlanningFilter } from "../types";
 import usePOBalance, { EMPTY_FILTER } from "../hooks/usePOBalance";
@@ -11,10 +12,12 @@ import { toDMY } from "../utils";
 
 const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
+  const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const { rows, summary, products, loading, fetchData } = usePOBalance();
 
   const handleReset = () => {
     setFilter(EMPTY_FILTER);
+    setSortModel([]);
     fetchData(EMPTY_FILTER);
   };
 
@@ -52,7 +55,7 @@ const PO_Balance = () => {
         onExport={handleExport}
         loading={loading}
       />
-      <POBalanceTable rows={rows} loading={loading} />
+      <POBalanceTable rows={rows} loading={loading} sortModel={sortModel} onSortModelChange={setSortModel} />
     </div>
   );
 };
