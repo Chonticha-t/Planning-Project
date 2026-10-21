@@ -231,7 +231,7 @@ const POBalanceTable = ({
               letterSpacing: "0.04em",
               textTransform: "uppercase",
               color:
-                "color-mix(in oklab, var(--color-base-content) 55%, transparent)",
+                "color-mix(in oklab, var(--color-base-content) 80%, transparent)",
             },
 
             // คอลัมน์ที่ไม่มีกลุ่ม (Product, Due Date, PO Bal, Net Required, Status)
