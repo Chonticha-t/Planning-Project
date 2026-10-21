@@ -23,7 +23,6 @@ export const SORT_OPTIONS: { field: keyof PlanningRow; label: string }[] = [
   { field: "f_g", label: "F/G" },
   { field: "rem_fg", label: "Rem F/G" },
   { field: "net_required_pcs", label: "Net Required" },
-  { field: "status", label: "Status" },
 ];
 
 export interface PlanningSummaryRow {
