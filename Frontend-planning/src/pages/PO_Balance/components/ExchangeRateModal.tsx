@@ -323,13 +323,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       }}
     >
       <div
-        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-5 sm:p-6 border border-base-300 flex flex-col animate-in fade-in zoom-in-95 duration-150"
+        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col animate-in fade-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
         aria-labelledby="exchange-rate-title"
       >
         {/* Header */}
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-3">
             <CircleDollarSign size={26} className="text-primary shrink-0" strokeWidth={2.2} />
             <div>
@@ -360,11 +360,11 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-[12px] text-base-content/60 mt-0.5">
+              <p className="text-[12px] text-base-content/60 mt-1">
                 {loading
                   ? "Loading exchange rate from database..."
                   : !isFromDb
-                  ? `No record for ${selectedMonth} ${selectedYear} — enter rates below and click Save.`
+                  ? `No record for ${selectedMonth} ${selectedYear}.`
                   : isEditing
                   ? `Editing exchange rates for ${selectedMonth} ${selectedYear}.`
                   : `Saved exchange rates for ${selectedMonth} ${selectedYear}.`}
@@ -382,8 +382,8 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         </div>
 
         {/* Record Period */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-2.5">
             <span className="text-[11px] font-bold text-base-content/50 tracking-wider uppercase">
               RECORD PERIOD
             </span>
@@ -407,7 +407,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                   monthOpen ? "border-primary ring-2 ring-primary/20" : "border-base-300"
                 } ${
                   isFromDb && isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
+                } rounded-xl px-3.5 py-3 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
               >
                 <div className="flex items-center gap-2 truncate">
                   <CalendarIcon size={16} className="text-base-content/70 shrink-0" />
@@ -471,7 +471,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                   yearOpen ? "border-primary ring-2 ring-primary/20" : "border-base-300"
                 } ${
                   isFromDb && isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
+                } rounded-xl px-3.5 py-3 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
               >
                 <div className="flex items-center gap-2 truncate">
                   <CalendarIcon size={16} className="text-base-content/70 shrink-0" />
@@ -516,7 +516,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         </div>
 
         {/* Currency Exchange Rates */}
-        <div className="mb-5">
+        <div className="mb-6">
           <div className="flex items-center justify-between mb-2.5">
             <span className="text-[11px] font-bold text-base-content/50 tracking-wider uppercase">
               CURRENCY EXCHANGE RATES
@@ -524,9 +524,9 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <span className="text-[11px] text-base-content/50 font-medium">Base: 1 THB</span>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {/* THB to JPY */}
-            <div className="rounded-xl border border-base-300 bg-base-200/30 hover:border-base-content/20 px-3.5 py-2.5 sm:py-3 flex items-center justify-between gap-2.5 shadow-2xs transition-colors">
+            <div className="rounded-xl border border-base-300 bg-base-200/30 hover:border-base-content/20 px-4 py-3.5 sm:py-4 flex items-center justify-between gap-2.5 shadow-2xs transition-colors">
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
                 {/* 1 THB */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -589,7 +589,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             </div>
 
             {/* THB to USD */}
-            <div className="rounded-xl border border-base-300 bg-base-200/30 hover:border-base-content/20 px-3.5 py-2.5 sm:py-3 flex items-center justify-between gap-2.5 shadow-2xs transition-colors">
+            <div className="rounded-xl border border-base-300 bg-base-200/30 hover:border-base-content/20 px-4 py-3.5 sm:py-4 flex items-center justify-between gap-2.5 shadow-2xs transition-colors">
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
                 {/* 1 THB */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -614,8 +614,8 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     <span className="text-[14px] font-bold text-base-content leading-tight whitespace-nowrap">
                       USD
                     </span>
-                    <span className="text-[10.5px] text-base-content/50 whitespace-nowrap">
-                      United States (Dollar)
+                    <span className="text-[10.5px] text-base-content/50 whitespace-nowrap leading-tight">
+                      United States<br />(Dollar)
                     </span>
                   </div>
                 </div>
@@ -655,12 +655,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         {/* Footer Action Buttons */}
         {!isFromDb ? (
           // New Month (Not in DB yet): Close + Save directly
-          <div className="flex items-center gap-3 mb-3.5">
+          <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
               disabled={saving}
               onClick={onClose}
-              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
               Close
             </button>
@@ -668,7 +668,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               type="button"
               disabled={saving || loading}
               onClick={handleSave}
-              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[44px] h-[44px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
               {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
               <span>{saving ? "Saving..." : "Save"}</span>
@@ -676,12 +676,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           </div>
         ) : isEditing ? (
           // Existing Month in DB + Editing: Cancel + Save
-          <div className="flex items-center gap-3 mb-3.5">
+          <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
               disabled={saving}
               onClick={handleCancelEdit}
-              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
               Cancel
             </button>
@@ -689,7 +689,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               type="button"
               disabled={saving}
               onClick={handleSave}
-              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[44px] h-[44px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
               {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
               <span>{saving ? "Saving..." : "Save"}</span>
@@ -697,11 +697,11 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           </div>
         ) : (
           // Existing Month in DB + View Mode: Close + Edit
-          <div className="flex items-center gap-3 mb-3.5">
+          <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
               Close
             </button>
@@ -709,7 +709,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               type="button"
               disabled={loading}
               onClick={handleStartEdit}
-              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[44px] h-[44px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
               <Pencil size={15} />
               <span>Edit</span>
@@ -718,14 +718,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         )}
 
         {/* Audit / Security footer */}
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-base-content/50 font-normal">
-          <ShieldCheck size={14} className="text-primary shrink-0" />
-          <span>
-            {lastUpdatedAt
-              ? `Last saved to DB: ${lastUpdatedAt}`
-              : "No record saved in DB for this period yet"}
-          </span>
-        </div>
+        {lastUpdatedAt && (
+          <div className="flex items-center justify-center gap-1.5 text-[11px] text-base-content/50 font-normal">
+            <ShieldCheck size={14} className="text-primary shrink-0" />
+            <span>Last saved to DB: {lastUpdatedAt}</span>
+          </div>
+        )}
       </div>
     </div>
   );
