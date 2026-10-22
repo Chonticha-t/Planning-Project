@@ -14,7 +14,9 @@ import {
   AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { AnimatePresence, motion } from "motion/react";
 import { PO_BALANCE_EXCHANGE_RATE_API } from "../hooks/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 export interface ExchangeRateData {
   jpy: number;
@@ -130,6 +132,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
+  const confirm = useConfirm();
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -251,8 +254,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     };
   }, [isOpen, selectedMonth, selectedYear]);
 
-  const handleStartEdit = () => {
-    setIsEditing(true);
+  const handleStartEdit = async () => {
+    const ok = await confirm({
+      variant: "edit",
+      title: "Edit exchange rates?",
+      description: `You are about to edit the saved rates for ${selectedMonth} ${selectedYear}.`,
+    });
+    if (ok) setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
@@ -269,6 +277,36 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       toast.error("Please enter valid positive rates for both JPY and USD.");
       return;
     }
+
+    const ok = await confirm({
+      variant: "save",
+      title: "Save exchange rates?",
+      description: (
+        <>
+          <p>
+            Please confirm the rates for{" "}
+            <span className="font-semibold text-base-content">
+              {selectedMonth} {selectedYear}
+            </span>
+            .
+          </p>
+          <div className="mt-3 rounded-xl border border-base-300 bg-base-200/40 divide-y divide-base-300">
+            {[
+              { pair: "THB → JPY", value: `¥${numJpy.toLocaleString("en-US", { minimumFractionDigits: 2 })}` },
+              { pair: "THB → USD", value: `$${numUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}` },
+            ].map((r) => (
+              <div key={r.pair} className="flex items-center justify-between px-3.5 py-2">
+                <span className="text-[12px] font-medium text-base-content/60">
+                  <span className="text-sm font-bold text-base-content">1</span> {r.pair}
+                </span>
+                <span className="font-bold text-base-content tabular-nums">{r.value}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ),
+    });
+    if (!ok) return;
 
     setSaving(true);
 
@@ -306,6 +344,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
       toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear}.`);
       onSaved?.({ jpy: numJpy, usd: numUsd, updatedAt: new Date().toISOString() });
+      onClose();
     } catch (e: any) {
       console.error("Save error:", e);
       const msg = e.response?.data?.message || e.message || "Failed to save exchange rates.";
@@ -315,22 +354,30 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   // Input is active if it's a new month (!isFromDb) OR user clicked Edit on an existing month
   const isInputActive = !isFromDb || isEditing;
 
   return (
-    <div
+    <AnimatePresence>
+    {isOpen && (
+    <motion.div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
         }
       }}
     >
-      <div
-        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col animate-in fade-in zoom-in-95 duration-150"
+      <motion.div
+        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col"
+        initial={{ opacity: 0, scale: 0.95, y: -40 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: -40 }}
+        transition={{ type: "spring", stiffness: 260, damping: 24 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="exchange-rate-title"
@@ -731,8 +778,10 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <span>Last saved to DB: {lastUpdatedAt}</span>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    )}
+    </AnimatePresence>
   );
 };
 
