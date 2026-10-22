@@ -6,6 +6,7 @@ import type { PlanningFilter } from "../types";
 import usePOBalance, { EMPTY_FILTER } from "../hooks/usePOBalance";
 import SummaryCards from "../components/SummaryCards";
 import FilterBar from "../components/FilterBar";
+import ExchangeRateModal from "../components/ExchangeRateModal";
 import POBalanceTable from "../components/POBalanceTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import { toDMY } from "../utils";
@@ -13,6 +14,7 @@ import { toDMY } from "../utils";
 const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
+  const [isExchangeRateModalOpen, setIsExchangeRateModalOpen] = useState(false);
   const { rows, summary, products, loading, fetchData } = usePOBalance();
 
   const handleReset = () => {
@@ -65,9 +67,14 @@ const PO_Balance = () => {
         onSearch={(f = filter) => fetchData(f)}
         onReset={handleReset}
         onExport={handleExport}
+        onOpenExchangeRate={() => setIsExchangeRateModalOpen(true)}
         loading={loading}
       />
       <POBalanceTable rows={rows} loading={loading} sortModel={sortModel} onSortModelChange={setSortModel} />
+      <ExchangeRateModal
+        isOpen={isExchangeRateModalOpen}
+        onClose={() => setIsExchangeRateModalOpen(false)}
+      />
     </div>
   );
 };

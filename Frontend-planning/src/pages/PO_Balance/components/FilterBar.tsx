@@ -9,6 +9,7 @@ import {
   ArrowDown,
   ChevronDown,
   Check,
+  CircleDollarSign,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
 import { SORT_OPTIONS, type PlanningFilter } from "../types";
@@ -25,6 +26,7 @@ interface FilterBarProps {
   onReset?: () => void;
   onExport: () => void;
   loading: boolean;
+  onOpenExchangeRate?: () => void;
 }
 
 // label อยู่บน input เสมอ (daisyUI 5 ไม่มี form-control / label-text แล้ว)
@@ -209,6 +211,7 @@ const FilterBar = ({
   onReset: _onReset,
   onExport,
   loading,
+  onOpenExchangeRate,
 }: FilterBarProps) => {
   const set = (key: keyof PlanningFilter, value: string) =>
     onChange({ ...filter, [key]: value });
@@ -291,6 +294,17 @@ const FilterBar = ({
           </Field>
 
           <div className="flex items-center gap-2 ml-auto">
+            {onOpenExchangeRate && (
+              <button
+                type="button"
+                onClick={onOpenExchangeRate}
+                className="btn btn-sm btn-outline btn-primary text-[13px] gap-1.5 focus:outline-none transition-colors"
+                title="Exchange Rate"
+              >
+                <CircleDollarSign size={16} className="shrink-0" />
+                <span className="hidden sm:inline font-medium">Exchange Rate</span>
+              </button>
+            )}
             <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
             <button className="btn btn-sm btn-success btn-outline text-[13px]" onClick={onExport} disabled={loading}>
               <FileSpreadsheet size={16} />
