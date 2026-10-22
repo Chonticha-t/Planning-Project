@@ -661,7 +661,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
         {/* Footer Action Buttons */}
         {!isFromDb ? (
-          // New Month (Not in DB yet): Close + Save directly
+          // New Month (Not in DB yet): Cancel + Save directly
           <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
@@ -669,7 +669,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               onClick={onClose}
               className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
-              Close
+              Cancel
             </button>
             <button
               type="button"

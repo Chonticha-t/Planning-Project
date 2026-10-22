@@ -288,18 +288,43 @@ router.post("/exchange_rate", async (req, res) => {
   setNoCache(res);
   const { year, month_name, month_no, rates } = req.body;
 
-  const y = parseInt(year, 10);
-  const mNo = parseInt(month_no, 10) || MONTH_NAME_TO_NO[month_name];
-  const mName = month_name || NO_TO_MONTH_NAME[mNo];
-
-  if (!y || !mNo || mNo < 1 || mNo > 12 || !mName || !MONTH_NAME_TO_NO[mName]) {
+  // ปีต้องเป็นตัวเลข 4 หลักล้วน และอยู่ในช่วงที่สมเหตุสมผล
+  const y = /^\d{4}$/.test(String(year)) ? Number(year) : NaN;
+  if (!(y >= 2000 && y <= 2100)) {
     return res.status(400).json({
       status: "ERROR",
-      message: "Invalid year or month.",
+      message: "Invalid year. Must be between 2000 and 2100.",
     });
   }
 
-  if (!rates || typeof rates !== "object") {
+  // เดือน: รับ month_no หรือ month_name ก็ได้ แต่ถ้าส่งมาทั้งคู่ต้องตรงกัน
+  const hasMonthNo = month_no !== undefined && month_no !== null && month_no !== "";
+  const noFromParam = hasMonthNo && /^\d{1,2}$/.test(String(month_no)) ? Number(month_no) : NaN;
+  const noFromName = MONTH_NAME_TO_NO[month_name];
+
+  if (hasMonthNo && !(noFromParam >= 1 && noFromParam <= 12)) {
+    return res.status(400).json({ status: "ERROR", message: "Invalid month_no." });
+  }
+  if (month_name && !noFromName) {
+    return res.status(400).json({ status: "ERROR", message: "Invalid month_name." });
+  }
+  if (hasMonthNo && month_name && noFromParam !== noFromName) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "month_no and month_name do not match.",
+    });
+  }
+
+  const mNo = hasMonthNo ? noFromParam : noFromName;
+  const mName = NO_TO_MONTH_NAME[mNo];
+  if (!mNo || !mName) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "month_no or month_name is required.",
+    });
+  }
+
+  if (!rates || typeof rates !== "object" || Array.isArray(rates)) {
     return res.status(400).json({
       status: "ERROR",
       message: "rates object is required.",
@@ -316,9 +341,11 @@ router.post("/exchange_rate", async (req, res) => {
     });
   }
 
+  // อัตราต้องเป็นตัวเลขล้วน (ทศนิยมได้) ห้ามมีตัวอักษร/คอมมา และต้องมากกว่า 0
+  const RATE_PATTERN = /^\d+(\.\d+)?$/;
   for (const [curr, rate] of entries) {
-    const val = parseFloat(rate);
-    if (isNaN(val) || val <= 0) {
+    const val = Number(rate);
+    if (!RATE_PATTERN.test(String(rate).trim()) || !Number.isFinite(val) || val <= 0) {
       return res.status(400).json({
         status: "ERROR",
         message: `Invalid rate for currency ${curr}. Must be a positive number.`,
