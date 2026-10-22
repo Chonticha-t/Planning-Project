@@ -28,17 +28,27 @@ const PO_Balance = () => {
     }
     exportToExcel({
       fileName: "production_plan",
+      columns: [
+        { header: "PRODUCT", key: "prd_name", align: "left" },
+        { header: "DUE DATE", key: "due_date", align: "center" },
+        { header: "PO BAL", key: "po_bal", align: "center", numFmt: "#,##0" },
+        { header: "UNMOVEMENT", key: "unmovement", group: "INVENTORY", align: "center", numFmt: "#,##0" },
+        { header: "REM UNMOVE", key: "rem_unmovement", group: "INVENTORY", align: "center", numFmt: "#,##0" },
+        { header: "F/G", key: "f_g", group: "INVENTORY", align: "center", numFmt: "#,##0" },
+        { header: "REM F/G", key: "rem_fg", group: "INVENTORY", align: "center", numFmt: "#,##0" },
+        { header: "NET REQUIRED", key: "net_required_pcs", align: "center", numFmt: "#,##0" },
+        { header: "STATUS", key: "status", align: "center" },
+      ],
       data: rows.map((r) => ({
-        Product: r.prd_name,
-        "Due Date": toDMY(r.due_date),
-        "PO Bal": r.po_bal,
-        Unmovement: r.unmovement,
-        "F/G": r.f_g,
-
-        "Net Required": r.net_required_pcs,
-        "Rem Unmove": r.rem_unmovement,
-        "Rem F/G": r.rem_fg,
-        Status: r.status,
+        prd_name: r.prd_name,
+        due_date: toDMY(r.due_date),
+        po_bal: r.po_bal,
+        unmovement: r.unmovement,
+        rem_unmovement: r.rem_unmovement,
+        f_g: r.f_g,
+        rem_fg: r.rem_fg,
+        net_required_pcs: r.net_required_pcs,
+        status: r.status,
       })),
     });
   };
