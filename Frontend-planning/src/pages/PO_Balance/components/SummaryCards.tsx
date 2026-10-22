@@ -41,7 +41,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       value: fmt(ready?.total_rows ?? 0),
       sub: (
         <span>
-          <span className="font-semibold text-success">{fmt(ready?.total_products ?? 0)}</span> products
+          <span className="font-semibold text-success">{fmt(ready?.po_bal ?? 0)}</span> pcs
         </span>
       ),
       icon: CheckCircle2,
@@ -82,9 +82,9 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
               <Icon size={26} />
             </div>
             <div className="min-w-0">
-              <div className="text-[13px] text-base-content/60 truncate">{title}</div>
+              <div className="text-xs text-base-content/60 truncate">{title}</div>
               <div className={`text-2xl font-bold ${color}`}>{value}</div>
-              <div className="text-[13px] text-base-content/60 truncate">{sub}</div>
+              <div className="text-xs text-base-content/60 truncate">{sub}</div>
             </div>
           </div>
         </div>
