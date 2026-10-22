@@ -196,4 +196,160 @@ router.get("/last_updated", async (req, res) => {
   }
 });
 
+const MONTH_NAME_TO_NO = {
+  January: 1, February: 2, March: 3, April: 4,
+  May: 5, June: 6, July: 7, August: 8,
+  September: 9, October: 10, November: 11, December: 12
+};
+const NO_TO_MONTH_NAME = Object.fromEntries(
+  Object.entries(MONTH_NAME_TO_NO).map(([k, v]) => [v, k])
+);
+
+// GET /api_p1/planning/exchange_rate — ดึงอัตราแลกเปลี่ยนตามปีและเดือน
+router.get("/exchange_rate", async (req, res) => {
+  setNoCache(res);
+  const year = parseInt(req.query.year, 10);
+  const monthParam = req.query.month;
+
+  if (!year || !monthParam) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "year and month query parameters are required.",
+    });
+  }
+
+  const monthNo = parseInt(monthParam, 10) || MONTH_NAME_TO_NO[monthParam];
+  if (!monthNo || monthNo < 1 || monthNo > 12) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "Invalid month parameter.",
+    });
+  }
+
+  try {
+    const queryStr = `
+      SELECT
+        "year",
+        month_no,
+        month_name,
+        currency,
+        rate_per_thb::float8 AS rate_per_thb,
+        rate_to_thb::float8  AS rate_to_thb,
+        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+      FROM planning.exchange_rate_monthly
+      WHERE "year" = $1 AND month_no = $2
+      ORDER BY currency;
+    `;
+
+    const { rows } = await query(queryStr, [year, monthNo]);
+
+    const rates = {};
+    let updatedAt = null;
+
+    for (const row of rows) {
+      rates[row.currency] = row.rate_per_thb;
+      if (!updatedAt || (row.updated_at && row.updated_at > updatedAt)) {
+        updatedAt = row.updated_at;
+      }
+    }
+
+    return res.json({
+      status: "OK",
+      data: rows.length > 0 ? {
+        year,
+        month_no: monthNo,
+        month_name: NO_TO_MONTH_NAME[monthNo] || rows[0]?.month_name,
+        rates,
+        updated_at: updatedAt,
+      } : null,
+      message: rows.length > 0 ? "Exchange rates found." : "No exchange rates found for this period.",
+    });
+  } catch (err) {
+    console.error("Database error in /exchange_rate:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      message: "Internal Server Error",
+    });
+  }
+});
+
+// POST /api_p1/planning/exchange_rate — บันทึกหรืออัปเดตอัตราแลกเปลี่ยน (UPSERT)
+router.post("/exchange_rate", async (req, res) => {
+  setNoCache(res);
+  const { year, month_name, month_no, rates } = req.body;
+
+  const y = parseInt(year, 10);
+  const mNo = parseInt(month_no, 10) || MONTH_NAME_TO_NO[month_name];
+  const mName = month_name || NO_TO_MONTH_NAME[mNo];
+
+  if (!y || !mNo || mNo < 1 || mNo > 12 || !mName || !MONTH_NAME_TO_NO[mName]) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "Invalid year or month.",
+    });
+  }
+
+  if (!rates || typeof rates !== "object") {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "rates object is required.",
+    });
+  }
+
+  const allowedCurrencies = ["JPY", "USD", "THB"];
+  const entries = Object.entries(rates).filter(([curr]) => allowedCurrencies.includes(curr));
+
+  if (entries.length === 0) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "No valid currencies provided. Allowed: JPY, USD, THB.",
+    });
+  }
+
+  for (const [curr, rate] of entries) {
+    const val = parseFloat(rate);
+    if (isNaN(val) || val <= 0) {
+      return res.status(400).json({
+        status: "ERROR",
+        message: `Invalid rate for currency ${curr}. Must be a positive number.`,
+      });
+    }
+  }
+
+  const client = await pool_smart.connect();
+  try {
+    await client.query("BEGIN");
+
+    const upsertQuery = `
+      INSERT INTO planning.exchange_rate_monthly ("year", month_no, month_name, currency, rate_per_thb, updated_at)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      ON CONFLICT ("year", month_no, currency)
+      DO UPDATE SET
+        rate_per_thb = EXCLUDED.rate_per_thb,
+        month_name   = EXCLUDED.month_name,
+        updated_at   = CURRENT_TIMESTAMP;
+    `;
+
+    for (const [curr, rate] of entries) {
+      await client.query(upsertQuery, [y, mNo, mName, curr, parseFloat(rate)]);
+    }
+
+    await client.query("COMMIT");
+
+    return res.json({
+      status: "OK",
+      message: "Exchange rates saved successfully.",
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error saving exchange rates:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      message: "Internal Server Error",
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

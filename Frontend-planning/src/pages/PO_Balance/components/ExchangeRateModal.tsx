@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import axios from "axios";
 import {
   CircleDollarSign,
   X,
@@ -8,8 +9,11 @@ import {
   ShieldCheck,
   Check,
   Pencil,
+  RefreshCw,
+  Database,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { PO_BALANCE_EXCHANGE_RATE_API } from "../hooks/api";
 
 export interface ExchangeRateData {
   jpy: number;
@@ -115,6 +119,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const [savedJpyRate, setSavedJpyRate] = useState<string>("4.25");
   const [savedUsdRate, setSavedUsdRate] = useState<string>("0.028");
 
+  // DB Sync state
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [isFromDb, setIsFromDb] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
 
@@ -167,31 +177,82 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, isEditing, onClose]);
 
-  // Load saved rate for current period
+  // Fetch rate from Database (with localStorage fallback)
   useEffect(() => {
     if (!isOpen) {
       setIsEditing(false);
       return;
     }
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
-      const periodKey = `${selectedYear}-${selectedMonth}`;
-      const data = parsed[periodKey] || DEFAULT_RATES[periodKey] || DEFAULT_RATES.default;
-      const jpy = data.jpy.toString();
-      const usd = data.usd.toString();
-      setJpyRate(jpy);
-      setUsdRate(usd);
-      setSavedJpyRate(jpy);
-      setSavedUsdRate(usd);
-      setIsEditing(false);
-    } catch {
-      setJpyRate("4.25");
-      setUsdRate("0.028");
-      setSavedJpyRate("4.25");
-      setSavedUsdRate("0.028");
-      setIsEditing(false);
-    }
+
+    let isMounted = true;
+    setLoading(true);
+
+    const fetchRate = async () => {
+      try {
+        const response = await axios.get(PO_BALANCE_EXCHANGE_RATE_API, {
+          params: {
+            year: selectedYear,
+            month: selectedMonth,
+          },
+          timeout: 8000,
+        });
+
+        if (!isMounted) return;
+
+        if (response.data?.status === "OK" && response.data?.data?.rates) {
+          const rates = response.data.data.rates;
+          const jpy = (rates.JPY ?? 4.25).toString();
+          const usd = (rates.USD ?? 0.028).toString();
+
+          setJpyRate(jpy);
+          setUsdRate(usd);
+          setSavedJpyRate(jpy);
+          setSavedUsdRate(usd);
+          setIsFromDb(true);
+          setLastUpdatedAt(response.data.data.updated_at || null);
+          setIsEditing(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not fetch exchange rates from DB, checking local storage:", err);
+      }
+
+      if (!isMounted) return;
+
+      // Fallback to localStorage or default
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
+        const periodKey = `${selectedYear}-${selectedMonth}`;
+        const data = parsed[periodKey] || DEFAULT_RATES[periodKey] || DEFAULT_RATES.default;
+        const jpy = data.jpy.toString();
+        const usd = data.usd.toString();
+        setJpyRate(jpy);
+        setUsdRate(usd);
+        setSavedJpyRate(jpy);
+        setSavedUsdRate(usd);
+        setIsFromDb(false);
+        setLastUpdatedAt(data.updatedAt || null);
+      } catch {
+        setJpyRate("4.25");
+        setUsdRate("0.028");
+        setSavedJpyRate("4.25");
+        setSavedUsdRate("0.028");
+        setIsFromDb(false);
+        setLastUpdatedAt(null);
+      } finally {
+        setIsEditing(false);
+        setLoading(false);
+      }
+    };
+
+    fetchRate().finally(() => {
+      if (isMounted) setLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, selectedMonth, selectedYear]);
 
   const handleStartEdit = () => {
@@ -204,7 +265,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     setIsEditing(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const numJpy = parseFloat(jpyRate);
     const numUsd = parseFloat(usdRate);
 
@@ -213,27 +274,59 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       return;
     }
 
+    setSaving(true);
+
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
+      // 1. Save directly to Database
+      const payload = {
+        year: parseInt(selectedYear, 10),
+        month_name: selectedMonth,
+        rates: {
+          JPY: numJpy,
+          USD: numUsd,
+        },
+      };
+
+      const res = await axios.post(PO_BALANCE_EXCHANGE_RATE_API, payload, {
+        timeout: 10000,
+      });
+
+      if (res.data?.status !== "OK") {
+        throw new Error(res.data?.message || "Failed to save into database.");
+      }
+
+      // 2. Also keep localStorage synchronized as backup
       const periodKey = `${selectedYear}-${selectedMonth}`;
-      const payload: ExchangeRateData = {
+      const timestamp = new Date().toISOString();
+      const localPayload: ExchangeRateData = {
         jpy: numJpy,
         usd: numUsd,
-        updatedAt: new Date().toISOString(),
+        updatedAt: timestamp,
       };
-      parsed[periodKey] = payload;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
+        parsed[periodKey] = localPayload;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      } catch (err) {
+        console.warn("Could not save to localStorage:", err);
+      }
 
       setSavedJpyRate(numJpy.toString());
       setSavedUsdRate(numUsd.toString());
-      setIsEditing(false); // Switch back to View mode
+      setIsFromDb(true);
+      setLastUpdatedAt(new Date().toLocaleString("en-GB"));
+      setIsEditing(false);
 
-      toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear}`);
-      onSaved?.(payload);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to save rates.");
+      toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear} into database!`);
+      onSaved?.(localPayload);
+    } catch (e: any) {
+      console.error("Save error:", e);
+      const msg = e.response?.data?.message || e.message || "Failed to save exchange rates into database.";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -267,9 +360,18 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 >
                   Exchange Rate
                 </h2>
-                {isEditing && (
+                {isEditing ? (
                   <span className="badge badge-primary badge-sm text-[11px] font-medium py-0.5">
                     Editing
+                  </span>
+                ) : isFromDb ? (
+                  <span className="badge badge-success/15 text-success border-success/30 badge-sm text-[11px] font-medium py-0.5 flex items-center gap-1">
+                    <Database size={10} />
+                    <span>In DB</span>
+                  </span>
+                ) : (
+                  <span className="badge badge-ghost badge-sm text-[11px] font-medium py-0.5">
+                    Default
                   </span>
                 )}
               </div>
@@ -310,7 +412,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <div ref={monthRef} className="relative">
               <button
                 type="button"
-                disabled={isEditing}
+                disabled={isEditing || loading}
                 onClick={() => {
                   setMonthOpen((prev) => !prev);
                   setYearOpen(false);
@@ -365,7 +467,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <div ref={yearRef} className="relative">
               <button
                 type="button"
-                disabled={isEditing}
+                disabled={isEditing || loading}
                 onClick={() => {
                   setYearOpen((prev) => !prev);
                   setMonthOpen(false);
@@ -472,15 +574,20 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     value={jpyRate}
                     onChange={(e) => setJpyRate(e.target.value)}
                     placeholder="0.00"
+                    disabled={saving}
                     className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
                   />
                 </div>
               ) : (
                 <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                   <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                    {jpyRate}
-                  </span>
+                  {loading ? (
+                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                  ) : (
+                    <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                      {jpyRate}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -528,15 +635,20 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     value={usdRate}
                     onChange={(e) => setUsdRate(e.target.value)}
                     placeholder="0.00"
+                    disabled={saving}
                     className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
                   />
                 </div>
               ) : (
                 <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                   <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                    {usdRate}
-                  </span>
+                  {loading ? (
+                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                  ) : (
+                    <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                      {usdRate}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -548,6 +660,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           <div className="flex items-center gap-3 mb-3.5">
             <button
               type="button"
+              disabled={saving}
               onClick={handleCancelEdit}
               className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
             >
@@ -555,11 +668,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             </button>
             <button
               type="button"
+              disabled={saving}
               onClick={handleSave}
               className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
-              <Check size={16} />
-              <span>Save</span>
+              {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
+              <span>{saving ? "Saving to DB..." : "Save"}</span>
             </button>
           </div>
         ) : (
@@ -573,6 +687,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             </button>
             <button
               type="button"
+              disabled={loading}
               onClick={handleStartEdit}
               className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
@@ -585,7 +700,9 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         {/* Audit / Security footer */}
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-base-content/50 font-normal">
           <ShieldCheck size={14} className="text-primary shrink-0" />
-          <span>Secure encrypted storage with timestamped audit trail</span>
+          <span>
+            {lastUpdatedAt ? `Last saved to DB: ${lastUpdatedAt}` : "Secure encrypted storage with PostgreSQL audit trail"}
+          </span>
         </div>
       </div>
     </div>

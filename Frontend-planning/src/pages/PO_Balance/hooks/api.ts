@@ -13,3 +13,6 @@ export const PO_BALANCE_DISTINCT_PRODUCT_API = `${API_BASE_URL}/distinct_product
 
 // 🕒 เช็คเวลาอัปเดตล่าสุดของตาราง po_balance สำหรับ Auto Refresh
 export const PO_BALANCE_LAST_UPDATED_API = `${API_BASE_URL}/last_updated`;
+
+// 💱 อัตราแลกเปลี่ยนรายเดือน (GET ดึงข้อมูล, POST บันทึกเข้า DB)
+export const PO_BALANCE_EXCHANGE_RATE_API = `${API_BASE_URL}/exchange_rate`;
