@@ -11,6 +11,7 @@ import {
   Pencil,
   RefreshCw,
   Database,
+  AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { PO_BALANCE_EXCHANGE_RATE_API } from "../hooks/api";
@@ -45,12 +46,6 @@ const MONTHS = [
 const currentYear = new Date().getFullYear();
 // Years starting from current year onwards (no past years)
 const YEARS = Array.from({ length: 15 }, (_, i) => (currentYear + i).toString());
-
-const DEFAULT_RATES: Record<string, ExchangeRateData> = {
-  default: { jpy: 4.25, usd: 0.028 },
-};
-
-const STORAGE_KEY = "planning_monthly_exchange_rates";
 
 // Vector Flag Components (sharp on all OS and themes)
 const ThaiFlag = () => (
@@ -112,17 +107,18 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const [monthOpen, setMonthOpen] = useState(false);
   const [yearOpen, setYearOpen] = useState(false);
 
-  // Edit Mode state
+  // Edit & Data state
   const [isEditing, setIsEditing] = useState(false);
-  const [jpyRate, setJpyRate] = useState<string>("4.25");
-  const [usdRate, setUsdRate] = useState<string>("0.028");
-  const [savedJpyRate, setSavedJpyRate] = useState<string>("4.25");
-  const [savedUsdRate, setSavedUsdRate] = useState<string>("0.028");
+  const [jpyRate, setJpyRate] = useState<string>("");
+  const [usdRate, setUsdRate] = useState<string>("");
+  const [savedJpyRate, setSavedJpyRate] = useState<string>("");
+  const [savedUsdRate, setSavedUsdRate] = useState<string>("");
 
   // DB Sync state
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isFromDb, setIsFromDb] = useState(false);
+  const [savedMonthsInYear, setSavedMonthsInYear] = useState<string[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   const monthRef = useRef<HTMLDivElement>(null);
@@ -166,7 +162,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (isEditing) {
+        if (isEditing && isFromDb) {
           handleCancelEdit();
         } else {
           onClose();
@@ -175,9 +171,9 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, isEditing, onClose]);
+  }, [isOpen, isEditing, isFromDb, onClose]);
 
-  // Fetch rate from Database (with localStorage fallback)
+  // Fetch rate from Database when modal opens or period changes
   useEffect(() => {
     if (!isOpen) {
       setIsEditing(false);
@@ -199,56 +195,49 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
         if (!isMounted) return;
 
-        if (response.data?.status === "OK" && response.data?.data?.rates) {
-          const rates = response.data.data.rates;
-          const jpy = (rates.JPY ?? 4.25).toString();
-          const usd = (rates.USD ?? 0.028).toString();
+        if (Array.isArray(response.data?.saved_months)) {
+          setSavedMonthsInYear(response.data.saved_months);
+        }
+
+        const record = response.data?.data;
+        if (response.data?.status === "OK" && record?.rates && (record.rates.JPY || record.rates.USD)) {
+          // Period exists in DB -> View Mode (locked)
+          const jpy = record.rates.JPY != null ? record.rates.JPY.toString() : "";
+          const usd = record.rates.USD != null ? record.rates.USD.toString() : "";
 
           setJpyRate(jpy);
           setUsdRate(usd);
           setSavedJpyRate(jpy);
           setSavedUsdRate(usd);
           setIsFromDb(true);
-          setLastUpdatedAt(response.data.data.updated_at || null);
+          setLastUpdatedAt(record.updated_at || null);
           setIsEditing(false);
-          return;
+        } else {
+          // Period does NOT exist in DB yet -> Ready-to-input mode with empty fields (0.00 placeholder)
+          setJpyRate("");
+          setUsdRate("");
+          setSavedJpyRate("");
+          setSavedUsdRate("");
+          setIsFromDb(false);
+          setLastUpdatedAt(null);
+          setIsEditing(true);
         }
       } catch (err) {
-        console.warn("Could not fetch exchange rates from DB, checking local storage:", err);
-      }
-
-      if (!isMounted) return;
-
-      // Fallback to localStorage or default
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
-        const periodKey = `${selectedYear}-${selectedMonth}`;
-        const data = parsed[periodKey] || DEFAULT_RATES[periodKey] || DEFAULT_RATES.default;
-        const jpy = data.jpy.toString();
-        const usd = data.usd.toString();
-        setJpyRate(jpy);
-        setUsdRate(usd);
-        setSavedJpyRate(jpy);
-        setSavedUsdRate(usd);
-        setIsFromDb(false);
-        setLastUpdatedAt(data.updatedAt || null);
-      } catch {
-        setJpyRate("4.25");
-        setUsdRate("0.028");
-        setSavedJpyRate("4.25");
-        setSavedUsdRate("0.028");
+        console.warn("Could not fetch exchange rates from DB:", err);
+        if (!isMounted) return;
+        setJpyRate("");
+        setUsdRate("");
+        setSavedJpyRate("");
+        setSavedUsdRate("");
         setIsFromDb(false);
         setLastUpdatedAt(null);
+        setIsEditing(true);
       } finally {
-        setIsEditing(false);
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    fetchRate().finally(() => {
-      if (isMounted) setLoading(false);
-    });
+    fetchRate();
 
     return () => {
       isMounted = false;
@@ -270,14 +259,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     const numUsd = parseFloat(usdRate);
 
     if (isNaN(numJpy) || isNaN(numUsd) || numJpy <= 0 || numUsd <= 0) {
-      toast.error("Please enter valid positive numbers for exchange rates.");
+      toast.error("Please enter valid positive rates for both JPY and USD.");
       return;
     }
 
     setSaving(true);
 
     try {
-      // 1. Save directly to Database
       const payload = {
         year: parseInt(selectedYear, 10),
         month_name: selectedMonth,
@@ -295,35 +283,25 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         throw new Error(res.data?.message || "Failed to save into database.");
       }
 
-      // 2. Also keep localStorage synchronized as backup
-      const periodKey = `${selectedYear}-${selectedMonth}`;
-      const timestamp = new Date().toISOString();
-      const localPayload: ExchangeRateData = {
-        jpy: numJpy,
-        usd: numUsd,
-        updatedAt: timestamp,
-      };
+      const jpyStr = numJpy.toString();
+      const usdStr = numUsd.toString();
 
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
-        parsed[periodKey] = localPayload;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-      } catch (err) {
-        console.warn("Could not save to localStorage:", err);
-      }
-
-      setSavedJpyRate(numJpy.toString());
-      setSavedUsdRate(numUsd.toString());
+      setJpyRate(jpyStr);
+      setUsdRate(usdStr);
+      setSavedJpyRate(jpyStr);
+      setSavedUsdRate(usdStr);
       setIsFromDb(true);
+      setSavedMonthsInYear((prev) =>
+        prev.includes(selectedMonth) ? prev : [...prev, selectedMonth]
+      );
       setLastUpdatedAt(new Date().toLocaleString("en-GB"));
-      setIsEditing(false);
+      setIsEditing(false); // Lock into View Mode after saving
 
-      toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear} into database!`);
-      onSaved?.(localPayload);
+      toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear}.`);
+      onSaved?.({ jpy: numJpy, usd: numUsd, updatedAt: new Date().toISOString() });
     } catch (e: any) {
       console.error("Save error:", e);
-      const msg = e.response?.data?.message || e.message || "Failed to save exchange rates into database.";
+      const msg = e.response?.data?.message || e.message || "Failed to save exchange rates.";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -332,12 +310,14 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Input is active if it's a new month (!isFromDb) OR user clicked Edit on an existing month
+  const isInputActive = !isFromDb || isEditing;
+
   return (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
-          if (isEditing) handleCancelEdit();
           onClose();
         }
       }}
@@ -360,34 +340,40 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 >
                   Exchange Rate
                 </h2>
-                {isEditing ? (
-                  <span className="badge badge-primary badge-sm text-[11px] font-medium py-0.5">
+                {loading ? (
+                  <span className="badge badge-ghost badge-sm text-[11px] font-medium py-0.5">
+                    Checking...
+                  </span>
+                ) : isFromDb && !isEditing ? (
+                  <span className="badge bg-success/15 text-success border-success/30 badge-sm text-[11px] font-semibold py-0.5 flex items-center gap-1">
+                    <Database size={10} />
+                    <span>Saved</span>
+                  </span>
+                ) : isFromDb && isEditing ? (
+                  <span className="badge badge-primary badge-sm text-[11px] font-semibold py-0.5">
                     Editing
                   </span>
-                ) : isFromDb ? (
-                  <span className="badge badge-success/15 text-success border-success/30 badge-sm text-[11px] font-medium py-0.5 flex items-center gap-1">
-                    <Database size={10} />
-                    <span>In DB</span>
-                  </span>
                 ) : (
-                  <span className="badge badge-ghost badge-sm text-[11px] font-medium py-0.5">
-                    Default
+                  <span className="badge bg-warning/15 text-warning border-warning/30 badge-sm text-[11px] font-semibold py-0.5 flex items-center gap-1">
+                    <AlertCircle size={10} />
+                    <span>Not Set</span>
                   </span>
                 )}
               </div>
               <p className="text-[12px] text-base-content/60 mt-0.5">
-                {isEditing
-                  ? `Enter the exchange rates for ${selectedMonth} ${selectedYear}.`
-                  : "View current exchange rates for each currency."}
+                {loading
+                  ? "Loading exchange rate from database..."
+                  : !isFromDb
+                  ? `No record for ${selectedMonth} ${selectedYear} — enter rates below and click Save.`
+                  : isEditing
+                  ? `Editing exchange rates for ${selectedMonth} ${selectedYear}.`
+                  : `Saved exchange rates for ${selectedMonth} ${selectedYear}.`}
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={() => {
-              if (isEditing) handleCancelEdit();
-              onClose();
-            }}
+            onClick={onClose}
             className="btn btn-circle btn-sm btn-ghost hover:bg-base-200 text-base-content/70 hover:text-base-content shrink-0"
             aria-label="Close"
           >
@@ -401,18 +387,18 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <span className="text-[11px] font-bold text-base-content/50 tracking-wider uppercase">
               RECORD PERIOD
             </span>
-            {isEditing && (
+            {isFromDb && isEditing && (
               <span className="text-[11px] text-primary/80 font-medium">
-                (Save or Cancel to change period)
+                (Cancel edit to switch period)
               </span>
             )}
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {/* Month Dropdown */}
+            {/* Month Dropdown (always selectable unless editing an existing DB record) */}
             <div ref={monthRef} className="relative">
               <button
                 type="button"
-                disabled={isEditing || loading}
+                disabled={(isFromDb && isEditing) || loading || saving}
                 onClick={() => {
                   setMonthOpen((prev) => !prev);
                   setYearOpen(false);
@@ -420,7 +406,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 className={`w-full bg-base-200/60 hover:bg-base-200 border ${
                   monthOpen ? "border-primary ring-2 ring-primary/20" : "border-base-300"
                 } ${
-                  isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                  isFromDb && isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
                 } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
               >
                 <div className="flex items-center gap-2 truncate">
@@ -436,9 +422,10 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               </button>
 
               {monthOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-52 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl">
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-56 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl">
                   {MONTHS.map((m) => {
                     const isSelected = m === selectedMonth;
+                    const hasSavedData = savedMonthsInYear.includes(m);
                     return (
                       <button
                         key={m}
@@ -454,7 +441,15 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                             : "text-base-content hover:bg-base-200 font-normal"
                         }`}
                       >
-                        <span>{m}</span>
+                        <span className="flex items-center gap-2">
+                          <span>{m}</span>
+                          {hasSavedData && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full bg-success inline-block"
+                              title="Saved in DB"
+                            />
+                          )}
+                        </span>
                         {isSelected && <Check size={14} className="text-primary" />}
                       </button>
                     );
@@ -467,7 +462,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <div ref={yearRef} className="relative">
               <button
                 type="button"
-                disabled={isEditing || loading}
+                disabled={(isFromDb && isEditing) || loading || saving}
                 onClick={() => {
                   setYearOpen((prev) => !prev);
                   setMonthOpen(false);
@@ -475,7 +470,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 className={`w-full bg-base-200/60 hover:bg-base-200 border ${
                   yearOpen ? "border-primary ring-2 ring-primary/20" : "border-base-300"
                 } ${
-                  isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                  isFromDb && isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
                 } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
               >
                 <div className="flex items-center gap-2 truncate">
@@ -491,7 +486,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               </button>
 
               {yearOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-52 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl">
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-56 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl">
                   {YEARS.map((y) => {
                     const isSelected = y === selectedYear;
                     return (
@@ -563,8 +558,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 </div>
               </div>
 
-              {/* View Mode vs Edit Mode for JPY */}
-              {isEditing ? (
+              {/* Input vs View for JPY */}
+              {loading ? (
+                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
+                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
+                  <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                </div>
+              ) : isInputActive ? (
                 <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
                   <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
                   <input
@@ -575,19 +575,15 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     onChange={(e) => setJpyRate(e.target.value)}
                     placeholder="0.00"
                     disabled={saving}
-                    className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
+                    className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
                   />
                 </div>
               ) : (
                 <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                   <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                  {loading ? (
-                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
-                  ) : (
-                    <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                      {jpyRate}
-                    </span>
-                  )}
+                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                    {jpyRate}
+                  </span>
                 </div>
               )}
             </div>
@@ -625,8 +621,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 </div>
               </div>
 
-              {/* View Mode vs Edit Mode for USD */}
-              {isEditing ? (
+              {/* Input vs View for USD */}
+              {loading ? (
+                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
+                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
+                  <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                </div>
+              ) : isInputActive ? (
                 <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
                   <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
                   <input
@@ -636,27 +637,45 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     onChange={(e) => setUsdRate(e.target.value)}
                     placeholder="0.00"
                     disabled={saving}
-                    className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
+                    className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
                   />
                 </div>
               ) : (
                 <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                   <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                  {loading ? (
-                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
-                  ) : (
-                    <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                      {usdRate}
-                    </span>
-                  )}
+                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                    {usdRate}
+                  </span>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Buttons: View Mode (Close / Edit) vs Edit Mode (Cancel / Save) */}
-        {isEditing ? (
+        {/* Footer Action Buttons */}
+        {!isFromDb ? (
+          // New Month (Not in DB yet): Close + Save directly
+          <div className="flex items-center gap-3 mb-3.5">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              disabled={saving || loading}
+              onClick={handleSave}
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
+            >
+              {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
+              <span>{saving ? "Saving..." : "Save"}</span>
+            </button>
+          </div>
+        ) : isEditing ? (
+          // Existing Month in DB + Editing: Cancel + Save
           <div className="flex items-center gap-3 mb-3.5">
             <button
               type="button"
@@ -673,10 +692,11 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
               {saving ? <RefreshCw size={15} className="animate-spin" /> : <Check size={16} />}
-              <span>{saving ? "Saving to DB..." : "Save"}</span>
+              <span>{saving ? "Saving..." : "Save"}</span>
             </button>
           </div>
         ) : (
+          // Existing Month in DB + View Mode: Close + Edit
           <div className="flex items-center gap-3 mb-3.5">
             <button
               type="button"
@@ -701,7 +721,9 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-base-content/50 font-normal">
           <ShieldCheck size={14} className="text-primary shrink-0" />
           <span>
-            {lastUpdatedAt ? `Last saved to DB: ${lastUpdatedAt}` : "Secure encrypted storage with PostgreSQL audit trail"}
+            {lastUpdatedAt
+              ? `Last saved to DB: ${lastUpdatedAt}`
+              : "No record saved in DB for this period yet"}
           </span>
         </div>
       </div>

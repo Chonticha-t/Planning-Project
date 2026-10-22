@@ -241,7 +241,16 @@ router.get("/exchange_rate", async (req, res) => {
       ORDER BY currency;
     `;
 
-    const { rows } = await query(queryStr, [year, monthNo]);
+    const [rateRes, monthsRes] = await Promise.all([
+      query(queryStr, [year, monthNo]),
+      query(
+        'SELECT DISTINCT month_name, month_no FROM planning.exchange_rate_monthly WHERE "year" = $1 ORDER BY month_no',
+        [year]
+      ),
+    ]);
+
+    const rows = rateRes.rows;
+    const savedMonths = monthsRes.rows.map((r) => r.month_name || NO_TO_MONTH_NAME[r.month_no]).filter(Boolean);
 
     const rates = {};
     let updatedAt = null;
@@ -255,6 +264,7 @@ router.get("/exchange_rate", async (req, res) => {
 
     return res.json({
       status: "OK",
+      saved_months: savedMonths,
       data: rows.length > 0 ? {
         year,
         month_no: monthNo,
