@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   CircleDollarSign,
-  Wallet,
   X,
   Calendar as CalendarIcon,
   ChevronDown,
   ArrowLeftRight,
   ShieldCheck,
   Check,
+  Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -108,8 +108,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const [monthOpen, setMonthOpen] = useState(false);
   const [yearOpen, setYearOpen] = useState(false);
 
+  // Edit Mode state
+  const [isEditing, setIsEditing] = useState(false);
   const [jpyRate, setJpyRate] = useState<string>("4.25");
   const [usdRate, setUsdRate] = useState<string>("0.028");
+  const [savedJpyRate, setSavedJpyRate] = useState<string>("4.25");
+  const [savedUsdRate, setSavedUsdRate] = useState<string>("0.028");
 
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
@@ -151,27 +155,54 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (isEditing) {
+          handleCancelEdit();
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isEditing, onClose]);
 
   // Load saved rate for current period
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setIsEditing(false);
+      return;
+    }
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       const parsed: Record<string, ExchangeRateData> = stored ? JSON.parse(stored) : {};
       const periodKey = `${selectedYear}-${selectedMonth}`;
       const data = parsed[periodKey] || DEFAULT_RATES[periodKey] || DEFAULT_RATES.default;
-      setJpyRate(data.jpy.toString());
-      setUsdRate(data.usd.toString());
+      const jpy = data.jpy.toString();
+      const usd = data.usd.toString();
+      setJpyRate(jpy);
+      setUsdRate(usd);
+      setSavedJpyRate(jpy);
+      setSavedUsdRate(usd);
+      setIsEditing(false);
     } catch {
       setJpyRate("4.25");
       setUsdRate("0.028");
+      setSavedJpyRate("4.25");
+      setSavedUsdRate("0.028");
+      setIsEditing(false);
     }
   }, [isOpen, selectedMonth, selectedYear]);
+
+  const handleStartEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setJpyRate(savedJpyRate);
+    setUsdRate(savedUsdRate);
+    setIsEditing(false);
+  };
 
   const handleSave = () => {
     const numJpy = parseFloat(jpyRate);
@@ -194,9 +225,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       parsed[periodKey] = payload;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
 
+      setSavedJpyRate(numJpy.toString());
+      setSavedUsdRate(numUsd.toString());
+      setIsEditing(false); // Switch back to View mode
+
       toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear}`);
       onSaved?.(payload);
-      onClose();
     } catch (e) {
       console.error(e);
       toast.error("Failed to save rates.");
@@ -209,7 +243,10 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) {
+          if (isEditing) handleCancelEdit();
+          onClose();
+        }
       }}
     >
       <div
@@ -223,20 +260,32 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           <div className="flex items-center gap-3">
             <CircleDollarSign size={26} className="text-primary shrink-0" strokeWidth={2.2} />
             <div>
-              <h2
-                id="exchange-rate-title"
-                className="text-[18px] sm:text-[19px] font-bold text-base-content tracking-tight leading-tight"
-              >
-                Exchange Rate
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2
+                  id="exchange-rate-title"
+                  className="text-[18px] sm:text-[19px] font-bold text-base-content tracking-tight leading-tight"
+                >
+                  Exchange Rate
+                </h2>
+                {isEditing && (
+                  <span className="badge badge-primary badge-sm text-[11px] font-medium py-0.5">
+                    Editing
+                  </span>
+                )}
+              </div>
               <p className="text-[12px] text-base-content/60 mt-0.5">
-                Enter the current exchange rate for each currency.
+                {isEditing
+                  ? `Enter the exchange rates for ${selectedMonth} ${selectedYear}.`
+                  : "View current exchange rates for each currency."}
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (isEditing) handleCancelEdit();
+              onClose();
+            }}
             className="btn btn-circle btn-sm btn-ghost hover:bg-base-200 text-base-content/70 hover:text-base-content shrink-0"
             aria-label="Close"
           >
@@ -246,21 +295,31 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
         {/* Record Period */}
         <div className="mb-4">
-          <div className="text-[11px] font-bold text-base-content/50 tracking-wider uppercase mb-2">
-            RECORD PERIOD
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-base-content/50 tracking-wider uppercase">
+              RECORD PERIOD
+            </span>
+            {isEditing && (
+              <span className="text-[11px] text-primary/80 font-medium">
+                (Save or Cancel to change period)
+              </span>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             {/* Month Dropdown */}
             <div ref={monthRef} className="relative">
               <button
                 type="button"
+                disabled={isEditing}
                 onClick={() => {
                   setMonthOpen((prev) => !prev);
                   setYearOpen(false);
                 }}
                 className={`w-full bg-base-200/60 hover:bg-base-200 border ${
                   monthOpen ? "border-primary ring-2 ring-primary/20" : "border-base-300"
-                } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all cursor-pointer`}
+                } ${
+                  isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
               >
                 <div className="flex items-center gap-2 truncate">
                   <CalendarIcon size={16} className="text-base-content/70 shrink-0" />
@@ -306,13 +365,16 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             <div ref={yearRef} className="relative">
               <button
                 type="button"
+                disabled={isEditing}
                 onClick={() => {
                   setYearOpen((prev) => !prev);
                   setMonthOpen(false);
                 }}
                 className={`w-full bg-base-200/60 hover:bg-base-200 border ${
                   yearOpen ? "border-primary ring-2 ring-primary/20" : "border-base-300"
-                } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all cursor-pointer`}
+                } ${
+                  isEditing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                } rounded-xl px-3.5 py-2.5 flex items-center justify-between text-base-content text-[13px] font-medium transition-all`}
               >
                 <div className="flex items-center gap-2 truncate">
                   <CalendarIcon size={16} className="text-base-content/70 shrink-0" />
@@ -399,18 +461,28 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 </div>
               </div>
 
-              {/* Input Box */}
-              <div className="bg-base-200/70 border border-base-300 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
-                <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={jpyRate}
-                  onChange={(e) => setJpyRate(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
-                />
-              </div>
+              {/* View Mode vs Edit Mode for JPY */}
+              {isEditing ? (
+                <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
+                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoFocus
+                    value={jpyRate}
+                    onChange={(e) => setJpyRate(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
+                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
+                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                    {jpyRate}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* THB to USD */}
@@ -446,39 +518,69 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 </div>
               </div>
 
-              {/* Input Box */}
-              <div className="bg-base-200/70 border border-base-300 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
-                <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={usdRate}
-                  onChange={(e) => setUsdRate(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
-                />
-              </div>
+              {/* View Mode vs Edit Mode for USD */}
+              {isEditing ? (
+                <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
+                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={usdRate}
+                    onChange={(e) => setUsdRate(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full text-right font-bold text-[16px] text-base-content bg-transparent focus:outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
+                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
+                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                    {usdRate}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Buttons */}
-        <div className="flex items-center gap-3 mb-3.5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer"
-          >
-            Save
-          </button>
-        </div>
+        {/* Buttons: View Mode (Close / Edit) vs Edit Mode (Cancel / Save) */}
+        {isEditing ? (
+          <div className="flex items-center gap-3 mb-3.5">
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
+            >
+              <Check size={16} />
+              <span>Save</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 mb-3.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[38px] h-[38px] transition-all cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={handleStartEdit}
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[38px] h-[38px] transition-all shadow-sm cursor-pointer gap-1.5"
+            >
+              <Pencil size={15} />
+              <span>Edit</span>
+            </button>
+          </div>
+        )}
 
         {/* Audit / Security footer */}
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-base-content/50 font-normal">
@@ -491,4 +593,3 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 };
 
 export default ExchangeRateModal;
-
