@@ -10,3 +10,6 @@ export const PO_BALANCE_SUMMARY_API = `${API_BASE_URL}/summary`;
 
 // 🔽 รายชื่อ product สำหรับ dropdown
 export const PO_BALANCE_DISTINCT_PRODUCT_API = `${API_BASE_URL}/distinct_product`;
+
+// 🕒 เช็คเวลาอัปเดตล่าสุดของตาราง po_balance สำหรับ Auto Refresh
+export const PO_BALANCE_LAST_UPDATED_API = `${API_BASE_URL}/last_updated`;
