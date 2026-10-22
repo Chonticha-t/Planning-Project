@@ -82,9 +82,9 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
               <Icon size={26} />
             </div>
             <div className="min-w-0">
-              <div className="text-xs text-base-content/60 truncate">{title}</div>
+              <div className="text-[13px] text-base-content/60 truncate">{title}</div>
               <div className={`text-2xl font-bold ${color}`}>{value}</div>
-              <div className="text-xs text-base-content/60 truncate">{sub}</div>
+              <div className="text-[13px] text-base-content/60 truncate">{sub}</div>
             </div>
           </div>
         </div>

@@ -114,7 +114,7 @@ const columns: GridColDef<PlanningRow>[] = [
     minWidth: 110,
     // value ยังเป็น YYYY-MM-DD เพื่อให้เรียงลำดับถูก — แปลงแค่ตอนแสดง
     renderCell: ({ value }) => (
-      <span className="tabular-nums text-base-content/70">
+      <span className="font-medium tabular-nums text-base-content">
         {toDMY(value)}
       </span>
     ),
@@ -173,7 +173,7 @@ const POBalanceTable = ({
           <ClipboardList size={18} className="text-base-content/60" />
           <h2 className="font-semibold text-base-content">PO BALANCE</h2>
         </div>
-        <span className="text-xs text-base-content/60 tabular-nums">
+        <span className="text-[13px] text-base-content/60 tabular-nums">
           {rows.length.toLocaleString("en-US")} rows
         </span>
       </div>
@@ -215,7 +215,7 @@ const POBalanceTable = ({
           sx={{
             border: 0,
             borderRadius: 0,
-            fontSize: 13,
+            fontSize: 14,
             color: "var(--color-base-content)",
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": "var(--color-base-200)",
@@ -226,7 +226,7 @@ const POBalanceTable = ({
               px: 2,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: 600,
               letterSpacing: "0.04em",
               textTransform: "uppercase",
@@ -298,7 +298,7 @@ const POBalanceTable = ({
             },
             "& .MuiTablePagination-root, & .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows":
               {
-                fontSize: 12,
+                fontSize: 13,
                 color:
                   "color-mix(in oklab, var(--color-base-content) 65%, transparent)",
               },
