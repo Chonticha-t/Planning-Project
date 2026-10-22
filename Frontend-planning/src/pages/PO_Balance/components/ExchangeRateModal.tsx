@@ -43,6 +43,13 @@ const MONTHS = [
   "December",
 ];
 
+// Allow only digits with at most one decimal point
+const sanitizeRate = (value: string) => {
+  const cleaned = value.replace(/[^0-9.]/g, "");
+  const [intPart, ...rest] = cleaned.split(".");
+  return rest.length ? `${intPart}.${rest.join("")}` : intPart;
+};
+
 const currentYear = new Date().getFullYear();
 // Years starting from current year onwards (no past years)
 const YEARS = Array.from({ length: 15 }, (_, i) => (currentYear + i).toString());
@@ -572,7 +579,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     inputMode="decimal"
                     autoFocus
                     value={jpyRate}
-                    onChange={(e) => setJpyRate(e.target.value)}
+                    onChange={(e) => setJpyRate(sanitizeRate(e.target.value))}
                     placeholder="0.00"
                     disabled={saving}
                     className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
@@ -634,7 +641,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     type="text"
                     inputMode="decimal"
                     value={usdRate}
-                    onChange={(e) => setUsdRate(e.target.value)}
+                    onChange={(e) => setUsdRate(sanitizeRate(e.target.value))}
                     placeholder="0.00"
                     disabled={saving}
                     className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
