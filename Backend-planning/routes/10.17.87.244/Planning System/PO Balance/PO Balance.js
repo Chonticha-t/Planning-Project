@@ -497,4 +497,55 @@ router.post("/exchange_rate", async (req, res) => {
   }
 });
 
+// DELETE /api_p1/planning/exchange_rate — ลบอัตราแลกเปลี่ยนของเดือนและปีที่ระบุ
+router.delete("/exchange_rate", async (req, res) => {
+  setNoCache(res);
+  const yearParam = req.query.year || req.body?.year;
+  const monthParam =
+    req.query.month_no ||
+    req.query.month ||
+    req.body?.month_no ||
+    req.body?.month_name ||
+    req.body?.month;
+
+  const y = /^\d{4}$/.test(String(yearParam)) ? Number(yearParam) : NaN;
+  if (!(y >= 2000 && y <= 2100)) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "Invalid year. Must be between 2000 and 2100.",
+    });
+  }
+
+  const mNo = parseInt(monthParam, 10) || MONTH_NAME_TO_NO[monthParam];
+  if (!mNo || mNo < 1 || mNo > 12) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "Invalid month parameter.",
+    });
+  }
+
+  try {
+    const deleteQuery = `
+      DELETE FROM planning.exchange_rate_monthly
+      WHERE "year" = $1 AND month_no = $2;
+    `;
+    const result = await query(deleteQuery, [y, mNo]);
+
+    // แจ้งเตือนหน้าเว็บผ่าน SSE ว่าอัตราแลกเปลี่ยนเปลี่ยนและยอดเงิน v_po_amount อัปเดตแล้ว
+    broadcastChange();
+
+    return res.json({
+      status: "OK",
+      deleted_count: result.rowCount,
+      message: `Exchange rates for ${NO_TO_MONTH_NAME[mNo]} ${y} deleted successfully.`,
+    });
+  } catch (err) {
+    console.error("Error deleting exchange rates:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      message: "Internal Server Error",
+    });
+  }
+});
+
 module.exports = router;

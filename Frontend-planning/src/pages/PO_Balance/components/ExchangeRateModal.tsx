@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Database,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AnimatePresence, motion } from "motion/react";
@@ -126,6 +127,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   // DB Sync state
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [isFromDb, setIsFromDb] = useState(false);
   const [savedMonthsInYear, setSavedMonthsInYear] = useState<string[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -268,6 +270,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     const numJpy = parseFloat(jpyRate);
     const numUsd = parseFloat(usdRate);
 
+    // If user cleared both fields or set both to 0 while editing an existing record, treat as Reset/Delete
+    const isBothEmpty = (!jpyRate.trim() || numJpy === 0) && (!usdRate.trim() || numUsd === 0);
+    if (isFromDb && isBothEmpty) {
+      handleDelete();
+      return;
+    }
+
     if (isNaN(numJpy) || isNaN(numUsd) || numJpy <= 0 || numUsd <= 0) {
       toast.error("Please enter valid positive rates for both JPY and USD.");
       return;
@@ -348,6 +357,70 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       setSaving(false);
     }
   };
+
+  const handleDelete = async () => {
+    const ok = await confirm({
+      variant: "delete",
+      title: "Delete exchange rates?",
+      description: (
+        <>
+          <p>
+            Are you sure you want to delete exchange rates for{" "}
+            <span className="font-semibold text-base-content">
+              {selectedMonth} {selectedYear}
+            </span>
+            ?
+          </p>
+          <p className="mt-2 text-xs text-base-content/60">
+            This period will be reset to{" "}
+            <span className="font-semibold text-warning">Not Set</span>, and calculations will fall back to the previous available exchange rate.
+          </p>
+        </>
+      ),
+      confirmText: "Delete",
+    });
+    if (!ok) return;
+
+    setDeleting(true);
+    try {
+      const res = await axios.delete(PO_BALANCE_EXCHANGE_RATE_API, {
+        params: {
+          year: parseInt(selectedYear, 10),
+          month: selectedMonth,
+        },
+        timeout: 10000,
+      });
+
+      if (res.data?.status !== "OK") {
+        throw new Error(res.data?.message || "Failed to delete from database.");
+      }
+
+      setJpyRate("");
+      setUsdRate("");
+      setSavedJpyRate("");
+      setSavedUsdRate("");
+      setIsFromDb(false);
+      setSavedMonthsInYear((prev) => prev.filter((m) => m !== selectedMonth));
+      setLastUpdatedAt(null);
+      setIsEditing(true);
+
+      toast.success(`Deleted exchange rates for ${selectedMonth} ${selectedYear}.`);
+      onSaved?.({ jpy: 0, usd: 0, updatedAt: new Date().toISOString() });
+    } catch (e: any) {
+      console.error("Delete error:", e);
+      const msg = e.response?.data?.message || e.message || "Failed to delete exchange rates.";
+      toast.error(msg);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Real-time reciprocal calculations for user clarity (1 JPY = ? THB, 1 USD = ? THB)
+  const numJpy = parseFloat(jpyRate);
+  const thbPerJpy = !isNaN(numJpy) && numJpy > 0 ? (1 / numJpy).toFixed(4) : null;
+
+  const numUsd = parseFloat(usdRate);
+  const thbPerUsd = !isNaN(numUsd) && numUsd > 0 ? (1 / numUsd).toFixed(2) : null;
 
   // Input is active if it's a new month (!isFromDb) OR user clicked Edit on an existing month
   const isInputActive = !isFromDb || isEditing;
@@ -608,33 +681,40 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               </div>
 
               {/* Input vs View for JPY */}
-              {loading ? (
-                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
-                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                  <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
-                </div>
-              ) : isInputActive ? (
-                <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
-                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    autoFocus
-                    value={jpyRate}
-                    onChange={(e) => setJpyRate(sanitizeRate(e.target.value))}
-                    placeholder="0.00"
-                    disabled={saving}
-                    className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
-                  />
-                </div>
-              ) : (
-                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
-                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                    {jpyRate}
+              <div className="flex flex-col items-end shrink-0">
+                {loading ? (
+                  <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
+                    <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
+                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                  </div>
+                ) : isInputActive ? (
+                  <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
+                    <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoFocus
+                      value={jpyRate}
+                      onChange={(e) => setJpyRate(sanitizeRate(e.target.value))}
+                      placeholder="0.00"
+                      disabled={saving || deleting}
+                      className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
+                    <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
+                    <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                      {jpyRate}
+                    </span>
+                  </div>
+                )}
+                {thbPerJpy && (
+                  <span className="text-[10.5px] text-base-content/50 font-medium mt-1 select-none">
+                    ≈ {thbPerJpy} THB / 1 JPY
                   </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* THB to USD */}
@@ -671,32 +751,43 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               </div>
 
               {/* Input vs View for USD */}
-              {loading ? (
-                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
-                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                  <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
-                </div>
-              ) : isInputActive ? (
-                <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
-                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={usdRate}
-                    onChange={(e) => setUsdRate(sanitizeRate(e.target.value))}
-                    placeholder="0.00"
-                    disabled={saving}
-                    className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
-                  />
-                </div>
-              ) : (
-                <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
-                  <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                  <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                    {usdRate}
+              <div className="flex flex-col items-end shrink-0">
+                {loading ? (
+                  <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
+                    <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
+                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                  </div>
+                ) : isInputActive ? (
+                  <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
+                    <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={usdRate}
+                      onChange={(e) => setUsdRate(sanitizeRate(e.target.value))}
+                      placeholder="0.00"
+                      disabled={saving || deleting}
+                      className="w-full text-right font-bold text-[16px] text-base-content placeholder:text-base-content/30 bg-transparent focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
+                    <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
+                    <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
+                      {usdRate}
+                    </span>
+                  </div>
+                )}
+                {thbPerUsd && (
+                  <span
+                    className={`text-[10.5px] font-medium mt-1 select-none ${
+                      numUsd > 1 ? "text-warning font-semibold" : "text-base-content/50"
+                    }`}
+                  >
+                    ≈ {thbPerUsd} THB / 1 USD
                   </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -707,7 +798,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || deleting}
               onClick={onClose}
               className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
@@ -715,7 +806,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             </button>
             <button
               type="button"
-              disabled={saving || loading}
+              disabled={saving || loading || deleting}
               onClick={handleSave}
               className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[44px] h-[44px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
@@ -728,7 +819,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || deleting}
               onClick={handleCancelEdit}
               className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
@@ -736,7 +827,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             </button>
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || deleting}
               onClick={handleSave}
               className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[44px] h-[44px] transition-all shadow-sm cursor-pointer gap-1.5"
             >
@@ -745,10 +836,11 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
             </button>
           </div>
         ) : (
-          // Existing Month in DB + View Mode: Close + Edit
+          // Existing Month in DB + View Mode: Close + Edit (Clean 2 buttons, identical to original)
           <div className="flex items-center gap-3 mb-4">
             <button
               type="button"
+              disabled={deleting}
               onClick={onClose}
               className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
             >
@@ -766,11 +858,28 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
           </div>
         )}
 
-        {/* Audit / Security footer */}
+        {/* Audit / Security footer with Delete right next to it */}
         {lastUpdatedAt && (
-          <div className="flex items-center justify-center gap-1.5 text-[11px] text-base-content/50 font-normal">
-            <ShieldCheck size={14} className="text-primary shrink-0" />
-            <span>Last saved to DB: {lastUpdatedAt}</span>
+          <div className="flex items-center justify-center gap-2.5 text-[11px] text-base-content/50 font-normal">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck size={14} className="text-primary shrink-0" />
+              <span>Last saved to DB: {lastUpdatedAt}</span>
+            </div>
+            {isFromDb && (
+              <>
+                <span className="text-base-content/30 select-none">•</span>
+                <button
+                  type="button"
+                  disabled={saving || deleting}
+                  onClick={handleDelete}
+                  className="text-error hover:text-error/80 hover:underline flex items-center gap-1 font-semibold cursor-pointer transition-colors"
+                  title="Delete exchange rates for this month"
+                >
+                  {deleting ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  <span>Delete</span>
+                </button>
+              </>
+            )}
           </div>
         )}
       </motion.div>
