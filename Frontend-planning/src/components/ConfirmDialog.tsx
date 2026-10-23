@@ -25,7 +25,7 @@ const VARIANTS: Record<ConfirmVariant, { button: string; title: string; confirmT
     confirmText: "Edit",
   },
   delete: {
-    button: "btn-error",
+    button: "!bg-red-600 hover:!bg-red-700 !border-red-600 !text-white shadow-xs",
     title: "Are you absolutely sure?",
     confirmText: "Delete",
   },
@@ -92,11 +92,11 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
           {open && (
             <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
               <motion.div
-                className="absolute inset-0 bg-black/30 backdrop-blur-xs"
+                className="absolute inset-0 bg-black/40"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.15 }}
                 onClick={() => close(false)}
               />
               <motion.div
@@ -104,11 +104,12 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 aria-modal="true"
                 aria-labelledby="confirm-dialog-title"
                 aria-describedby="confirm-dialog-description"
-                className="relative w-full max-w-sm bg-base-100 text-base-content rounded-2xl shadow-2xl border border-base-300 overflow-hidden"
-                initial={{ opacity: 0, scale: 0.95, ...offset }}
+                className="relative w-full max-w-sm bg-base-100 text-base-content rounded-2xl shadow-2xl border border-base-300 overflow-hidden transform-gpu"
+                initial={{ opacity: 0, scale: 0.97, ...offset }}
                 animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, ...offset }}
-                transition={{ type: "spring", stiffness: 260, damping: 24 }}
+                exit={{ opacity: 0, scale: 0.97, ...offset }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                style={{ willChange: "transform, opacity" }}
               >
                 <div className="p-5">
                   <div className="min-w-0">

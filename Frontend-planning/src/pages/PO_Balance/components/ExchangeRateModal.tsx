@@ -441,11 +441,12 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       }}
     >
       <motion.div
-        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col"
-        initial={{ opacity: 0, scale: 0.95, y: -40 }}
+        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col transform-gpu"
+        initial={{ opacity: 0, scale: 0.97, y: -20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: -40 }}
-        transition={{ type: "spring", stiffness: 260, damping: 24 }}
+        exit={{ opacity: 0, scale: 0.97, y: -20 }}
+        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+        style={{ willChange: "transform, opacity" }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="exchange-rate-title"
@@ -872,7 +873,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                   type="button"
                   disabled={saving || deleting}
                   onClick={handleDelete}
-                  className="text-error hover:text-error/80 hover:underline flex items-center gap-1 font-semibold cursor-pointer transition-colors"
+                  className="text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 font-semibold cursor-pointer transition-colors"
                   title="Delete exchange rates for this month"
                 >
                   {deleting ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}

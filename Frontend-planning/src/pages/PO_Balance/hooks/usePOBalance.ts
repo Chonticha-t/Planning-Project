@@ -210,23 +210,21 @@ const usePOBalance = () => {
 
     connectSSE();
 
-    // ดึงข้อมูลใหม่ทันทีเมื่อสลับแท็บกลับมาที่หน้าเว็บ (Focus)
-    const handleVisibilityOrFocus = () => {
+    // ดึงข้อมูลใหม่เฉพาะเมื่อสลับแท็บกลับมาที่หน้าเว็บ (Visibility Change) — ไม่ใช้ window focus เพื่อป้องกัน Card กระพริบเวลาเปิด/ปิด Modal
+    const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         fetchData(activeFilterRef.current, { silent: true });
       }
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
-    window.addEventListener("focus", handleVisibilityOrFocus);
-    window.addEventListener("online", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleVisibilityChange);
 
     return () => {
       isSubscribed = false;
       eventSource?.close();
-      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
-      window.removeEventListener("focus", handleVisibilityOrFocus);
-      window.removeEventListener("online", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleVisibilityChange);
     };
   }, [fetchData]);
 
