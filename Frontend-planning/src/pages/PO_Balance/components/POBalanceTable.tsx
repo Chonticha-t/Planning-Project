@@ -17,22 +17,35 @@ interface POBalanceTableProps {
   onSortModelChange: (model: GridSortModel) => void;
 }
 
-const num = (value: number) =>
+const num = (value: number, decimals = 0) =>
   value == null
     ? ""
-    : Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    : Number(value).toLocaleString("en-US", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      });
 
-const NumberCell = ({ value, strong }: { value: number; strong?: boolean }) => (
+const NumberCell = ({
+  value,
+  strong,
+  decimals,
+  colorClass = "text-base-content/80",
+}: {
+  value: number;
+  strong?: boolean;
+  decimals?: number;
+  colorClass?: string;
+}) => (
   <span
     className={`tabular-nums ${
       !value
         ? "text-base-content/30"
         : strong
           ? "font-semibold text-error"
-          : "text-base-content/80"
+          : colorClass
     }`}
   >
-    {num(value)}
+    {num(value, decimals)}
   </span>
 );
 
@@ -63,6 +76,19 @@ const invCol = (
 ): GridColDef<PlanningRow> => ({
   ...numberCol(field, headerName),
   headerClassName: edge ? `inv-header ${edge}` : "inv-header",
+});
+
+// Amount columns (THB) — same as numberCol but shows 2 decimals
+const amountCol = (
+  field: keyof PlanningRow,
+  headerName: string,
+  colorClass?: string,
+): GridColDef<PlanningRow> => ({
+  ...numberCol(field, headerName),
+  minWidth: 150,
+  renderCell: ({ value }) => (
+    <NumberCell value={value} decimals={2} colorClass={colorClass} />
+  ),
 });
 
 // net_required_pcs ได้รับค่าติดลบมาจาก database แล้ว ไม่ต้องแปลงค่า
@@ -127,6 +153,9 @@ const columns: GridColDef<PlanningRow>[] = [
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true),
+  // Output Amount ใช้แดง red-600 ให้ต่างเฉดจาก Net Required (text-error)
+  amountCol("wh_fg_amount", "W/H F/G", "text-green-600"),
+  amountCol("output_amount", "Output Amount", "text-red-600"),
   {
     field: "status",
     headerName: "Status",
@@ -234,7 +263,7 @@ const POBalanceTable = ({
                 "color-mix(in oklab, var(--color-base-content) 80%, transparent)",
             },
 
-            // คอลัมน์ที่ไม่มีกลุ่ม (Product, Due Date, PO Bal, Net Required, Status)
+            // คอลัมน์ที่ไม่มีกลุ่ม (Product, Due Date, PO Bal, Net Required, W/H F/G, Output Amount, Status)
             // DataGrid วางชื่อไว้แถวล่าง → ดันขึ้นครึ่งหนึ่งของแถวกลุ่ม ให้อยู่กลางหัวตารางทั้ง 2 แถว
             "& .MuiDataGrid-columnHeader:not(.inv-header):not(.MuiDataGrid-columnHeader--filledGroup):not(.MuiDataGrid-columnHeader--emptyGroup)":
               {

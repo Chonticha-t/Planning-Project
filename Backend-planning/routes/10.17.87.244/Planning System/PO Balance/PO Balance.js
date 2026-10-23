@@ -41,6 +41,7 @@ router.get("/table", async (req, res) => {
 
   try {
     // numeric -> float8 เพื่อให้ได้ตัวเลขกลับไป / due_date -> text กันวันเลื่อนจาก timezone
+    // ดึงจาก view v_po_amount (po_balance + ราคา + อัตราแลกเปลี่ยน) เพื่อได้ยอดเงิน W/H F/G และ Output (THB)
     const queryStr = `
       SELECT
         prd_name,
@@ -52,9 +53,11 @@ router.get("/table", async (req, res) => {
         net_required_pcs::float8                        AS net_required_pcs,
         rem_unmovement::float8                          AS rem_unmovement,
         rem_fg::float8                                  AS rem_fg,
+        wh_fg_amount::float8                            AS wh_fg_amount,
+        output_amount::float8                           AS output_amount,
         status,
         to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS')    AS updated_at
-      FROM planning.po_balance
+      FROM planning.v_po_amount
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY due_date, prd_name
     `;

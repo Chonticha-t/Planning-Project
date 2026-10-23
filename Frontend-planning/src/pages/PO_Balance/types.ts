@@ -10,6 +10,9 @@ export interface PlanningRow {
   net_required_pcs: number;
   rem_unmovement: number;
   rem_fg: number;
+  // ยอดเงิน (THB) จาก view v_po_amount — null ถ้าสินค้าไม่มีราคาใน po_price
+  wh_fg_amount: number | null;
+  output_amount: number | null;
   status: PlanningStatus;
   updated_at: string;
 }
@@ -23,6 +26,8 @@ export const SORT_OPTIONS: { field: keyof PlanningRow; label: string }[] = [
   { field: "f_g", label: "F/G" },
   { field: "rem_fg", label: "Rem F/G" },
   { field: "net_required_pcs", label: "Net Required" },
+  { field: "wh_fg_amount", label: "W/H F/G" },
+  { field: "output_amount", label: "Output Amount" },
 ];
 
 export interface PlanningSummaryRow {

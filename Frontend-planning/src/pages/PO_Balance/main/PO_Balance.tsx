@@ -39,6 +39,8 @@ const PO_Balance = () => {
         { header: "F/G", key: "f_g", group: "INVENTORY", align: "center", numFmt: "#,##0" },
         { header: "REM F/G", key: "rem_fg", group: "INVENTORY", align: "center", numFmt: "#,##0" },
         { header: "NET REQUIRED", key: "net_required_pcs", align: "center", numFmt: "#,##0" },
+        { header: "W/H F/G", key: "wh_fg_amount", align: "center", numFmt: "#,##0.00" },
+        { header: "OUTPUT AMOUNT", key: "output_amount", align: "center", numFmt: "#,##0.00" },
         { header: "STATUS", key: "status", align: "center" },
       ],
       data: rows.map((r) => ({
@@ -50,6 +52,8 @@ const PO_Balance = () => {
         f_g: r.f_g,
         rem_fg: r.rem_fg,
         net_required_pcs: r.net_required_pcs,
+        wh_fg_amount: r.wh_fg_amount,
+        output_amount: r.output_amount,
         status: r.status,
       })),
     });
