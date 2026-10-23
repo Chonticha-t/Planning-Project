@@ -13,6 +13,106 @@ const setNoCache = (res) => {
   });
 };
 
+// ── SSE (Server-Sent Events) Real-time Sync ────────────────────────
+const sseClients = new Set();
+
+const broadcastChange = () => {
+  const payload = `data: ${JSON.stringify({ type: "PO_BALANCE_UPDATED", timestamp: Date.now() })}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(payload);
+      if (typeof client.flush === "function") client.flush();
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+};
+
+let lastDbFingerprint = null;
+let isCheckingDb = false;
+
+// Backend ตรวจจับการเปลี่ยนแปลงใน Database ทุกๆ 2.5 วินาที (เฉพาะเมื่อมีหน้าเว็บเปิดค้างอยู่)
+setInterval(async () => {
+  if (sseClients.size === 0 || isCheckingDb) return;
+  isCheckingDb = true;
+
+  try {
+    const queryStr = `
+      SELECT
+        to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') AS updated_at,
+        COUNT(*)::int                                        AS total_rows,
+        COALESCE(SUM(po_bal), 0)::float8                     AS total_po_bal,
+        COALESCE(SUM(unmovement), 0)::float8                 AS total_unmovement,
+        COALESCE(SUM(f_g), 0)::float8                        AS total_fg,
+        COALESCE(SUM(net_required_pcs), 0)::float8           AS total_net_required
+      FROM planning.po_balance
+    `;
+    const { rows } = await query(queryStr);
+    const row = rows[0];
+    if (row) {
+      const fingerprint = [
+        row.updated_at,
+        row.total_rows,
+        row.total_po_bal,
+        row.total_unmovement,
+        row.total_fg,
+        row.total_net_required,
+      ].join("|");
+
+      if (lastDbFingerprint !== null && fingerprint !== lastDbFingerprint) {
+        broadcastChange();
+      }
+      lastDbFingerprint = fingerprint;
+    }
+  } catch {
+    // ป้องกัน background query error รบกวน console
+  } finally {
+    isCheckingDb = false;
+  }
+}, 2500);
+
+// GET /api_p1/planning/stream — ท่อเชื่อมต่อ SSE แบบ Real-time
+router.get("/stream", (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  res.write(`data: ${JSON.stringify({ type: "CONNECTED" })}\n\n`);
+  if (typeof res.flush === "function") res.flush();
+
+  sseClients.add(res);
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": keep-alive\n\n");
+      if (typeof res.flush === "function") res.flush();
+    } catch {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 25000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
+});
+
+// GET /api_p1/planning/test_notify — สำหรับทดสอบสั่งให้หน้าเว็บอัปเดตข้อมูลทันทีโดยไม่ต้องแก้ DB
+router.get("/test_notify", (req, res) => {
+  setNoCache(res);
+  broadcastChange();
+  return res.json({
+    status: "OK",
+    message: `Broadcasted update event to ${sseClients.size} client(s).`,
+    clients_count: sseClients.size,
+  });
+});
+
 // GET /api_p1/planning/table?status=ready&prd_name=ABC&startdate=2026-10-01&stopdate=2026-10-31
 router.get("/table", async (req, res) => {
   setNoCache(res);
@@ -377,6 +477,9 @@ router.post("/exchange_rate", async (req, res) => {
     }
 
     await client.query("COMMIT");
+
+    // แจ้งเตือนหน้าเว็บผ่าน SSE ว่าอัตราแลกเปลี่ยนเปลี่ยนและยอดเงิน v_po_amount อัปเดตแล้ว
+    broadcastChange();
 
     return res.json({
       status: "OK",

@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 
 import {
   PO_BALANCE_DISTINCT_PRODUCT_API,
+  PO_BALANCE_STREAM_API,
   PO_BALANCE_SUMMARY_API,
   PO_BALANCE_TABLE_API,
 } from "./api";
@@ -11,9 +12,7 @@ import type { ApiResponse, PlanningFilter, PlanningRow, PlanningStatus, Planning
 
 export const EMPTY_FILTER: PlanningFilter = { status: "", prd_name: "", startdate: "", stopdate: "" };
 
-// ความถี่ในการซิงค์ข้อมูลจาก Database ผ่าน AJAX แบบ Real-time (3 วินาที)
-const AUTO_REFRESH_MS = 3_000;
-// กำหนด Timeout ของแต่ละ Request เพื่อป้องกัน Request ค้างเมื่อเปิดรันงานทิ้งไว้ยาวๆ
+// กำหนด Timeout ของแต่ละ Request เพื่อความเสถียร
 const AJAX_TIMEOUT_MS = 10_000;
 
 // คำนวณ summary จากแถวข้อมูลที่ถูก filter
@@ -67,7 +66,7 @@ export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[
   }));
 };
 
-// ดึงข้อมูลตาราง + summary ของหน้า PO Balance ด้วย AJAX เต็มรูปแบบ (อัปเดต Real-time โดยไม่รีเฟรชหน้า)
+// ดึงข้อมูลตาราง + summary ของหน้า PO Balance ด้วย SSE (Server-Sent Events) แบบ Real-time โดยไม่ยิง API รัวๆ
 const usePOBalance = () => {
   const [rows, setRows] = useState<PlanningRow[]>([]);
   const [summary, setSummary] = useState<PlanningSummaryRow[]>([]);
@@ -128,7 +127,7 @@ const usePOBalance = () => {
             timeout: AJAX_TIMEOUT_MS,
             signal: controller.signal,
           }),
-          // เรียก summary เฉพาะตอนโหลดหลักหรือกดค้นหา
+          // เรียก summary เฉพาะตอนโหลดครั้งแรกหรือกดค้นหา
           !silent
             ? axios
                 .get<ApiResponse<PlanningSummaryRow[]>>(PO_BALANCE_SUMMARY_API, {
@@ -179,20 +178,42 @@ const usePOBalance = () => {
     };
   }, [fetchData, fetchProducts]);
 
-  // ระบบ AJAX Polling แบบ Real-time ดึงและเช็คข้อมูลตารางโดยตรงทุก 3 วินาที
+  // เชื่อมต่อ SSE Stream: รับการแจ้งเตือนจาก Backend เมื่อ Database เปลี่ยนจริง
   useEffect(() => {
-    const syncTableSilently = () => {
-      if (document.visibilityState !== "visible" || isFetchingRef.current) {
-        return;
+    let eventSource: EventSource | null = null;
+    let isSubscribed = true;
+
+    const connectSSE = () => {
+      try {
+        eventSource = new EventSource(PO_BALANCE_STREAM_API);
+
+        eventSource.onmessage = (event) => {
+          if (!isSubscribed) return;
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "PO_BALANCE_UPDATED") {
+              // ดึงข้อมูลใหม่แบบเงียบๆ ทันทีที่ Backend ส่งสัญญาณ
+              fetchData(activeFilterRef.current, { silent: true });
+            }
+          } catch {
+            // ignore non-json messages (heartbeats)
+          }
+        };
+
+        eventSource.onerror = () => {
+          // Browser จะพยายามต่อ SSE ใหม่อัตโนมัติเมื่อเกิดข้อผิดพลาด
+        };
+      } catch (err) {
+        console.error("SSE Connection Error:", err);
       }
-      fetchData(activeFilterRef.current, { silent: true });
     };
 
-    const intervalId = window.setInterval(syncTableSilently, AUTO_REFRESH_MS);
+    connectSSE();
 
+    // ดึงข้อมูลใหม่ทันทีเมื่อสลับแท็บกลับมาที่หน้าเว็บ (Focus)
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
-        syncTableSilently();
+        fetchData(activeFilterRef.current, { silent: true });
       }
     };
 
@@ -201,7 +222,8 @@ const usePOBalance = () => {
     window.addEventListener("online", handleVisibilityOrFocus);
 
     return () => {
-      window.clearInterval(intervalId);
+      isSubscribed = false;
+      eventSource?.close();
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
       window.removeEventListener("focus", handleVisibilityOrFocus);
       window.removeEventListener("online", handleVisibilityOrFocus);
