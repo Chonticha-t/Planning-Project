@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import {
   CircleDollarSign,
@@ -29,6 +30,7 @@ interface ExchangeRateModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved?: (rates: ExchangeRateData) => void;
+  dbVersion?: number;
 }
 
 const MONTHS = [
@@ -107,10 +109,19 @@ const USAFlag = () => (
   </svg>
 );
 
+type CachedRate = {
+  jpy: string;
+  usd: string;
+  isFromDb: boolean;
+  updatedAt: string | null;
+  savedMonths: string[];
+};
+
 export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   isOpen,
   onClose,
   onSaved,
+  dbVersion = 0,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState(() => MONTHS[new Date().getMonth()] || "October");
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
@@ -135,6 +146,20 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
   const confirm = useConfirm();
+  const cacheRef = useRef<Map<string, CachedRate>>(new Map());
+  const inFlightRef = useRef<Map<string, Promise<void>>>(new Map());
+
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  const selectedYearRef = useRef(selectedYear);
+  selectedYearRef.current = selectedYear;
+
+  const selectedMonthRef = useRef(selectedMonth);
+  selectedMonthRef.current = selectedMonth;
+
+  // ป้องกัน SSE ของการบันทึกตัวเองมาล้างแคชทิ้ง
+  const skipNextSseRef = useRef(false);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -185,76 +210,151 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, isEditing, isFromDb, onClose]);
 
-  // Fetch rate from Database when modal opens or period changes
+  const applyRecord = useCallback((entry: CachedRate, editingState?: boolean) => {
+    setJpyRate(entry.jpy);
+    setUsdRate(entry.usd);
+    setSavedJpyRate(entry.jpy);
+    setSavedUsdRate(entry.usd);
+    setIsFromDb(entry.isFromDb);
+    setLastUpdatedAt(entry.updatedAt);
+    setSavedMonthsInYear(entry.savedMonths);
+    setIsEditing(editingState !== undefined ? editingState : !entry.isFromDb);
+  }, []);
+
+  const fetchRate = useCallback(async (year: string, month: string, options?: { silent?: boolean; force?: boolean }) => {
+    const key = `${year}-${month}`;
+    const cached = cacheRef.current.get(key);
+
+    // 1. ถ้ามี Cache อยู่แล้ว และไม่ใช่การบังคับดึงใหม่ (force)
+    // ให้นำค่าจาก Cache มาใช้ทันที แล้วหยุดเลย -> 0 Network Requests!
+    if (cached && !options?.force) {
+      applyRecord(cached);
+      setLoading(false);
+      return;
+    }
+
+    // 2. In-flight Request Deduplication:
+    // หากมีคำขอของเดือน/ปีนี้กำลังวิ่งอยู่บนเน็ตเวิร์กแล้ว ให้รอผลลัพธ์จากตัวเดิม ไม่ยิงเส้นใหม่ซ้อน
+    const existingPromise = inFlightRef.current.get(key);
+    if (existingPromise) {
+      await existingPromise;
+      return;
+    }
+
+    // 3. ถ้ายังไม่มีใน Cache หรือมีคำสั่ง force (SSE แจ้งว่า DB เปลี่ยน) -> ค่อยยิง API
+    if (!cached && !options?.silent) {
+      setLoading(true);
+    }
+
+    const requestPromise = (async () => {
+      try {
+        const response = await axios.get(PO_BALANCE_EXCHANGE_RATE_API, {
+          params: { year, month },
+          timeout: 8000,
+        });
+
+        const savedMonths = Array.isArray(response.data?.saved_months)
+          ? response.data.saved_months
+          : [];
+        const record = response.data?.data;
+
+        if (response.data?.status === "OK" && record?.rates && (record.rates.JPY || record.rates.USD)) {
+          const jpy = record.rates.JPY != null ? record.rates.JPY.toString() : "";
+          const usd = record.rates.USD != null ? record.rates.USD.toString() : "";
+          const entry: CachedRate = {
+            jpy,
+            usd,
+            isFromDb: true,
+            updatedAt: record.updated_at || null,
+            savedMonths,
+          };
+          const isSame =
+            cached &&
+            cached.jpy === jpy &&
+            cached.usd === usd &&
+            cached.isFromDb === true &&
+            cached.updatedAt === entry.updatedAt;
+
+          cacheRef.current.set(key, entry);
+          if (!isSame) {
+            applyRecord(entry, false);
+          }
+        } else {
+          const entry: CachedRate = {
+            jpy: "",
+            usd: "",
+            isFromDb: false,
+            updatedAt: null,
+            savedMonths,
+          };
+          const isSame =
+            cached &&
+            cached.jpy === "" &&
+            cached.usd === "" &&
+            cached.isFromDb === false;
+
+          cacheRef.current.set(key, entry);
+          if (!isSame) {
+            applyRecord(entry, true);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch exchange rates from DB:", err);
+        if (!cached && !options?.silent) {
+          const entry: CachedRate = {
+            jpy: "",
+            usd: "",
+            isFromDb: false,
+            updatedAt: null,
+            savedMonths: [],
+          };
+          applyRecord(entry, true);
+        }
+      } finally {
+        inFlightRef.current.delete(key);
+        if (!options?.silent) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    inFlightRef.current.set(key, requestPromise);
+    await requestPromise;
+  }, [applyRecord]);
+
+  // Prefetch current period immediately on mount in background
+  useEffect(() => {
+    fetchRate(selectedYear, selectedMonth, { silent: true });
+  }, [fetchRate]);
+
+  // Fetch or apply from cache when modal opens or period changes
   useEffect(() => {
     if (!isOpen) {
       setIsEditing(false);
       return;
     }
+    fetchRate(selectedYear, selectedMonth);
+  }, [isOpen, selectedMonth, selectedYear, fetchRate]);
 
-    let isMounted = true;
-    setLoading(true);
+  // เมื่อ Backend แจ้งเตือนผ่าน SSE ว่า Database เปลี่ยนแปลง (ฟังเฉพาะ dbVersion เท่านั้น!)
+  // ปลด isOpen ออกจาก dependency เพื่อไม่ให้ทำงานซ้อนกับตอนเปิด Modal
+  useEffect(() => {
+    if (dbVersion === 0) return;
 
-    const fetchRate = async () => {
-      try {
-        const response = await axios.get(PO_BALANCE_EXCHANGE_RATE_API, {
-          params: {
-            year: selectedYear,
-            month: selectedMonth,
-          },
-          timeout: 8000,
-        });
+    // ถ้าเป็นการแจ้งเตือนที่เกิดจากการบันทึกหรือลบของตัวเราเอง ให้ข้ามการล้างแคช
+    if (skipNextSseRef.current) {
+      skipNextSseRef.current = false;
+      return;
+    }
 
-        if (!isMounted) return;
+    // ล้างแคชเพื่อให้การเรียกครั้งถัดไปดึงข้อมูลใหม่ล่าสุดจาก DB
+    cacheRef.current.clear();
 
-        if (Array.isArray(response.data?.saved_months)) {
-          setSavedMonthsInYear(response.data.saved_months);
-        }
-
-        const record = response.data?.data;
-        if (response.data?.status === "OK" && record?.rates && (record.rates.JPY || record.rates.USD)) {
-          // Period exists in DB -> View Mode (locked)
-          const jpy = record.rates.JPY != null ? record.rates.JPY.toString() : "";
-          const usd = record.rates.USD != null ? record.rates.USD.toString() : "";
-
-          setJpyRate(jpy);
-          setUsdRate(usd);
-          setSavedJpyRate(jpy);
-          setSavedUsdRate(usd);
-          setIsFromDb(true);
-          setLastUpdatedAt(record.updated_at || null);
-          setIsEditing(false);
-        } else {
-          // Period does NOT exist in DB yet -> Ready-to-input mode with empty fields (0.00 placeholder)
-          setJpyRate("");
-          setUsdRate("");
-          setSavedJpyRate("");
-          setSavedUsdRate("");
-          setIsFromDb(false);
-          setLastUpdatedAt(null);
-          setIsEditing(true);
-        }
-      } catch (err) {
-        console.warn("Could not fetch exchange rates from DB:", err);
-        if (!isMounted) return;
-        setJpyRate("");
-        setUsdRate("");
-        setSavedJpyRate("");
-        setSavedUsdRate("");
-        setIsFromDb(false);
-        setLastUpdatedAt(null);
-        setIsEditing(true);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    fetchRate();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isOpen, selectedMonth, selectedYear]);
+    // หากขณะนั้นผู้ใช้กำลังเปิดหน้าต่าง Modal ค้างอยู่ ให้ดึงข้อมูลใหม่มาแสดงผลทันที
+    if (isOpenRef.current) {
+      fetchRate(selectedYearRef.current, selectedMonthRef.current, { force: true, silent: true });
+    }
+  }, [dbVersion, fetchRate]);
 
   const handleStartEdit = () => {
     setIsEditing(true);
@@ -343,8 +443,20 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       setSavedMonthsInYear((prev) =>
         prev.includes(selectedMonth) ? prev : [...prev, selectedMonth]
       );
-      setLastUpdatedAt(new Date().toLocaleString("en-GB"));
+      skipNextSseRef.current = true;
+      const updatedTime = new Date().toLocaleString("en-GB");
+      setLastUpdatedAt(updatedTime);
       setIsEditing(false); // Lock into View Mode after saving
+
+      cacheRef.current.set(`${selectedYear}-${selectedMonth}`, {
+        jpy: jpyStr,
+        usd: usdStr,
+        isFromDb: true,
+        updatedAt: updatedTime,
+        savedMonths: savedMonthsInYear.includes(selectedMonth)
+          ? savedMonthsInYear
+          : [...savedMonthsInYear, selectedMonth],
+      });
 
       toast.success(`Saved exchange rates for ${selectedMonth} ${selectedYear}.`);
       onSaved?.({ jpy: numJpy, usd: numUsd, updatedAt: new Date().toISOString() });
@@ -401,8 +513,17 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
       setSavedUsdRate("");
       setIsFromDb(false);
       setSavedMonthsInYear((prev) => prev.filter((m) => m !== selectedMonth));
+      skipNextSseRef.current = true;
       setLastUpdatedAt(null);
       setIsEditing(true);
+
+      cacheRef.current.set(`${selectedYear}-${selectedMonth}`, {
+        jpy: "",
+        usd: "",
+        isFromDb: false,
+        updatedAt: null,
+        savedMonths: savedMonthsInYear.filter((m) => m !== selectedMonth),
+      });
 
       toast.success(`Deleted exchange rates for ${selectedMonth} ${selectedYear}.`);
       onSaved?.({ jpy: 0, usd: 0, updatedAt: new Date().toISOString() });
@@ -425,32 +546,31 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   // Input is active if it's a new month (!isFromDb) OR user clicked Edit on an existing month
   const isInputActive = !isFromDb || isEditing;
 
-  return (
+  return createPortal(
     <AnimatePresence>
-    {isOpen && (
-    <motion.div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <motion.div
-        className="bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col transform-gpu"
-        initial={{ opacity: 0, scale: 0.97, y: -20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: -20 }}
-        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        style={{ willChange: "transform, opacity" }}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="exchange-rate-title"
-      >
+      {isOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4">
+          {/* Backdrop overlay without blur - prevents Chromium GPU whole-screen flicker */}
+          <motion.div
+            className="absolute inset-0 bg-black/40"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={onClose}
+          />
+          {/* Dialog Card */}
+          <motion.div
+            className="relative bg-base-100 text-base-content rounded-2xl sm:rounded-[22px] shadow-2xl w-full max-w-[480px] p-6 sm:p-7 border border-base-300 flex flex-col transform-gpu"
+            initial={{ opacity: 0, scale: 0.97, y: -15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -15 }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            style={{ willChange: "transform, opacity" }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exchange-rate-title"
+          >
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -686,15 +806,15 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 {loading ? (
                   <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
                     <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
-                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                    <div className="h-4 w-12 bg-base-300/80 rounded animate-pulse ml-auto" />
                   </div>
                 ) : isInputActive ? (
-                  <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
+                  <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                     <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
                     <input
                       type="text"
                       inputMode="decimal"
-                      autoFocus
+                      autoFocus={isEditing}
                       value={jpyRate}
                       onChange={(e) => setJpyRate(sanitizeRate(e.target.value))}
                       placeholder="0.00"
@@ -710,11 +830,13 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     </span>
                   </div>
                 )}
-                {thbPerJpy && (
-                  <span className="text-[10.5px] text-base-content/50 font-medium mt-1 select-none">
-                    ≈ {thbPerJpy} THB / 1 JPY
-                  </span>
-                )}
+                <div className="min-h-[16px] flex items-center">
+                  {thbPerJpy && (
+                    <span className="text-[10.5px] text-base-content/50 font-medium mt-1 select-none">
+                      ≈ {thbPerJpy} THB / 1 JPY
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -756,10 +878,10 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                 {loading ? (
                   <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 shrink-0">
                     <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
-                    <RefreshCw size={14} className="animate-spin text-base-content/40 ml-auto" />
+                    <div className="h-4 w-12 bg-base-300/80 rounded animate-pulse ml-auto" />
                   </div>
                 ) : isInputActive ? (
-                  <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0 animate-in fade-in duration-150">
+                  <div className="bg-base-200/80 border border-primary/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                     <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
                     <input
                       type="text"
@@ -779,22 +901,41 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                     </span>
                   </div>
                 )}
-                {thbPerUsd && (
-                  <span
-                    className={`text-[10.5px] font-medium mt-1 select-none ${
-                      numUsd > 1 ? "text-warning font-semibold" : "text-base-content/50"
-                    }`}
-                  >
-                    ≈ {thbPerUsd} THB / 1 USD
-                  </span>
-                )}
+                <div className="min-h-[16px] flex items-center">
+                  {thbPerUsd && (
+                    <span
+                      className={`text-[10.5px] font-medium mt-1 select-none ${
+                        numUsd > 1 ? "text-warning font-semibold" : "text-base-content/50"
+                      }`}
+                    >
+                      ≈ {thbPerUsd} THB / 1 USD
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         {/* Footer Action Buttons */}
-        {!isFromDb ? (
+        {loading ? (
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content flex-1 rounded-full text-[13px] font-semibold min-h-[44px] h-[44px] transition-all cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              disabled
+              className="btn btn-primary flex-1 rounded-full text-primary-content text-[13px] font-semibold min-h-[44px] h-[44px] transition-all shadow-sm opacity-60"
+            >
+              <div className="h-4 w-10 bg-primary-content/40 rounded animate-pulse" />
+            </button>
+          </div>
+        ) : !isFromDb ? (
           // New Month (Not in DB yet): Cancel + Save directly
           <div className="flex items-center gap-3 mb-4">
             <button
@@ -860,33 +1001,36 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         )}
 
         {/* Audit / Security footer with Delete right next to it */}
-        {lastUpdatedAt && (
-          <div className="flex items-center justify-center gap-2.5 text-[11px] text-base-content/50 font-normal">
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck size={14} className="text-primary shrink-0" />
-              <span>Last saved to DB: {lastUpdatedAt}</span>
+        <div className="min-h-[22px] flex items-center justify-center">
+          {lastUpdatedAt && (
+            <div className="flex items-center justify-center gap-2.5 text-[11px] text-base-content/50 font-normal">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-primary shrink-0" />
+                <span>Last saved to DB: {lastUpdatedAt}</span>
+              </div>
+              {isFromDb && (
+                <>
+                  <span className="text-base-content/30 select-none">•</span>
+                  <button
+                    type="button"
+                    disabled={saving || deleting}
+                    onClick={handleDelete}
+                    className="text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 font-semibold cursor-pointer transition-colors"
+                    title="Delete exchange rates for this month"
+                  >
+                    {deleting ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                    <span>Delete</span>
+                  </button>
+                </>
+              )}
             </div>
-            {isFromDb && (
-              <>
-                <span className="text-base-content/30 select-none">•</span>
-                <button
-                  type="button"
-                  disabled={saving || deleting}
-                  onClick={handleDelete}
-                  className="text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 font-semibold cursor-pointer transition-colors"
-                  title="Delete exchange rates for this month"
-                >
-                  {deleting ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                  <span>Delete</span>
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </motion.div>
-    </motion.div>
-    )}
-    </AnimatePresence>
+          )}
+        </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>,
+    document.body
   );
 };
 

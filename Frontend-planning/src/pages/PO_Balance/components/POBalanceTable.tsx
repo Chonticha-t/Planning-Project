@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   DataGrid,
   GridColDef,
@@ -340,4 +341,4 @@ const POBalanceTable = ({
   );
 };
 
-export default POBalanceTable;
+export default memo(POBalanceTable);

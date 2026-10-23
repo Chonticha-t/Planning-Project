@@ -72,6 +72,7 @@ const usePOBalance = () => {
   const [summary, setSummary] = useState<PlanningSummaryRow[]>([]);
   const [products, setProducts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dbVersion, setDbVersion] = useState(0);
 
   const activeFilterRef = useRef<PlanningFilter>(EMPTY_FILTER);
   const lastRowsJsonRef = useRef<string>("");
@@ -192,7 +193,8 @@ const usePOBalance = () => {
           try {
             const data = JSON.parse(event.data);
             if (data.type === "PO_BALANCE_UPDATED") {
-              // ดึงข้อมูลใหม่แบบเงียบๆ ทันทีที่ Backend ส่งสัญญาณ
+              // ดึงข้อมูลใหม่แบบเงียบๆ ทันทีที่ Backend ส่งสัญญาณ พร้อมอัปเดตเวอร์ชันให้เคลียร์แคช
+              setDbVersion((v) => v + 1);
               fetchData(activeFilterRef.current, { silent: true });
             }
           } catch {
@@ -213,6 +215,7 @@ const usePOBalance = () => {
     // ดึงข้อมูลใหม่เฉพาะเมื่อสลับแท็บกลับมาที่หน้าเว็บ (Visibility Change) — ไม่ใช้ window focus เพื่อป้องกัน Card กระพริบเวลาเปิด/ปิด Modal
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
+        setDbVersion((v) => v + 1);
         fetchData(activeFilterRef.current, { silent: true });
       }
     };
@@ -228,7 +231,7 @@ const usePOBalance = () => {
     };
   }, [fetchData]);
 
-  return { rows, summary, products, loading, fetchData };
+  return { rows, summary, products, loading, fetchData, dbVersion };
 };
 
 export default usePOBalance;

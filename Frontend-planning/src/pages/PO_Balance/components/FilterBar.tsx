@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, memo, type ReactNode } from "react";
 import {
   Search,
   RotateCcw,
@@ -318,4 +318,4 @@ const FilterBar = ({
   );
 };
 
-export default FilterBar;
+export default memo(FilterBar);

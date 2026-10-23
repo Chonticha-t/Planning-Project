@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import type { GridSortModel } from "@mui/x-data-grid";
 
@@ -15,13 +15,25 @@ const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const [isExchangeRateModalOpen, setIsExchangeRateModalOpen] = useState(false);
-  const { rows, summary, products, loading, fetchData } = usePOBalance();
+  const { rows, summary, products, loading, fetchData, dbVersion } = usePOBalance();
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setFilter(EMPTY_FILTER);
     setSortModel([]);
     fetchData(EMPTY_FILTER);
-  };
+  }, [fetchData]);
+
+  const handleOpenExchangeRate = useCallback(() => {
+    setIsExchangeRateModalOpen(true);
+  }, []);
+
+  const handleCloseExchangeRate = useCallback(() => {
+    setIsExchangeRateModalOpen(false);
+  }, []);
+
+  const handleSearch = useCallback((f = filter) => {
+    fetchData(f);
+  }, [filter, fetchData]);
 
   const handleExport = () => {
     if (rows.length === 0) {
@@ -68,16 +80,17 @@ const PO_Balance = () => {
         sortModel={sortModel}
         onSortModelChange={setSortModel}
         onChange={setFilter}
-        onSearch={(f = filter) => fetchData(f)}
+        onSearch={handleSearch}
         onReset={handleReset}
         onExport={handleExport}
-        onOpenExchangeRate={() => setIsExchangeRateModalOpen(true)}
+        onOpenExchangeRate={handleOpenExchangeRate}
         loading={loading}
       />
       <POBalanceTable rows={rows} loading={loading} sortModel={sortModel} onSortModelChange={setSortModel} />
       <ExchangeRateModal
         isOpen={isExchangeRateModalOpen}
-        onClose={() => setIsExchangeRateModalOpen(false)}
+        onClose={handleCloseExchangeRate}
+        dbVersion={dbVersion}
       />
     </div>
   );

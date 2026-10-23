@@ -1,5 +1,5 @@
 import { CheckCircle2, Factory, Package, Clock } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { PlanningSummaryRow } from "../types";
 import { toDMY } from "../utils";
 
@@ -109,4 +109,4 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
   );
 };
 
-export default SummaryCards;
+export default memo(SummaryCards);
