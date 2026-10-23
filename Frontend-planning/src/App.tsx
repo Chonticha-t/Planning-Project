@@ -10,6 +10,7 @@ import {
 } from "@mui/material/styles";
 import { getThemeColors, observeThemeChanges } from "./themeUtils";
 import AppRoutes from "@/routes/AppRoutes";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 
 function App() {
   const [themeColors, setThemeColors] = useState<any>({});
@@ -63,7 +64,9 @@ function App() {
     <ThemeProvider_mui theme={theme}>
       <ThemeProvider disableTransitionOnChange>
         <BrowserRouter>
-          <AppRoutes />
+          <ConfirmProvider>
+            <AppRoutes />
+          </ConfirmProvider>
           <Toaster
             position="top-center"
             containerStyle={{ zIndex: 99999, top: 20 }}

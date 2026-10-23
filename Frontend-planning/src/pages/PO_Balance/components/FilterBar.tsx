@@ -108,7 +108,7 @@ const SortByDropdown = ({
           <ArrowUpDown size={15} className="opacity-70" />
         )}
         <span className="text-[13px]">
-          {activeLabel ? `Sort: ${activeLabel}` : "Sort by..."}
+          {activeLabel ? `Sort by: ${activeLabel}` : "Sort by"}
         </span>
         <ChevronDown
           size={14}
@@ -225,7 +225,7 @@ const FilterBar = ({
   return (
     <div className="card bg-base-100 border border-base-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       <div className="card-body p-4">
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap items-end gap-3">
           <Field label="Product" className="w-full sm:w-60">
             <ProductCombobox
               value={filter.prd_name}
@@ -241,9 +241,9 @@ const FilterBar = ({
             />
           </Field>
 
-          <Field label="Status" className="w-full sm:w-44">
+          <Field label="Status" className="w-full sm:w-40">
             <select
-              className="select select-sm text-[13px] w-full focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
+              className="select select-sm text-[13px] w-full whitespace-nowrap truncate focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
               value={filter.status}
               onChange={(e) => {
                 const next = { ...filter, status: e.target.value as PlanningFilter["status"] };
@@ -283,9 +283,10 @@ const FilterBar = ({
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-ghost text-[13px]"
+                className="btn btn-sm btn-ghost text-[13px] gap-1.5 text-base-content/70"
                 onClick={handleClearDate}
                 disabled={loading || (!filter.startdate && !filter.stopdate)}
+                title="Clear date"
               >
                 <RotateCcw size={15} />
                 Clear
