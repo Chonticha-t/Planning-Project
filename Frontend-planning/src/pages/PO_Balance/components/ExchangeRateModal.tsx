@@ -254,13 +254,8 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     };
   }, [isOpen, selectedMonth, selectedYear]);
 
-  const handleStartEdit = async () => {
-    const ok = await confirm({
-      variant: "edit",
-      title: "Edit exchange rates?",
-      description: `You are about to edit the saved rates for ${selectedMonth} ${selectedYear}.`,
-    });
-    if (ok) setIsEditing(true);
+  const handleStartEdit = () => {
+    setIsEditing(true);
   };
 
   const handleCancelEdit = () => {
