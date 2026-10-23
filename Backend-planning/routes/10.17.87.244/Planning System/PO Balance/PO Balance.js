@@ -32,6 +32,7 @@ let lastDbFingerprint = null;
 let isCheckingDb = false;
 
 // Backend ตรวจจับการเปลี่ยนแปลงใน Database ทุกๆ 2.5 วินาที (เฉพาะเมื่อมีหน้าเว็บเปิดค้างอยู่)
+// ตรวจสอบทั้ง po_balance, po_price และ exchange_rate_monthly เพื่อ sync แบบ Real-time
 setInterval(async () => {
   if (sseClients.size === 0 || isCheckingDb) return;
   isCheckingDb = true;
@@ -39,24 +40,36 @@ setInterval(async () => {
   try {
     const queryStr = `
       SELECT
-        to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') AS updated_at,
-        COUNT(*)::int                                        AS total_rows,
-        COALESCE(SUM(po_bal), 0)::float8                     AS total_po_bal,
-        COALESCE(SUM(unmovement), 0)::float8                 AS total_unmovement,
-        COALESCE(SUM(f_g), 0)::float8                        AS total_fg,
-        COALESCE(SUM(net_required_pcs), 0)::float8           AS total_net_required
-      FROM planning.po_balance
+        -- ตรวจสอบ po_balance
+        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.po_balance)          AS bal_updated_at,
+        (SELECT COUNT(*)::int FROM planning.po_balance)                                                   AS bal_total_rows,
+        (SELECT COALESCE(SUM(po_bal), 0)::float8 FROM planning.po_balance)                                AS total_po_bal,
+        (SELECT COALESCE(SUM(unmovement), 0)::float8 FROM planning.po_balance)                            AS total_unmovement,
+        (SELECT COALESCE(SUM(f_g), 0)::float8 FROM planning.po_balance)                                   AS total_fg,
+        (SELECT COALESCE(SUM(net_required_pcs), 0)::float8 FROM planning.po_balance)                      AS total_net_required,
+
+        -- ตรวจสอบ po_price
+        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.po_price)              AS price_updated_at,
+        (SELECT COUNT(*)::int FROM planning.po_price)                                                     AS price_total_rows,
+        (SELECT COALESCE(SUM(price), 0)::float8 FROM planning.po_price)                                    AS total_price,
+
+        -- ตรวจสอบ exchange_rate_monthly
+        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.exchange_rate_monthly) AS rate_updated_at
     `;
     const { rows } = await query(queryStr);
     const row = rows[0];
     if (row) {
       const fingerprint = [
-        row.updated_at,
-        row.total_rows,
+        row.bal_updated_at,
+        row.bal_total_rows,
         row.total_po_bal,
         row.total_unmovement,
         row.total_fg,
         row.total_net_required,
+        row.price_updated_at,
+        row.price_total_rows,
+        row.total_price,
+        row.rate_updated_at,
       ].join("|");
 
       if (lastDbFingerprint !== null && fingerprint !== lastDbFingerprint) {
