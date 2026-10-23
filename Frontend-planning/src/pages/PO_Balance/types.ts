@@ -27,7 +27,7 @@ export const SORT_OPTIONS: { field: keyof PlanningRow; label: string }[] = [
   { field: "rem_fg", label: "Rem F/G" },
   { field: "net_required_pcs", label: "Net Required" },
   { field: "wh_fg_amount", label: "W/H F/G" },
-  { field: "output_amount", label: "Output Amount" },
+  { field: "output_amount", label: "Output Amt" },
 ];
 
 export interface PlanningSummaryRow {
@@ -36,6 +36,8 @@ export interface PlanningSummaryRow {
   total_products: number;
   po_bal: number;
   net_required_pcs: number;
+  wh_fg_amount?: number;
+  output_amount?: number;
   updated_at: string;
 }
 

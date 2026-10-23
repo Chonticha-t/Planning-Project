@@ -40,7 +40,7 @@ const PO_Balance = () => {
         { header: "REM F/G", key: "rem_fg", group: "INVENTORY", align: "center", numFmt: "#,##0" },
         { header: "NET REQUIRED", key: "net_required_pcs", align: "center", numFmt: "#,##0" },
         { header: "W/H F/G", key: "wh_fg_amount", align: "center", numFmt: "#,##0.00" },
-        { header: "OUTPUT AMOUNT", key: "output_amount", align: "center", numFmt: "#,##0.00" },
+        { header: "OUTPUT AMT", key: "output_amount", align: "center", numFmt: "#,##0.00" },
         { header: "STATUS", key: "status", align: "center" },
       ],
       data: rows.map((r) => ({

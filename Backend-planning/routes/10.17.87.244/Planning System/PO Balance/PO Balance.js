@@ -111,8 +111,10 @@ router.get("/summary", async (req, res) => {
         COUNT(DISTINCT prd_name)::int        AS total_products,
         COALESCE(SUM(po_bal), 0)::float8     AS po_bal,
         COALESCE(SUM(net_required_pcs), 0)::float8 AS net_required_pcs,
+        COALESCE(SUM(wh_fg_amount), 0)::float8     AS wh_fg_amount,
+        COALESCE(SUM(output_amount), 0)::float8    AS output_amount,
         to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-      FROM planning.po_balance
+      FROM planning.v_po_amount
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       GROUP BY status
       ORDER BY status

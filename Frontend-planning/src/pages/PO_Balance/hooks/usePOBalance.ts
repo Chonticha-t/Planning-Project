@@ -25,6 +25,8 @@ export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[
       products: Set<string>;
       po_bal: number;
       net_required_pcs: number;
+      wh_fg_amount: number;
+      output_amount: number;
       updated_at: string;
     }
   > = {};
@@ -36,6 +38,8 @@ export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[
         products: new Set(),
         po_bal: 0,
         net_required_pcs: 0,
+        wh_fg_amount: 0,
+        output_amount: 0,
         updated_at: r.updated_at || "",
       };
     }
@@ -44,6 +48,8 @@ export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[
     s.products.add(r.prd_name);
     s.po_bal += Number(r.po_bal) || 0;
     s.net_required_pcs += Number(r.net_required_pcs) || 0;
+    s.wh_fg_amount += Number(r.wh_fg_amount) || 0;
+    s.output_amount += Number(r.output_amount) || 0;
     if (r.updated_at && (!s.updated_at || r.updated_at > s.updated_at)) {
       s.updated_at = r.updated_at;
     }
@@ -55,6 +61,8 @@ export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[
     total_products: s.products.size,
     po_bal: s.po_bal,
     net_required_pcs: s.net_required_pcs,
+    wh_fg_amount: s.wh_fg_amount,
+    output_amount: s.output_amount,
     updated_at: s.updated_at,
   }));
 };

@@ -155,7 +155,7 @@ const columns: GridColDef<PlanningRow>[] = [
   numberCol("net_required_pcs", "Net Required", true),
   // Output Amount ใช้แดง red-600 ให้ต่างเฉดจาก Net Required (text-error)
   amountCol("wh_fg_amount", "W/H F/G", "text-green-600"),
-  amountCol("output_amount", "Output Amount", "text-red-600"),
+  amountCol("output_amount", "Output Amt", "text-red-600"),
   {
     field: "status",
     headerName: "Status",
