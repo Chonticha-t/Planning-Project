@@ -92,11 +92,9 @@ const SortByDropdown = ({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`btn btn-sm gap-2 font-medium focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary transition-colors ${
-          open || activeField
-            ? "border-primary text-primary"
-            : "bg-base-100 border-base-300 text-base-content hover:bg-base-200"
-        } ${activeField ? "btn-outline btn-primary" : ""}`}
+        className={`btn btn-sm bg-base-100 text-base-content text-[13px] gap-1.5 font-medium shadow-none hover:bg-base-200 focus:outline-none focus-visible:outline-none transition-colors ${
+          open ? "border-primary hover:border-primary" : "border-base-content/20 hover:border-base-content/20"
+        }`}
       >
         {activeField ? (
           activeDir === "asc" ? (
@@ -105,9 +103,9 @@ const SortByDropdown = ({
             <ArrowDown size={15} />
           )
         ) : (
-          <ArrowUpDown size={15} className="opacity-70" />
+          <ArrowUpDown size={15} />
         )}
-        <span className="text-[13px]">
+        <span>
           {activeLabel ? `Sort by: ${activeLabel}` : "Sort by"}
         </span>
         <ChevronDown
@@ -117,7 +115,7 @@ const SortByDropdown = ({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1.5 w-60 rounded-xl border border-base-300 bg-base-100 shadow-xl overflow-hidden">
+        <div className="absolute left-0 z-50 mt-1.5 w-60 rounded-xl border border-base-300 bg-base-100 shadow-xl overflow-hidden">
           {/* ส่วนหัว Sort by + ปุ่ม Clear สไตล์รูปที่ 1 */}
           <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-base-300 bg-base-200/40">
             <span className="text-[13px] font-bold text-base-content/70">Sort by</span>
@@ -257,6 +255,10 @@ const FilterBar = ({
             </select>
           </Field>
 
+          <Field label="Sort">
+            <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
+          </Field>
+
           <Field label="Due date" className="w-full sm:w-auto">
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
               <CallyDatePicker
@@ -306,7 +308,6 @@ const FilterBar = ({
                 <span className="hidden sm:inline font-medium">Exchange Rate</span>
               </button>
             )}
-            <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
             <button className="btn btn-sm btn-success btn-outline text-[13px]" onClick={onExport} disabled={loading}>
               <FileSpreadsheet size={16} />
               Export Excel
