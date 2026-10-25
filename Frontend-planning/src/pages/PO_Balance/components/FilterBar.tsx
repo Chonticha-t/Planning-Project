@@ -276,7 +276,7 @@ const FilterBar = ({
               />
               <button
                 type="button"
-                className="btn btn-sm btn-primary text-[13px]"
+                className="btn btn-sm btn-outline btn-primary text-[13px]"
                 onClick={() => onSearch()}
                 disabled={loading}
               >
