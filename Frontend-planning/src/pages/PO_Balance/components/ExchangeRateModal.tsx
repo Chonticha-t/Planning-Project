@@ -384,6 +384,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
     const ok = await confirm({
       variant: "save",
+      size: "md",
       title: "Save exchange rates?",
       description: (
         <>
@@ -399,7 +400,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               { pair: "THB → JPY", value: `¥${numJpy.toLocaleString("en-US", { minimumFractionDigits: 2 })}` },
               { pair: "THB → USD", value: `$${numUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}` },
             ].map((r) => (
-              <div key={r.pair} className="flex items-center justify-between px-3.5 py-2">
+              <div key={r.pair} className="flex items-center justify-between px-4 py-2.5">
                 <span className="text-[12px] font-medium text-base-content/60">
                   <span className="text-sm font-bold text-base-content">1</span> {r.pair}
                 </span>

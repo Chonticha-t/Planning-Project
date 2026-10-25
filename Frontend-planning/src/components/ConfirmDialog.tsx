@@ -11,7 +11,13 @@ export interface ConfirmOptions {
   cancelText?: string;
   variant?: ConfirmVariant;
   from?: "top" | "bottom" | "left" | "right";
+  size?: "sm" | "md";
 }
+
+const SIZES = {
+  sm: "max-w-sm",
+  md: "max-w-md",
+};
 
 const VARIANTS: Record<ConfirmVariant, { button: string; title: string; confirmText: string }> = {
   save: {
@@ -104,7 +110,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 aria-modal="true"
                 aria-labelledby="confirm-dialog-title"
                 aria-describedby="confirm-dialog-description"
-                className="relative w-full max-w-sm bg-base-100 text-base-content rounded-2xl shadow-2xl border border-base-300 overflow-hidden transform-gpu"
+                className={`relative w-full ${SIZES[options.size ?? "sm"]} bg-base-100 text-base-content rounded-2xl shadow-2xl border border-base-300 overflow-hidden transform-gpu`}
                 initial={{ opacity: 0, scale: 0.97, ...offset }}
                 animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97, ...offset }}
