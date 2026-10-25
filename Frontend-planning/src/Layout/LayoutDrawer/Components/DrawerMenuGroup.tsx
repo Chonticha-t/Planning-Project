@@ -243,18 +243,14 @@ const DrawerMenuGroup = ({
                   className={`flex items-center gap-3 px-2 py-1.5 rounded-lg active:scale-95 transition-all duration-200 ${
                     isActive
                       ? "bg-primary text-primary-content font-bold shadow-sm"
-                      : "hover:bg-base-300 text-base-content/85"
+                      : "hover:bg-base-300 text-base-content"
                   }`}
                 >
                   {link.icon && renderIcon(link.icon, 20)}
 
                   {isOpen && (
                     <span
-                      className={`transition-all whitespace-nowrap overflow-hidden text-ellipsis ${
-                        isActive
-                          ? "font-bold opacity-100"
-                          : "font-normal opacity-80"
-                      } ${link.label && link.label.length > 18 ? "text-xs" : "text-sm"}`}
+                      className={`font-bold transition-all whitespace-nowrap overflow-hidden text-ellipsis ${link.label && link.label.length > 18 ? "text-xs" : "text-sm"}`}
                       title={link.label}
                     >
                       {link.label}

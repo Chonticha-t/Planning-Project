@@ -1,5 +1,5 @@
 import React from "react";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Cog } from "lucide-react";
 
 // 🟧 Internal ICONS
 import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
@@ -8,6 +8,7 @@ import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
 // 🧭 PAGE IMPORTS (Lazy Loading)
 // =========================================
 const PO_Balance = React.lazy(() => import("@/pages/PO_Balance/main/PO_Balance"));
+const WIP = React.lazy(() => import("@/pages/WIP/main/WIP"));
 
 // =========================================
 // ⚙️ BASE CONFIG
@@ -35,6 +36,13 @@ export const routes_planning: AppRoute[] = [
     Title: "PO BALANCE",
     isDefault: true,
     icon: ClipboardList,
+  },
+  {
+    path: `${BASE}/wip`,
+    element: <WIP />,
+    label: "WIP",
+    Title: "WIP",
+    icon: Cog,
   },
 ];
 

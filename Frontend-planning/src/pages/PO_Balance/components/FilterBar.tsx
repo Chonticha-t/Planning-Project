@@ -301,14 +301,14 @@ const FilterBar = ({
               <button
                 type="button"
                 onClick={onOpenExchangeRate}
-                className="btn btn-sm btn-outline btn-primary text-[13px] gap-1.5 focus:outline-none transition-colors"
+                className="btn btn-sm btn-primary text-[13px] gap-1.5 focus:outline-none transition-colors"
                 title="Exchange Rate"
               >
                 <CircleDollarSign size={16} className="shrink-0" />
                 <span className="hidden sm:inline font-medium">Exchange Rate</span>
               </button>
             )}
-            <button className="btn btn-sm btn-success btn-outline text-[13px]" onClick={onExport} disabled={loading}>
+            <button className="btn btn-sm btn-success text-[13px]" onClick={onExport} disabled={loading}>
               <FileSpreadsheet size={16} />
               Export Excel
             </button>
