@@ -136,12 +136,13 @@ const columns: GridColDef<PlanningRow>[] = [
   {
     field: "due_date",
     headerName: "Due Date",
+    align: "center",
     headerAlign: "center",
     flex: 1,
-    minWidth: 110,
+    minWidth: 125,
     // value ยังเป็น YYYY-MM-DD เพื่อให้เรียงลำดับถูก — แปลงแค่ตอนแสดง
     renderCell: ({ value }) => (
-      <span className="font-medium tabular-nums text-base-content">
+      <span className="font-medium tabular-nums text-base-content whitespace-nowrap">
         {toDMY(value)}
       </span>
     ),

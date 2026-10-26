@@ -24,6 +24,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
 
   const cards: {
     title: string;
+    tooltip?: string;
     value: string;
     sub: ReactNode;
     icon: typeof Package;
@@ -32,6 +33,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
   }[] = [
     {
       title: "Total PO",
+      tooltip: "Total Purchase Orders",
       value: fmt(totalRows),
       sub: (
         <div className="truncate">
@@ -43,14 +45,15 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       borderColor: "border-info/60",
     },
     {
-      title: "Ready (Stock Sufficient)",
+      title: "Ready",
+      tooltip: "Ready (Stock Sufficient)",
       value: fmt(ready?.total_rows ?? 0),
       sub: (
         <>
           <div className="truncate">
             <span className="font-semibold text-success">{fmt(ready?.po_bal ?? 0)}</span> pcs
           </div>
-          <div className="truncate">
+          <div className="truncate" title={`W/H F/G ${fmtMoney(ready?.wh_fg_amount ?? 0)} THB`}>
             W/H F/G <span className="font-semibold text-success">{fmtMoney(ready?.wh_fg_amount ?? 0)}</span> THB
           </div>
         </>
@@ -60,15 +63,16 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       borderColor: "border-success/60",
     },
     {
-      title: "Production Plan (To Produce)",
+      title: "Production Plan",
+      tooltip: "Production Plan (To Produce)",
       value: fmt(plan?.total_rows ?? 0),
       sub: (
         <>
           <div className="truncate">
-            Net Required <span className="font-semibold text-error">{fmt(plan?.net_required_pcs ?? 0)}</span> pcs
+            Net Req <span className="font-semibold text-error">{fmt(plan?.net_required_pcs ?? 0)}</span> pcs
           </div>
-          <div className="truncate">
-            Output AMT <span className="font-semibold text-error">{fmtMoney(plan?.output_amount ?? 0)}</span> THB
+          <div className="truncate" title={`Output ${fmtMoney(plan?.output_amount ?? 0)} THB`}>
+            Output <span className="font-semibold text-error">{fmtMoney(plan?.output_amount ?? 0)}</span> THB
           </div>
         </>
       ),
@@ -78,6 +82,7 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
     },
     {
       title: "Last Calculated",
+      tooltip: "Last Calculated Time",
       value: updatedAt === "-" ? "-" : updatedAt.slice(11, 16),
       sub: <div className="truncate">{updatedAt === "-" ? "No data yet" : toDMY(updatedAt)}</div>,
       icon: Clock,
@@ -87,20 +92,31 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-      {cards.map(({ title, value, sub, icon: Icon, color, borderColor }) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 min-[960px]:grid-cols-4 gap-2.5 xl:gap-3.5">
+      {cards.map(({ title, tooltip, value, sub, icon: Icon, color, borderColor }) => (
         <div
           key={title}
-          className={`card bg-base-100 border-[1.5px] ${borderColor} shadow-[0_1px_3px_rgba(0,0,0,0.04)]`}
+          className={`card bg-base-100 border-[1.5px] ${borderColor} shadow-xs hover:shadow-sm transition-all`}
         >
-          <div className="card-body p-4 flex-row items-center gap-4">
-            <div className={`p-3 rounded-box bg-base-200 ${color}`}>
-              <Icon size={26} />
+          {/* ปรับขนาด responsive: ตอน zoom 150% จะเป็นขนาดกะทัดรัด (p-3) และตอน zoom 100% จอใหญ่จะขยายขึ้นอัตโนมัติ (xl:p-4) */}
+          <div className="card-body p-3 xl:p-4 flex-row items-center gap-3 xl:gap-3.5">
+            <div className={`p-2.5 xl:p-3 rounded-xl bg-base-200 shrink-0 ${color}`}>
+              <Icon className="w-[22px] h-[22px] xl:w-[26px] xl:h-[26px]" />
             </div>
+
             <div className="min-w-0 flex-1">
-              <div className="text-xs text-base-content/60 truncate">{title}</div>
-              <div className={`text-2xl font-bold ${color}`}>{value}</div>
-              <div className="text-xs text-base-content/60 flex flex-col gap-0.5 mt-0.5">{sub}</div>
+              <div
+                className="text-[12px] xl:text-[13px] font-medium text-base-content/70 truncate"
+                title={tooltip || title}
+              >
+                {title}
+              </div>
+              <div className={`text-xl xl:text-2xl 2xl:text-[26px] font-bold ${color} leading-snug my-0.5`}>
+                {value}
+              </div>
+              <div className="text-[11px] xl:text-xs text-base-content/60 flex flex-col gap-0.5 mt-0.5">
+                {sub}
+              </div>
             </div>
           </div>
         </div>
