@@ -30,7 +30,7 @@ export type AppRoute = {
 // =========================================
 export const routes_planning: AppRoute[] = [
   {
-    path: `${BASE}/production-plan`,
+    path: `${BASE}/po_balance`,
     element: <PO_Balance />,
     label: "PO BALANCE",
     Title: "PO BALANCE",
