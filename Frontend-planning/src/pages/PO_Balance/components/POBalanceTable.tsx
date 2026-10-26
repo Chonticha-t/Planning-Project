@@ -13,7 +13,7 @@ export { SORT_OPTIONS };
 
 interface POBalanceTableProps {
   rows: PlanningRow[];
-  loading: boolean;
+  loading?: boolean;
   sortModel: GridSortModel;
   onSortModelChange: (model: GridSortModel) => void;
 }
@@ -30,7 +30,7 @@ const NumberCell = ({
   value,
   strong,
   decimals,
-  colorClass = "text-base-content/80",
+  colorClass = "text-base-content/85",
 }: {
   value: number;
   strong?: boolean;
@@ -38,11 +38,11 @@ const NumberCell = ({
   colorClass?: string;
 }) => (
   <span
-    className={`tabular-nums ${
+    className={`tabular-nums text-[14px] ${
       !value
         ? "text-base-content/30"
         : strong
-          ? "font-semibold text-error"
+          ? "font-bold text-error"
           : colorClass
     }`}
   >
@@ -69,7 +69,7 @@ const numberCol = (
   renderCell: ({ value }) => <NumberCell value={value} strong={strong} />,
 });
 
-// Inventory columns — same as numberCol; inv-header marks them as grouped (see header centering)
+// Inventory columns — แนวเดิมที่ชอบ มี edge สำหรับจัดกรุ๊ป
 const invCol = (
   field: keyof PlanningRow,
   headerName: string,
@@ -79,45 +79,43 @@ const invCol = (
   headerClassName: edge ? `inv-header ${edge}` : "inv-header",
 });
 
-// Amount columns (THB) — same as numberCol but shows 2 decimals
+// เรียงลำดับตามขนาดตัวเลขโดยไม่คิดเครื่องหมายลบ (-)
+const absSortComparator = (
+  v1: number | null | undefined,
+  v2: number | null | undefined,
+) => {
+  const a = v1 == null ? -1 : Math.abs(Number(v1));
+  const b = v2 == null ? -1 : Math.abs(Number(v2));
+  return a - b;
+};
+
+// Amount columns (THB) — แสดงทศนิยม 2 ตำแหน่ง
 const amountCol = (
   field: keyof PlanningRow,
   headerName: string,
   colorClass?: string,
+  ignoreSign = false,
 ): GridColDef<PlanningRow> => ({
   ...numberCol(field, headerName),
   minWidth: 150,
+  ...(ignoreSign && { sortComparator: absSortComparator }),
   renderCell: ({ value }) => (
     <NumberCell value={value} decimals={2} colorClass={colorClass} />
   ),
 });
 
-// net_required_pcs ได้รับค่าติดลบมาจาก database แล้ว ไม่ต้องแปลงค่า
 export const netDisplay = (v: number) => v;
 
-const STATUS_STYLE: Record<PlanningStatus, { label: string; color: string }> = {
-  ready: { label: "Ready", color: "var(--color-success)" },
-  "production plan": { label: "Production Plan", color: "var(--color-error)" },
-};
-
 const StatusPill = ({ value }: { value: PlanningStatus }) => {
-  const s = STATUS_STYLE[value] ?? {
-    label: value,
-    color: "var(--color-base-content)",
-  };
+  const isReady = value === "ready";
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
-      style={{
-        color: s.color,
-        backgroundColor: `color-mix(in oklab, ${s.color} 12%, transparent)`,
-      }}
+      className={`status-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+        isReady ? "status-pill-ready" : "status-pill-plan"
+      }`}
     >
-      <span
-        className="size-1.5 rounded-full"
-        style={{ backgroundColor: s.color }}
-      />
-      {s.label}
+      <span className="status-dot size-2 rounded-full shrink-0" />
+      <span>{isReady ? "Ready" : "Production Plan"}</span>
     </span>
   );
 };
@@ -130,7 +128,7 @@ const columns: GridColDef<PlanningRow>[] = [
     flex: 1.4,
     minWidth: 160,
     renderCell: ({ value }) => (
-      <span className="font-medium text-base-content">{value}</span>
+      <span className="font-semibold text-base-content text-[14px]">{value}</span>
     ),
   },
   {
@@ -140,24 +138,22 @@ const columns: GridColDef<PlanningRow>[] = [
     headerAlign: "center",
     flex: 1,
     minWidth: 125,
-    // value ยังเป็น YYYY-MM-DD เพื่อให้เรียงลำดับถูก — แปลงแค่ตอนแสดง
     renderCell: ({ value }) => (
-      <span className="font-medium tabular-nums text-base-content whitespace-nowrap">
+      <span className="font-medium tabular-nums text-base-content text-[14px] whitespace-nowrap">
         {toDMY(value)}
       </span>
     ),
   },
   numberCol("po_bal", "PO Bal"),
-  // ── Inventory group ──────────────────────────
+  // ── Inventory group (แนวเดิมตามภาพที่ชอบ) ────
   invCol("unmovement", "Unmovement", "inv-first"),
   invCol("rem_unmovement", "Rem Unmove"),
   invCol("f_g", "F/G"),
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true),
-  // Output Amount ใช้แดง red-600 ให้ต่างเฉดจาก Net Required (text-error)
-  amountCol("wh_fg_amount", "W/H F/G", "text-green-600"),
-  amountCol("output_amount", "Output Amt", "text-red-600"),
+  amountCol("wh_fg_amount", "W/H F/G", "text-emerald-500 font-semibold"),
+  amountCol("output_amount", "Output Amt", "text-red-500 font-semibold", true),
   {
     field: "status",
     headerName: "Status",
@@ -172,7 +168,7 @@ const columns: GridColDef<PlanningRow>[] = [
 const columnGroupingModel: GridColumnGroupingModel = [
   {
     groupId: "inventory",
-    headerName: "Inventory",
+    headerName: "INVENTORY",
     headerAlign: "center",
     headerClassName: "inv-group",
     children: [
@@ -186,25 +182,27 @@ const columnGroupingModel: GridColumnGroupingModel = [
 
 const GROUP_HEADER_H = 28;
 
-const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
+const border = "color-mix(in oklab, var(--color-base-content) 11%, transparent)";
 
 const invBgGroup =
   "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
 
 const POBalanceTable = ({
   rows,
-  loading,
+  loading: _loading,
   sortModel,
   onSortModelChange,
 }: POBalanceTableProps) => {
   return (
-    <div className="card bg-base-100 border border-base-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-base-300">
+    <div className="rounded-2xl border border-base-300/80 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-base-300/80 bg-base-100">
         <div className="flex items-center gap-2.5">
-          <ClipboardList size={18} className="text-base-content/60" />
-          <h2 className="font-semibold text-base-content">PO BALANCE</h2>
+          <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+            <ClipboardList size={17} />
+          </div>
+          <h2 className="font-bold text-base-content tracking-wide text-sm">PO BALANCE</h2>
         </div>
-        <span className="text-[13px] text-base-content/60 tabular-nums">
+        <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70 tabular-nums">
           {rows.length.toLocaleString("en-US")} rows
         </span>
       </div>
@@ -216,7 +214,6 @@ const POBalanceTable = ({
           minHeight: 520,
           position: "relative",
         }}
-        // ปิดการคลิกหัวคอลัมน์เพื่อ sort โดยตรง — ให้เรียงลำดับผ่านเมนู Sort by ใน FilterBar เท่านั้น
         onClickCapture={(e) => {
           const target = e.target as HTMLElement;
           if (target.closest(".MuiDataGrid-columnHeader")) {
@@ -228,7 +225,7 @@ const POBalanceTable = ({
           rows={rows}
           columns={columns}
           columnGroupingModel={columnGroupingModel}
-          loading={loading}
+          loading={false}
           getRowId={(r) => `${r.prd_name}|${r.due_date}`}
           rowHeight={44}
           resizeThrottleMs={0}
@@ -251,30 +248,30 @@ const POBalanceTable = ({
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": "var(--color-base-200)",
 
-            // ── Header ──────────────────────────────
+            // ── Header Styling (คมชัด ไม่จืด) ────────
+            "& .MuiDataGrid-columnHeaders": {
+              backgroundColor: "var(--color-base-200)",
+            },
             "& .MuiDataGrid-columnHeader": {
               backgroundColor: "var(--color-base-200)",
               px: 2,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
-              fontSize: 13,
-              fontWeight: 600,
+              fontSize: 13.5,
+              fontWeight: 700,
               letterSpacing: "0.04em",
               textTransform: "uppercase",
               color:
-                "color-mix(in oklab, var(--color-base-content) 80%, transparent)",
+                "color-mix(in oklab, var(--color-base-content) 85%, transparent)",
             },
 
-            // คอลัมน์ที่ไม่มีกลุ่ม (Product, Due Date, PO Bal, Net Required, W/H F/G, Output Amount, Status)
-            // DataGrid วางชื่อไว้แถวล่าง → ดันขึ้นครึ่งหนึ่งของแถวกลุ่ม ให้อยู่กลางหัวตารางทั้ง 2 แถว
+            // คอลัมน์ที่ไม่มีกลุ่ม: จัดข้อความให้อยู่กึ่งกลางความสูง 2 แถว พร้อมเส้นคั่นแนวตั้งยาวเต็ม
             "& .MuiDataGrid-columnHeader:not(.inv-header):not(.MuiDataGrid-columnHeader--filledGroup):not(.MuiDataGrid-columnHeader--emptyGroup)":
               {
                 overflow: "visible",
                 "& .MuiDataGrid-columnHeaderTitleContainer": {
                   transform: `translateY(-${GROUP_HEADER_H / 2}px)`,
                 },
-                // DataGrid รวมช่องแถวบนของคอลัมน์ที่ไม่มีกลุ่มซึ่งอยู่ติดกันเป็นช่องเดียว → ไม่มีเส้นคั่น
-                // เลยต่อเส้นขวาขึ้นไปถึงแถวบน ให้เส้นยาวเต็มหัวตาราง
                 "&::after": {
                   content: '""',
                   position: "absolute",
@@ -287,54 +284,66 @@ const POBalanceTable = ({
                 },
               },
 
-            // ── Inventory: group header row ──────────
+            // ── Inventory Group Header (แถบเทาสวย ชัดเจน สไตล์ที่ชอบ) ─
             "& .MuiDataGrid-columnHeaderGroupCell": {
               backgroundColor: "var(--color-base-200)",
             },
-            // ใส่สีเฉพาะช่อง INVENTORY — คอลัมน์ย่อยกับข้อมูลใช้พื้นปกติ
             "& .MuiDataGrid-columnHeader.inv-group": {
               backgroundColor: invBgGroup,
               px: 0,
             },
-            // เส้นคั่นใต้ INVENTORY — สี/ความหนาเดียวกับเส้นขอบซ้ายขวา
+            "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitle":
+              {
+                fontWeight: 800,
+                letterSpacing: "0.06em",
+                color: "var(--color-base-content)",
+              },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer":
               {
                 borderBottom: `1px solid ${border}`,
               },
-            // เส้นคั่นแนวตั้งระหว่างคอลัมน์ (หัวตาราง + ข้อมูล)
+
+            // เส้นคั่นแนวตั้งระหว่างคอลัมน์ (หัวตาราง + เนื้อหาข้อมูล)
             "& .MuiDataGrid-withBorderColor": { borderColor: border },
 
             "& .MuiDataGrid-columnSeparator": { display: "none" },
-            // ซ่อนเส้นโหลด (LinearProgress) ใต้หัวตาราง
             "& .MuiLinearProgress-root": { display: "none" },
-            // ซ่อนไอคอน sort ดั้งเดิมของ DataGrid บนหัวคอลัมน์
             "& .MuiDataGrid-iconButtonContainer": { display: "none" },
             "& .MuiDataGrid-columnHeader--sortable": {
               cursor: "default",
             },
 
-            // ── Cells / rows ─────────────────────────
-            "& .MuiDataGrid-cell": { px: 2, borderColor: border },
+            // ── Cells / Rows (นิ่ง ไม่กระพริบ ไม่ Dim แสง) ──
+            "& .MuiDataGrid-cell": {
+              px: 2,
+              borderColor: border,
+            },
             "& .MuiDataGrid-row:hover": {
               backgroundColor:
-                "color-mix(in oklab, var(--color-base-content) 4%, transparent)",
+                "color-mix(in oklab, var(--color-base-content) 4.5%, transparent)",
+            },
+            "& .MuiDataGrid-virtualScroller": {
+              opacity: "1 !important",
+              willChange: "transform",
+            },
+            "& .MuiDataGrid-overlayWrapper": {
+              display: "none !important",
             },
             "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
               { outline: "none" },
 
-            // ── Footer ───────────────────────────────
+            // ── Footer / Pagination ──────────────────
             "& .MuiDataGrid-footerContainer": {
               borderTop: `1px solid ${border}`,
-              minHeight: 48,
+              minHeight: 46,
             },
             "& .MuiTablePagination-root, & .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows":
               {
                 fontSize: 13,
                 color:
-                  "color-mix(in oklab, var(--color-base-content) 65%, transparent)",
+                  "color-mix(in oklab, var(--color-base-content) 70%, transparent)",
               },
             "& .MuiDataGrid-overlay": { backgroundColor: "transparent" },
-            "& .MuiDataGrid-virtualScroller": { willChange: "transform" },
           }}
         />
       </div>

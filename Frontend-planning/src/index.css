@@ -238,3 +238,132 @@ html[data-sidebar-animating] .datagrid-outer {
 html[data-sidebar-animating] .datagrid-outer * {
   pointer-events: none;
 }
+
+/* ── Status Pills (PO Balance Table) ── */
+.status-pill-ready {
+  background-color: #e2f9ee;
+  color: #00a878;
+  border: 1px solid transparent;
+}
+.status-pill-ready .status-dot {
+  background-color: #00c288;
+}
+
+.status-pill-plan {
+  background-color: #ffe8e8;
+  color: #e11d48;
+  border: 1px solid transparent;
+}
+.status-pill-plan .status-dot {
+  background-color: #f43f5e;
+}
+
+/* Dark Mode status pills */
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .status-pill-ready {
+  background-color: rgba(0, 194, 136, 0.16) !important;
+  color: #34d399 !important;
+  border-color: rgba(0, 194, 136, 0.3) !important;
+}
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .status-pill-ready .status-dot {
+  background-color: #00c288 !important;
+}
+
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .status-pill-plan {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+  color: #fb7185 !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .status-pill-plan .status-dot {
+  background-color: #f43f5e !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]):not(.light) .status-pill-ready,
+  html[data-theme="system"] .status-pill-ready {
+    background-color: rgba(0, 194, 136, 0.16) !important;
+    color: #34d399 !important;
+    border-color: rgba(0, 194, 136, 0.3) !important;
+  }
+  html:not([data-theme]):not(.light) .status-pill-ready .status-dot,
+  html[data-theme="system"] .status-pill-ready .status-dot {
+    background-color: #00c288 !important;
+  }
+  html:not([data-theme]):not(.light) .status-pill-plan,
+  html[data-theme="system"] .status-pill-plan {
+    background-color: rgba(244, 63, 94, 0.16) !important;
+    color: #fb7185 !important;
+    border-color: rgba(244, 63, 94, 0.3) !important;
+  }
+  html:not([data-theme]):not(.light) .status-pill-plan .status-dot,
+  html[data-theme="system"] .status-pill-plan .status-dot {
+    background-color: #f43f5e !important;
+  }
+}

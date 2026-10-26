@@ -3,7 +3,6 @@ import {
   Search,
   RotateCcw,
   FileSpreadsheet,
-  RefreshCw,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -25,14 +24,13 @@ interface FilterBarProps {
   onSearch: (filter?: PlanningFilter) => void;
   onReset?: () => void;
   onExport: () => void;
-  loading: boolean;
+  loading?: boolean;
   onOpenExchangeRate?: () => void;
 }
 
-// label อยู่บน input เสมอ (daisyUI 5 ไม่มี form-control / label-text แล้ว)
 const Field = ({ label, className = "", children }: { label: string; className?: string; children: ReactNode }) => (
-  <div className={`flex flex-col gap-1 ${className}`}>
-    <span className="text-[13px] font-medium text-base-content/70">{label}</span>
+  <div className={`flex flex-col gap-1.5 ${className}`}>
+    <span className="text-[11px] font-semibold text-base-content/50 uppercase tracking-wider">{label}</span>
     {children}
   </div>
 );
@@ -53,13 +51,11 @@ const SortByDropdown = ({
   const [draftField, setDraftField] = useState<string>(activeField);
   const [draftDir, setDraftDir] = useState<"asc" | "desc">(activeDir);
 
-  // ซิงค์ค่าเริ่มต้นทุกครั้งที่เปิดเมนู หรือเมื่อ sortModel ถูกรีเซ็ตจากภายนอก
   useEffect(() => {
     setDraftField(activeField);
     setDraftDir(activeDir);
   }, [activeField, activeDir, open]);
 
-  // ปิดเมนูเมื่อคลิกข้างนอก
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
@@ -92,43 +88,45 @@ const SortByDropdown = ({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`btn btn-sm bg-base-100 text-base-content text-[13px] gap-1.5 font-medium shadow-none hover:bg-base-200 focus:outline-none focus-visible:outline-none transition-colors ${
-          open ? "border-primary hover:border-primary" : "border-base-content/20 hover:border-base-content/20"
+        className={`btn btn-sm bg-base-100 text-base-content text-[13px] gap-1.5 font-medium shadow-none hover:bg-base-200/60 rounded-lg focus:outline-none transition-colors border ${
+          open
+            ? "border-primary bg-primary/5 text-primary"
+            : activeField
+              ? "border-primary/50 text-primary bg-primary/5"
+              : "border-base-content/20 hover:border-base-content/30"
         }`}
       >
         {activeField ? (
           activeDir === "asc" ? (
-            <ArrowUp size={15} />
+            <ArrowUp size={14} className="text-primary" />
           ) : (
-            <ArrowDown size={15} />
+            <ArrowDown size={14} className="text-primary" />
           )
         ) : (
-          <ArrowUpDown size={15} />
+          <ArrowUpDown size={14} className="opacity-50" />
         )}
         <span>
-          {activeLabel ? `Sort by: ${activeLabel}` : "Sort by"}
+          {activeLabel ? `Sort: ${activeLabel}` : "Sort by"}
         </span>
         <ChevronDown
-          size={14}
-          className={`opacity-60 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+          size={13}
+          className={`opacity-50 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
         />
       </button>
 
       {open && (
-        <div className="absolute left-0 z-50 mt-1.5 w-60 rounded-xl border border-base-300 bg-base-100 shadow-xl overflow-hidden">
-          {/* ส่วนหัว Sort by + ปุ่ม Clear สไตล์รูปที่ 1 */}
-          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-base-300 bg-base-200/40">
-            <span className="text-[13px] font-bold text-base-content/70">Sort by</span>
+        <div className="absolute left-0 z-50 mt-1.5 w-60 rounded-xl border border-base-200 bg-base-100 shadow-xl overflow-hidden">
+          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-base-200 bg-base-200/30">
+            <span className="text-[12px] font-semibold text-base-content/70 uppercase tracking-wider">Sort by</span>
             <button
               type="button"
               onClick={handleClear}
-              className="text-[13px] font-semibold text-error hover:opacity-80 cursor-pointer"
+              className="text-xs font-medium text-error hover:opacity-80 cursor-pointer"
             >
               Clear
             </button>
           </div>
 
-          {/* รายการคอลัมน์พร้อมช่องติ๊กขอบมนสไตล์รูปที่ 1 */}
           <div className="max-h-56 overflow-y-auto px-2 py-1.5 flex flex-col gap-0.5">
             {SORT_OPTIONS.map((opt) => {
               const checked = draftField === opt.field;
@@ -137,60 +135,60 @@ const SortByDropdown = ({
                   key={opt.field}
                   type="button"
                   onClick={() => setDraftField(checked ? "" : opt.field)}
-                  className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg hover:bg-base-200 text-left transition-colors cursor-pointer"
+                  className="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg hover:bg-base-200/70 text-left transition-colors cursor-pointer"
                 >
                   <span
-                    className={`flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
+                    className={`flex size-4 shrink-0 items-center justify-center rounded-md border transition-colors ${
                       checked
                         ? "border-primary bg-primary text-primary-content"
-                        : "border-primary/60 bg-transparent"
+                        : "border-base-300 bg-transparent"
                     }`}
                   >
                     {checked && <Check size={12} strokeWidth={3} />}
                   </span>
-                  <span className="text-[13px] font-semibold text-base-content">{opt.label}</span>
+                  <span className={`text-[13px] ${checked ? "font-semibold text-primary" : "text-base-content/80 font-medium"}`}>
+                    {opt.label}
+                  </span>
                 </button>
               );
             })}
           </div>
 
-          {/* ส่วนเลือก Ascending / Descending สไตล์รูปที่ 2 */}
-          <div className="border-t border-base-300 px-2.5 py-2 flex flex-col gap-1">
+          <div className="border-t border-base-200 px-2.5 py-2 flex flex-col gap-1 bg-base-200/20">
             <button
               type="button"
               onClick={() => setDraftDir("asc")}
-              className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer border-[1.5px] ${
+              className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer border ${
                 draftDir === "asc"
                   ? "border-primary bg-primary/10 text-primary font-semibold"
-                  : "border-transparent text-base-content/80 hover:bg-base-200 font-medium"
+                  : "border-transparent text-base-content/70 hover:bg-base-200 font-medium"
               }`}
             >
-              <ArrowUp size={15} />
+              <ArrowUp size={14} />
               <span>Ascending</span>
             </button>
 
             <button
               type="button"
               onClick={() => setDraftDir("desc")}
-              className={`flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-[13px] transition-colors cursor-pointer border-[1.5px] ${
+              className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer border ${
                 draftDir === "desc"
                   ? "border-primary bg-primary/10 text-primary font-semibold"
-                  : "border-transparent text-base-content/80 hover:bg-base-200 font-medium"
+                  : "border-transparent text-base-content/70 hover:bg-base-200 font-medium"
               }`}
             >
-              <ArrowDown size={15} />
+              <ArrowDown size={14} />
               <span>Descending</span>
             </button>
           </div>
 
-          {/* ปุ่มยืนยันด้านล่างสุดสไตล์รูปที่ 1 */}
-          <div className="p-2.5 pt-1.5 border-t border-base-300">
+          <div className="p-2.5 pt-1.5 border-t border-base-200">
             <button
               type="button"
               onClick={handleConfirm}
-              className="btn btn-sm btn-primary w-full rounded-lg font-semibold"
+              className="btn btn-sm btn-primary w-full rounded-lg font-medium text-xs shadow-xs"
             >
-              Confirm Sort
+              Apply Sort
             </button>
           </div>
         </div>
@@ -208,7 +206,7 @@ const FilterBar = ({
   onSearch,
   onReset: _onReset,
   onExport,
-  loading,
+  loading: _loading,
   onOpenExchangeRate,
 }: FilterBarProps) => {
   const set = (key: keyof PlanningFilter, value: string) =>
@@ -221,98 +219,98 @@ const FilterBar = ({
   };
 
   return (
-    <div className="card bg-base-100 border border-base-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-      <div className="card-body p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Product" className="w-full sm:w-60">
-            <ProductCombobox
-              value={filter.prd_name}
-              options={products}
-              onChange={(v) => set("prd_name", v)}
-              onSelect={(v) => {
-                // ส่ง filter ใหม่ไปตรง ๆ เพราะ state ยังไม่อัปเดตในรอบนี้
-                const next = { ...filter, prd_name: v };
-                onChange(next);
-                onSearch(next);
-              }}
-              onEnter={() => onSearch()}
+    <div className="rounded-2xl border border-base-200/80 bg-base-100 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Product" className="w-full sm:w-60">
+          <ProductCombobox
+            value={filter.prd_name}
+            options={products}
+            onChange={(v) => set("prd_name", v)}
+            onSelect={(v) => {
+              const next = { ...filter, prd_name: v };
+              onChange(next);
+              onSearch(next);
+            }}
+            onEnter={() => onSearch()}
+          />
+        </Field>
+
+        <Field label="Status" className="w-full sm:w-40">
+          <select
+            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            value={filter.status}
+            onChange={(e) => {
+              const next = { ...filter, status: e.target.value as PlanningFilter["status"] };
+              onChange(next);
+              onSearch(next);
+            }}
+          >
+            <option value="">All Statuses</option>
+            <option value="ready">Ready</option>
+            <option value="production plan">Production Plan</option>
+          </select>
+        </Field>
+
+        <Field label="Sort">
+          <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
+        </Field>
+
+        <Field label="Due date" className="w-full sm:w-auto">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <CallyDatePicker
+              value={filter.startdate}
+              max={filter.stopdate || undefined}
+              placeholder="Start date"
+              onChange={(v) => set("startdate", v)}
             />
-          </Field>
-
-          <Field label="Status" className="w-full sm:w-40">
-            <select
-              className="select select-sm text-[13px] w-full whitespace-nowrap truncate focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary"
-              value={filter.status}
-              onChange={(e) => {
-                const next = { ...filter, status: e.target.value as PlanningFilter["status"] };
-                onChange(next);
-                onSearch(next);
-              }}
+            <span className="text-base-content/40">–</span>
+            <CallyDatePicker
+              value={filter.stopdate}
+              min={filter.startdate || undefined}
+              placeholder="End date"
+              onChange={(v) => set("stopdate", v)}
+            />
+            <button
+              type="button"
+              className="btn btn-sm btn-primary rounded-lg text-[13px] font-medium shadow-xs px-3.5 gap-1.5 cursor-pointer"
+              onClick={() => onSearch()}
             >
-              <option value="">All</option>
-              <option value="ready">ready</option>
-              <option value="production plan">production plan</option>
-            </select>
-          </Field>
-
-          <Field label="Sort">
-            <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
-          </Field>
-
-          <Field label="Due date" className="w-full sm:w-auto">
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-              <CallyDatePicker
-                value={filter.startdate}
-                max={filter.stopdate || undefined}
-                placeholder="Start date"
-                onChange={(v) => set("startdate", v)}
-              />
-              <span className="text-base-content/50">–</span>
-              <CallyDatePicker
-                value={filter.stopdate}
-                min={filter.startdate || undefined}
-                placeholder="End date"
-                onChange={(v) => set("stopdate", v)}
-              />
-              <button
-                type="button"
-                className="btn btn-sm btn-outline btn-primary text-[13px]"
-                onClick={() => onSearch()}
-                disabled={loading}
-              >
-                {loading ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />}
-                Search
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost text-[13px] gap-1.5 text-base-content/70"
-                onClick={handleClearDate}
-                disabled={loading || (!filter.startdate && !filter.stopdate)}
-                title="Clear date"
-              >
-                <RotateCcw size={15} />
-                Clear
-              </button>
-            </div>
-          </Field>
-
-          <div className="flex items-center gap-2 ml-auto">
-            {onOpenExchangeRate && (
-              <button
-                type="button"
-                onClick={onOpenExchangeRate}
-                className="btn btn-sm btn-primary text-[13px] gap-1.5 focus:outline-none transition-colors"
-                title="Exchange Rate"
-              >
-                <CircleDollarSign size={16} className="shrink-0" />
-                <span className="hidden sm:inline font-medium">Exchange Rate</span>
-              </button>
-            )}
-            <button className="btn btn-sm btn-success text-[13px]" onClick={onExport} disabled={loading}>
-              <FileSpreadsheet size={16} />
-              Export Excel
+              <Search size={14} className="shrink-0" />
+              <span>Search</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost rounded-lg text-[13px] gap-1 text-base-content/60 hover:text-base-content cursor-pointer"
+              onClick={handleClearDate}
+              disabled={!filter.startdate && !filter.stopdate}
+              title="Clear date"
+            >
+              <RotateCcw size={14} />
+              Clear
             </button>
           </div>
+        </Field>
+
+        <div className="flex items-center gap-2 ml-auto">
+          {onOpenExchangeRate && (
+            <button
+              type="button"
+              onClick={onOpenExchangeRate}
+              className="btn btn-sm btn-primary rounded-lg text-[13px] gap-1.5 font-medium shadow-xs transition-colors cursor-pointer"
+              title="Exchange Rate"
+            >
+              <CircleDollarSign size={15} className="shrink-0" />
+              <span className="hidden sm:inline">Exchange Rate</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white border-none rounded-lg text-[13px] gap-1.5 font-medium shadow-xs transition-colors cursor-pointer"
+            onClick={onExport}
+          >
+            <FileSpreadsheet size={15} />
+            Export Excel
+          </button>
         </div>
       </div>
     </div>

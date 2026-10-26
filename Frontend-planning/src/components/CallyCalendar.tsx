@@ -130,7 +130,7 @@ export const CallyDatePicker = ({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
-        className={`input input-sm text-[13px] w-full flex items-center justify-between gap-2 text-left cursor-pointer focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary ${
+        className={`input input-sm rounded-lg text-[13px] w-full flex items-center justify-between gap-2 text-left cursor-pointer focus:outline-none focus:border-primary focus-visible:outline-none focus-visible:border-primary ${
           open ? "border-primary" : ""
         }`}
       >

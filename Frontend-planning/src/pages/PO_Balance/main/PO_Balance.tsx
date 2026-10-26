@@ -35,7 +35,7 @@ const PO_Balance = () => {
     fetchData(f);
   }, [filter, fetchData]);
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     if (rows.length === 0) {
       toast("No data to export");
       return;
@@ -69,7 +69,7 @@ const PO_Balance = () => {
         status: r.status,
       })),
     });
-  };
+  }, [rows]);
 
   return (
     <div className="flex flex-col gap-3">

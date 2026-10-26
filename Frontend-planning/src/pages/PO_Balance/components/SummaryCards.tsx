@@ -28,21 +28,24 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
     value: string;
     sub: ReactNode;
     icon: typeof Package;
-    color: string;
-    borderColor: string;
+    cardStyle: string;
+    iconStyle: string;
+    valueColor: string;
   }[] = [
     {
       title: "Total PO",
       tooltip: "Total Purchase Orders",
       value: fmt(totalRows),
       sub: (
-        <div className="truncate">
-          PO Balance <span className="font-semibold text-info">{fmt(totalPo)}</span> pcs
+        <div className="flex items-center justify-between gap-2 text-base-content/70">
+          <span className="shrink-0">PO Balance</span>
+          <span className="font-bold text-info truncate">{fmt(totalPo)} pcs</span>
         </div>
       ),
       icon: Package,
-      color: "text-info",
-      borderColor: "border-info/60",
+      cardStyle: "border-info/35 bg-gradient-to-br from-info/[0.05] to-base-100 hover:border-info/70",
+      iconStyle: "bg-info/15 text-info ring-1 ring-info/25",
+      valueColor: "text-info",
     },
     {
       title: "Ready",
@@ -50,17 +53,20 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       value: fmt(ready?.total_rows ?? 0),
       sub: (
         <>
-          <div className="truncate">
-            <span className="font-semibold text-success">{fmt(ready?.po_bal ?? 0)}</span> pcs
+          <div className="flex items-center justify-between gap-2 text-base-content/70">
+            <span className="shrink-0">Ready</span>
+            <span className="font-bold text-success truncate">{fmt(ready?.po_bal ?? 0)} pcs</span>
           </div>
-          <div className="truncate" title={`W/H F/G ${fmtMoney(ready?.wh_fg_amount ?? 0)} THB`}>
-            W/H F/G <span className="font-semibold text-success">{fmtMoney(ready?.wh_fg_amount ?? 0)}</span> THB
+          <div className="flex items-center justify-between gap-2 text-base-content/70" title={`W/H F/G ${fmtMoney(ready?.wh_fg_amount ?? 0)} THB`}>
+            <span className="shrink-0">W/H F/G</span>
+            <span className="font-bold text-success truncate text-right">{fmtMoney(ready?.wh_fg_amount ?? 0)} THB</span>
           </div>
         </>
       ),
       icon: CheckCircle2,
-      color: "text-success",
-      borderColor: "border-success/60",
+      cardStyle: "border-success/35 bg-gradient-to-br from-success/[0.05] to-base-100 hover:border-success/70",
+      iconStyle: "bg-success/15 text-success ring-1 ring-success/25",
+      valueColor: "text-success",
     },
     {
       title: "Production Plan",
@@ -68,56 +74,63 @@ const SummaryCards = ({ summary }: SummaryCardsProps) => {
       value: fmt(plan?.total_rows ?? 0),
       sub: (
         <>
-          <div className="truncate">
-            Net Req <span className="font-semibold text-error">{fmt(plan?.net_required_pcs ?? 0)}</span> pcs
+          <div className="flex items-center justify-between gap-2 text-base-content/70">
+            <span className="shrink-0">Net Req</span>
+            <span className="font-bold text-error truncate">{fmt(plan?.net_required_pcs ?? 0)} pcs</span>
           </div>
-          <div className="truncate" title={`Output ${fmtMoney(plan?.output_amount ?? 0)} THB`}>
-            Output <span className="font-semibold text-error">{fmtMoney(plan?.output_amount ?? 0)}</span> THB
+          <div className="flex items-center justify-between gap-2 text-base-content/70" title={`Output ${fmtMoney(plan?.output_amount ?? 0)} THB`}>
+            <span className="shrink-0">Output</span>
+            <span className="font-bold text-error truncate text-right">{fmtMoney(plan?.output_amount ?? 0)} THB</span>
           </div>
         </>
       ),
       icon: Factory,
-      color: "text-error",
-      borderColor: "border-error/60",
+      cardStyle: "border-error/35 bg-gradient-to-br from-error/[0.05] to-base-100 hover:border-error/70",
+      iconStyle: "bg-error/15 text-error ring-1 ring-error/25",
+      valueColor: "text-error",
     },
     {
       title: "Last Calculated",
       tooltip: "Last Calculated Time",
       value: updatedAt === "-" ? "-" : updatedAt.slice(11, 16),
-      sub: <div className="truncate">{updatedAt === "-" ? "No data yet" : toDMY(updatedAt)}</div>,
+      sub: (
+        <div className="flex items-center justify-between gap-2 text-base-content/70">
+          <span className="shrink-0">Date</span>
+          <span className="font-semibold text-base-content truncate">{updatedAt === "-" ? "No data yet" : toDMY(updatedAt)}</span>
+        </div>
+      ),
       icon: Clock,
-      color: "text-base-content/70",
-      borderColor: "border-base-content/50",
+      cardStyle: "border-base-300 bg-base-100 hover:border-base-content/30",
+      iconStyle: "bg-base-200 text-base-content/70 ring-1 ring-base-300",
+      valueColor: "text-base-content",
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 min-[960px]:grid-cols-4 gap-2.5 xl:gap-3.5">
-      {cards.map(({ title, tooltip, value, sub, icon: Icon, color, borderColor }) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 min-[960px]:grid-cols-4 gap-3 xl:gap-3.5">
+      {cards.map(({ title, tooltip, value, sub, icon: Icon, cardStyle, iconStyle, valueColor }) => (
         <div
           key={title}
-          className={`card bg-base-100 border-[1.5px] ${borderColor} shadow-xs hover:shadow-sm transition-all`}
+          className={`rounded-2xl border ${cardStyle} px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.03)] hover:shadow-md transition-all duration-200 flex flex-col`}
         >
-          {/* ปรับขนาด responsive: ตอน zoom 150% จะเป็นขนาดกะทัดรัด (p-3) และตอน zoom 100% จอใหญ่จะขยายขึ้นอัตโนมัติ (xl:p-4) */}
-          <div className="card-body p-3 xl:p-4 flex-row items-center gap-3 xl:gap-3.5">
-            <div className={`p-2.5 xl:p-3 rounded-xl bg-base-200 shrink-0 ${color}`}>
-              <Icon className="w-[22px] h-[22px] xl:w-[26px] xl:h-[26px]" />
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className="text-xs xl:text-[13px] font-bold text-base-content/65 uppercase tracking-wider truncate"
+              title={tooltip || title}
+            >
+              {title}
+            </span>
+            <div className={`p-1.5 rounded-xl ${iconStyle} shrink-0`}>
+              <Icon className="w-4 h-4 xl:w-[18px] xl:h-[18px]" />
             </div>
+          </div>
 
-            <div className="min-w-0 flex-1">
-              <div
-                className="text-[12px] xl:text-[13px] font-medium text-base-content/70 truncate"
-                title={tooltip || title}
-              >
-                {title}
-              </div>
-              <div className={`text-xl xl:text-2xl 2xl:text-[26px] font-bold ${color} leading-snug my-0.5`}>
-                {value}
-              </div>
-              <div className="text-[11px] xl:text-xs text-base-content/60 flex flex-col gap-0.5 mt-0.5">
-                {sub}
-              </div>
-            </div>
+          <div className={`text-2xl xl:text-3xl font-extrabold tracking-tight leading-tight ${valueColor} mt-0.5 mb-1`}>
+            {value}
+          </div>
+
+          <div className="mt-auto text-[13px] xl:text-sm leading-snug flex flex-col gap-0.5">
+            {sub}
           </div>
         </div>
       ))}
