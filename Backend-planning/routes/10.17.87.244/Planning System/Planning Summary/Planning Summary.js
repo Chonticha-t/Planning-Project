@@ -1,0 +1,197 @@
+const express = require("express");
+const router = express.Router();
+
+const { pool_smart } = require("../../config");
+const query = (text, params) => pool_smart.query(text, params);
+
+// ป้องกัน Browser หรือ Proxy จำค่าเก่า
+const setNoCache = (res) => {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+};
+
+/**
+ * Helper build WHERE conditions for filters
+ */
+const buildWhereClause = (queryParams) => {
+  const { prd_name, status, lot_status, factory_desc, startdate, stopdate } =
+    queryParams;
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+
+  // ❌ ไม่นำ status = 'ready' มาแสดง
+  conditions.push(`(status IS NULL OR LOWER(status) != 'ready')`);
+
+  if (prd_name && String(prd_name).trim() !== "") {
+    conditions.push(`prd_name ILIKE $${idx}`);
+    params.push(`%${String(prd_name).trim()}%`);
+    idx++;
+  }
+
+  if (status && String(status).trim() !== "") {
+    conditions.push(`status = $${idx}`);
+    params.push(String(status).trim());
+    idx++;
+  }
+
+  if (lot_status && String(lot_status).trim() !== "") {
+    conditions.push(`lot_status = $${idx}`);
+    params.push(String(lot_status).trim());
+    idx++;
+  }
+
+  if (factory_desc && String(factory_desc).trim() !== "") {
+    conditions.push(`factory_desc = $${idx}`);
+    params.push(String(factory_desc).trim());
+    idx++;
+  }
+
+  if (startdate) {
+    conditions.push(`due_date >= $${idx}::date`);
+    params.push(startdate);
+    idx++;
+  }
+
+  if (stopdate) {
+    conditions.push(`due_date <= $${idx}::date`);
+    params.push(stopdate);
+    idx++;
+  }
+
+  const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return { whereSql, params };
+};
+
+/**
+ * 📋 1. GET /table: รายการข้อมูล Planning Summary สำหรับตาราง
+ */
+router.get("/table", async (req, res) => {
+  setNoCache(res);
+  try {
+    const { whereSql, params } = buildWhereClause(req.query);
+
+    const sql = `
+      SELECT
+        ROW_NUMBER() OVER () AS id,
+        prd_name,
+        to_char(due_date, 'YYYY-MM-DD') AS due_date,
+        po_bal::float8,
+        inventory::float8,
+        net_required_pcs::float8,
+        cal_net_required::float8,
+        status,
+        lot_no,
+        proc_disp,
+        seq::int4,
+        net_wip_qty::float8,
+        factory_desc,
+        prd_type,
+        gate_name,
+        yield::float8,
+        lot_status,
+        lot_problem,
+        pending_reason,
+        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+      FROM planning.planning_summary
+      ${whereSql}
+      ORDER BY due_date ASC, prd_name ASC, seq DESC NULLS LAST, lot_no ASC
+    `;
+
+    const { rows } = await query(sql, params);
+
+    return res.json({
+      status: "OK",
+      data: rows,
+      message: "success",
+    });
+  } catch (err) {
+    console.error("Error in GET /planning_summary/table:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: [],
+      message: err.message || "Internal server error",
+    });
+  }
+});
+
+/**
+ * 📊 2. GET /summary: ยอดสรุปภาพรวม KPI Cards
+ */
+router.get("/summary", async (req, res) => {
+  setNoCache(res);
+  try {
+    const { whereSql, params } = buildWhereClause(req.query);
+
+    const sql = `
+      SELECT
+        COUNT(*)::int AS total_rows,
+        COUNT(DISTINCT prd_name)::int AS total_products,
+        COUNT(DISTINCT lot_no) FILTER (WHERE lot_no IS NOT NULL AND lot_no <> '')::int AS total_lots,
+        COALESCE(SUM(po_bal), 0)::float8 AS total_po_bal,
+        COALESCE(SUM(inventory), 0)::float8 AS total_inventory,
+        COALESCE(SUM(net_required_pcs), 0)::float8 AS total_net_required,
+        COALESCE(SUM(net_wip_qty), 0)::float8 AS total_net_wip,
+        COUNT(*) FILTER (
+          WHERE UPPER(lot_status) = 'HOLD' 
+             OR (lot_problem IS NOT NULL AND TRIM(lot_problem) <> '')
+        )::int AS total_problems,
+        to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS last_updated
+      FROM planning.planning_summary
+      ${whereSql}
+    `;
+
+    const { rows } = await query(sql, params);
+
+    return res.json({
+      status: "OK",
+      data: rows[0] || {},
+      message: "success",
+    });
+  } catch (err) {
+    console.error("Error in GET /planning_summary/summary:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: {},
+      message: err.message || "Internal server error",
+    });
+  }
+});
+
+/**
+ * 🔽 3. GET /distinct_filters: ค่าตัวเลือกสำหรับ Filter Dropdowns
+ */
+router.get("/distinct_filters", async (req, res) => {
+  setNoCache(res);
+  try {
+    const sql = `
+      SELECT
+        ARRAY(SELECT DISTINCT prd_name FROM planning.planning_summary WHERE prd_name IS NOT NULL ORDER BY prd_name) AS products,
+        ARRAY(SELECT DISTINCT status FROM planning.planning_summary WHERE status IS NOT NULL AND status <> '' AND LOWER(status) != 'ready' ORDER BY status) AS statuses,
+        ARRAY(SELECT DISTINCT lot_status FROM planning.planning_summary WHERE lot_status IS NOT NULL AND lot_status <> '' ORDER BY lot_status) AS lot_statuses,
+        ARRAY(SELECT DISTINCT factory_desc FROM planning.planning_summary WHERE factory_desc IS NOT NULL AND factory_desc <> '' ORDER BY factory_desc) AS factories
+    `;
+
+    const { rows } = await query(sql);
+    const result = rows[0] || { products: [], statuses: [], lot_statuses: [], factories: [] };
+
+    return res.json({
+      status: "OK",
+      data: result,
+      message: "success",
+    });
+  } catch (err) {
+    console.error("Error in GET /planning_summary/distinct_filters:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: { products: [], statuses: [], lot_statuses: [], factories: [] },
+      message: err.message || "Internal server error",
+    });
+  }
+});
+
+module.exports = router;
+
