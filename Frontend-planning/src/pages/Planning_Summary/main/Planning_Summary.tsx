@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import type { GridSortModel } from "@mui/x-data-grid";
 import toast from "react-hot-toast";
 
 import type { PlanningSummaryFilter } from "../types";
@@ -11,10 +12,12 @@ import { toDMY } from "../../PO_Balance/utils";
 
 const Planning_Summary: React.FC = () => {
   const [filter, setFilter] = useState<PlanningSummaryFilter>(EMPTY_FILTER);
+  const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const { rows, kpi, filtersOptions, loading, fetchData } = usePlanningSummary();
 
   const handleReset = useCallback(() => {
     setFilter(EMPTY_FILTER);
+    setSortModel([]);
     fetchData(EMPTY_FILTER);
   }, [fetchData]);
 
@@ -157,6 +160,8 @@ const Planning_Summary: React.FC = () => {
       <FilterBar
         filter={filter}
         filterOptions={filtersOptions}
+        sortModel={sortModel}
+        onSortModelChange={setSortModel}
         onChange={setFilter}
         onSearch={handleSearch}
         onReset={handleReset}
@@ -165,7 +170,12 @@ const Planning_Summary: React.FC = () => {
       />
 
       {/* 3. ตารางข้อมูล Planning Summary Table พร้อม Column Grouping */}
-      <PlanningSummaryTable rows={rows} loading={loading} />
+      <PlanningSummaryTable
+        rows={rows}
+        loading={loading}
+        sortModel={sortModel}
+        onSortModelChange={setSortModel}
+      />
     </div>
   );
 };

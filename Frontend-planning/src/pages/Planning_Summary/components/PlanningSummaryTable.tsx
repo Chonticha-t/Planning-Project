@@ -3,14 +3,19 @@ import {
   DataGrid,
   GridColDef,
   GridColumnGroupingModel,
+  GridSortModel,
 } from "@mui/x-data-grid";
 import { LayoutDashboard, AlertCircle } from "lucide-react";
-import type { PlanningSummaryRow } from "../types";
+import { SORT_OPTIONS, type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
+
+export { SORT_OPTIONS };
 
 interface PlanningSummaryTableProps {
   rows: PlanningSummaryRow[];
   loading?: boolean;
+  sortModel: GridSortModel;
+  onSortModelChange: (model: GridSortModel) => void;
 }
 
 const num = (value: number | null | undefined, decimals = 0) =>
@@ -45,73 +50,56 @@ const NumberCell = ({
   </span>
 );
 
-// ── Status Pill ตรงตามรูปที่ต้องการ (Solid Pills คมชัด ไม่ตุ่น) ──
+// ── Status Pill ตรงตามสไตล์หน้า PO (Pill พร้อม Dot สวยงาม คมชัด) ──
 const StatusPill = ({ value }: { value: string }) => {
   if (!value) return <span className="text-base-content/30">-</span>;
   const s = value.toLowerCase().trim();
 
-  // 1. Need Wip: เม็ดยาสีเทาอ่อน สะอาด ข้อความสีเข้มตัวหนา
-  if (s.includes("need wip") || s === "wip" || s.includes("need")) {
+  const isReady = s === "ready" || s === "ok";
+  const isPlan = s.includes("plan") || s === "production plan";
+
+  if (isReady) {
     return (
-      <span className="inline-flex items-center justify-center rounded-full px-3.5 py-1 text-xs font-bold text-gray-800 bg-[#f1f3f5] border border-gray-300/60 shadow-xs">
-        Need Wip
+      <span className="status-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold status-pill-ready whitespace-nowrap shrink-0">
+        <span className="status-dot size-2 rounded-full shrink-0" />
+        <span>Ready</span>
       </span>
     );
   }
 
-  // 2. Production Plan: เม็ดยาสีส้มทอง สดใส ข้อความขาวตัวหนา (Solid สดใส ไม่เป็นสีน้ำตาลตุ่น)
-  if (s.includes("plan") || s.includes("production plan")) {
+  if (isPlan) {
     return (
-      <span className="inline-flex items-center justify-center rounded-full px-3.5 py-1 text-xs font-bold text-white bg-[#f59e0b] shadow-xs">
-        Production Plan
-      </span>
-    );
-  }
-
-  // 3. Ready: เม็ดยาสีเขียวสด ข้อความขาวตัวหนา
-  if (s === "ready" || s === "ok") {
-    return (
-      <span className="inline-flex items-center justify-center rounded-full px-3.5 py-1 text-xs font-bold text-white bg-[#00c988] shadow-xs">
-        Ready
+      <span className="status-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold status-pill-plan whitespace-nowrap shrink-0">
+        <span className="status-dot size-2 rounded-full shrink-0" />
+        <span>Production Plan</span>
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold bg-base-200 text-base-content/80">
-      {value}
+    <span className="status-pill status-pill-wip inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap shrink-0">
+      <span className="status-dot size-2 rounded-full shrink-0" />
+      <span>{value}</span>
     </span>
   );
 };
 
 // ── Clean Lot Status Badge ──
 const LotStatusBadge = ({ status }: { status: string }) => {
-  if (!status) return <span className="text-base-content/25">-</span>;
-  const upper = status.toUpperCase();
+  if (!status || status.trim() === "") return <span className="text-base-content/25">-</span>;
+  const upper = status.toUpperCase().trim();
 
-  if (upper === "HOLD") {
-    return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40">
-        HOLD
-      </span>
-    );
-  }
-  if (upper === "RUN") {
-    return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800/40">
-        RUN
-      </span>
-    );
-  }
-  if (upper === "WAIT") {
-    return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
-        WAIT
-      </span>
-    );
-  }
+  let colorClass = "bg-base-200 text-base-content/70 border border-base-content/20";
+  if (upper === "HOLD") colorClass = "lot-badge-hold font-bold";
+  else if (upper === "PENDING") colorClass = "lot-badge-pending font-bold";
+  else if (upper === "WIP") colorClass = "lot-badge-wip font-semibold";
+  else if (upper === "RUN") colorClass = "lot-badge-run font-semibold";
+  else if (upper === "WAIT") colorClass = "lot-badge-wait font-semibold";
+
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-base-200 text-base-content/60">
+    <span
+      className={`inline-flex items-center justify-center h-[22px] px-2.5 rounded-md text-[11px] tracking-wider uppercase leading-none whitespace-nowrap shrink-0 shadow-xs ${colorClass}`}
+    >
       {upper}
     </span>
   );
@@ -151,7 +139,12 @@ const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)"
 const headerBg = "var(--color-base-200)";
 
 const PlanningSummaryTable = memo(
-  ({ rows, loading = false }: PlanningSummaryTableProps) => {
+  ({
+    rows,
+    loading = false,
+    sortModel,
+    onSortModelChange,
+  }: PlanningSummaryTableProps) => {
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(
       () => [
         // ── Plan Overview ─────────────────────────
@@ -185,8 +178,8 @@ const PlanningSummaryTable = memo(
           headerName: "Status",
           headerAlign: "center",
           align: "center",
-          minWidth: 145,
-          flex: 1,
+          minWidth: 170,
+          flex: 1.1,
           renderCell: ({ value }) => <StatusPill value={value} />,
         },
 
@@ -196,6 +189,7 @@ const PlanningSummaryTable = memo(
           headerName: "PO Bal",
           headerAlign: "center",
           align: "center",
+          type: "number",
           minWidth: 110,
           renderCell: ({ value }) => <NumberCell value={value} />,
         },
@@ -204,6 +198,7 @@ const PlanningSummaryTable = memo(
           headerName: "Inventory",
           headerAlign: "center",
           align: "center",
+          type: "number",
           minWidth: 110,
           renderCell: ({ value }) => <NumberCell value={value} />,
         },
@@ -212,6 +207,7 @@ const PlanningSummaryTable = memo(
           headerName: "Net Required",
           headerAlign: "center",
           align: "center",
+          type: "number",
           minWidth: 120,
           renderCell: ({ value }) => <NumberCell value={value} strong />,
         },
@@ -245,6 +241,7 @@ const PlanningSummaryTable = memo(
           headerName: "Seq",
           headerAlign: "center",
           align: "center",
+          type: "number",
           minWidth: 70,
           renderCell: ({ value }) => (
             <span className="tabular-nums font-medium text-xs text-base-content/60">
@@ -257,9 +254,13 @@ const PlanningSummaryTable = memo(
           headerName: "Net WIP",
           headerAlign: "center",
           align: "center",
+          type: "number",
           minWidth: 110,
           renderCell: ({ value }) => (
-            <NumberCell value={value} colorClass="text-emerald-600 dark:text-emerald-400 font-semibold" />
+            <NumberCell
+              value={value}
+              colorClass="text-emerald-600 dark:text-emerald-400 font-semibold"
+            />
           ),
         },
         {
@@ -267,6 +268,7 @@ const PlanningSummaryTable = memo(
           headerName: "Yield %",
           headerAlign: "center",
           align: "center",
+          type: "number",
           minWidth: 85,
           renderCell: ({ value }) => (
             <span className="tabular-nums font-medium text-[13.5px] text-base-content/75">
@@ -319,32 +321,32 @@ const PlanningSummaryTable = memo(
           headerName: "Lot Status",
           headerAlign: "center",
           align: "center",
-          minWidth: 110,
+          minWidth: 130,
           renderCell: ({ value }) => <LotStatusBadge status={value} />,
         },
         {
           field: "lot_problem",
           headerName: "Lot Problem",
           headerAlign: "center",
-          minWidth: 180,
-          flex: 1.4,
+          minWidth: 160,
+          flex: 1,
           renderCell: ({ value }) => (
-            <TruncatedTooltipCell text={value} isAlert={Boolean(value)} />
+            <TruncatedTooltipCell text={value} isAlert={!!value} />
           ),
         },
         {
           field: "pending_reason",
           headerName: "Pending Reason",
           headerAlign: "center",
-          minWidth: 170,
-          flex: 1.2,
+          minWidth: 160,
+          flex: 1,
           renderCell: ({ value }) => <TruncatedTooltipCell text={value} />,
         },
       ],
       []
     );
 
-    // Clean, unified Column Grouping
+    // ── Group Model ตรงตามภาพ ──
     const columnGroupingModel: GridColumnGroupingModel = useMemo(
       () => [
         {
@@ -404,18 +406,18 @@ const PlanningSummaryTable = memo(
     );
 
     return (
-      <div className="rounded-2xl border border-base-200/80 bg-base-100 shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
-        {/* Table Title Bar: Clean and Minimal */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-base-200/80 bg-base-100">
+      <div className="rounded-2xl border border-base-300/80 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
+        {/* Table Top Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-base-300/80 bg-base-100">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-base-200/60 text-base-content/70">
-              <LayoutDashboard size={16} />
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+              <LayoutDashboard size={17} />
             </div>
-            <h2 className="font-bold text-base-content text-sm tracking-wide">
+            <h2 className="font-bold text-base-content tracking-wide text-sm">
               PLANNING SUMMARY
             </h2>
           </div>
-          <span className="badge badge-sm badge-ghost font-medium text-xs text-base-content/60 tabular-nums">
+          <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70 tabular-nums">
             {rows.length.toLocaleString("en-US")} rows
           </span>
         </div>
@@ -427,6 +429,12 @@ const PlanningSummaryTable = memo(
             height: "calc(100vh - 260px)",
             minHeight: 520,
             position: "relative",
+          }}
+          onClickCapture={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest(".MuiDataGrid-columnHeader")) {
+              e.stopPropagation();
+            }
           }}
         >
           <DataGrid
@@ -443,6 +451,8 @@ const PlanningSummaryTable = memo(
             disableColumnMenu
             showColumnVerticalBorder
             showCellVerticalBorder
+            sortModel={sortModel}
+            onSortModelChange={onSortModelChange}
             initialState={{
               pagination: { paginationModel: { pageSize: 50 } },
             }}
@@ -474,7 +484,7 @@ const PlanningSummaryTable = memo(
                   "color-mix(in oklab, var(--color-base-content) 75%, transparent)",
               },
 
-              // ── Group Header Styling (เส้นแนวนอนและแนวตั้งเต็ม ไม่แหว่ง ไม่ขาด) ──
+              // ── Group Header Styling ──
               "& .MuiDataGrid-columnHeaderGroupCell": {
                 backgroundColor:
                   "color-mix(in oklab, var(--color-base-content) 5%, var(--color-base-200))",
@@ -502,15 +512,29 @@ const PlanningSummaryTable = memo(
                 color: "var(--color-base-content)",
               },
 
-              // Borders
+              // Borders & Sort Arrows Removal (เหมือนหน้า PO)
               "& .MuiDataGrid-withBorderColor": { borderColor: border },
               "& .MuiDataGrid-columnSeparator": { display: "none" },
               "& .MuiLinearProgress-root": { display: "none" },
+              "& .MuiDataGrid-iconButtonContainer": { display: "none" },
+              "& .MuiDataGrid-columnHeader--sortable": {
+                cursor: "default",
+              },
 
               // ── Cells / Rows ──
               "& .MuiDataGrid-cell": {
                 px: 2,
                 borderColor: border,
+              },
+              "& .MuiDataGrid-cell[data-field='status']": {
+                px: 1,
+                overflow: "visible",
+                textOverflow: "clip",
+              },
+              "& .MuiDataGrid-cell[data-field='lot_status']": {
+                justifyContent: "center",
+                display: "flex",
+                alignItems: "center",
               },
               "& .MuiDataGrid-row:hover": {
                 backgroundColor:

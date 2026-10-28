@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 interface ProductComboboxProps {
   value: string;
   options: string[];
+  placeholder?: string;
   onChange: (value: string) => void;
   onSelect: (value: string) => void;
   onEnter: () => void;
@@ -14,6 +15,7 @@ const MAX_ITEMS = 100;
 const ProductCombobox = ({
   value,
   options,
+  placeholder = "Filter Product or Lot...",
   onChange,
   onSelect,
   onEnter,
@@ -76,37 +78,34 @@ const ProductCombobox = ({
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <div className="relative">
+      <label className="input input-sm rounded-lg text-[13px] w-full border border-base-content/20 bg-base-100 hover:border-base-content/30 focus-within:border-primary focus-within:outline-none transition-colors flex items-center gap-2">
+        <Search size={14} className="opacity-50 shrink-0" />
         <input
           type="text"
+          className="text-[13px] grow bg-transparent outline-none placeholder:text-base-content/40"
+          placeholder={placeholder}
           value={value}
+          onFocus={() => setOpen(true)}
           onChange={(e) => {
             onChange(e.target.value);
             setOpen(true);
             setActive(-1);
           }}
-          onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Filter Product..."
-          className="input input-sm input-bordered w-full pr-8 pl-8 text-xs focus:outline-primary/50"
-        />
-        <Search
-          size={14}
-          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
         />
         {value && (
           <button
             type="button"
+            className="opacity-50 hover:opacity-100 cursor-pointer"
             onClick={() => {
               onChange("");
               select("");
             }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content transition"
           >
             <X size={14} />
           </button>
         )}
-      </div>
+      </label>
 
       {open && matches.length > 0 && (
         <ul
@@ -117,7 +116,10 @@ const ProductCombobox = ({
             <li
               key={item}
               onMouseEnter={() => setActive(idx)}
-              onClick={() => select(item)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                select(item);
+              }}
               className={`cursor-pointer px-3 py-1.5 transition ${
                 idx === active
                   ? "bg-primary text-primary-content"
@@ -134,4 +136,3 @@ const ProductCombobox = ({
 };
 
 export default ProductCombobox;
-

@@ -258,6 +258,15 @@ html[data-sidebar-animating] .datagrid-outer * {
   background-color: #f43f5e;
 }
 
+.status-pill-wip {
+  background-color: #f1f3f5;
+  color: #495057;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.status-pill-wip .status-dot {
+  background-color: #94a3b8;
+}
+
 /* Dark Mode status pills */
 :is(
   .dark,
@@ -345,6 +354,49 @@ html[data-sidebar-animating] .datagrid-outer * {
   background-color: #f43f5e !important;
 }
 
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .status-pill-wip {
+  background-color: rgba(148, 163, 184, 0.16) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .status-pill-wip .status-dot {
+  background-color: #94a3b8 !important;
+}
+
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]):not(.light) .status-pill-ready,
   html[data-theme="system"] .status-pill-ready {
@@ -366,4 +418,157 @@ html[data-sidebar-animating] .datagrid-outer * {
   html[data-theme="system"] .status-pill-plan .status-dot {
     background-color: #f43f5e !important;
   }
+  html:not([data-theme]):not(.light) .status-pill-wip,
+  html[data-theme="system"] .status-pill-wip {
+    background-color: rgba(148, 163, 184, 0.16) !important;
+    color: #cbd5e1 !important;
+    border-color: rgba(148, 163, 184, 0.3) !important;
+  }
+  html:not([data-theme]):not(.light) .status-pill-wip .status-dot,
+  html[data-theme="system"] .status-pill-wip .status-dot {
+    background-color: #94a3b8 !important;
+  }
+}
+
+
+/* ── Lot Status Badges (Planning Summary Table) ── */
+.lot-badge-wip {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+.lot-badge-pending {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.lot-badge-hold {
+  background-color: #ffe4e6;
+  color: #e11d48;
+  border: 1px solid #fecdd3;
+}
+.lot-badge-run {
+  background-color: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.lot-badge-wait {
+  background-color: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .lot-badge-wip {
+  background-color: rgba(14, 165, 233, 0.16) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(14, 165, 233, 0.3) !important;
+}
+
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .lot-badge-pending {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .lot-badge-hold {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+  color: #fb7185 !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .lot-badge-run {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+  color: #34d399 !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+:is(
+  .dark,
+  [data-theme="dark"],
+  [data-theme="night"],
+  [data-theme="dracula"],
+  [data-theme="dim"],
+  [data-theme="sunset"],
+  [data-theme="black"],
+  [data-theme="luxury"],
+  [data-theme="abyss"],
+  [data-theme="business"],
+  [data-theme="coffee"],
+  [data-theme="forest"],
+  [data-theme="synthwave"],
+  [data-theme="halloween"],
+  [data-theme="custom"],
+  [data-theme="Dark-Purple"]
+) .lot-badge-wait {
+  background-color: rgba(139, 92, 246, 0.16) !important;
+  color: #a78bfa !important;
+  border-color: rgba(139, 92, 246, 0.3) !important;
 }
