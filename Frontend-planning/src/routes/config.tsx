@@ -1,5 +1,5 @@
 import React from "react";
-import { ClipboardList, Cog } from "lucide-react";
+import { ClipboardList, Cog, LayoutDashboard } from "lucide-react";
 
 // 🟧 Internal ICONS
 import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
@@ -9,6 +9,9 @@ import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
 // =========================================
 const PO_Balance = React.lazy(() => import("@/pages/PO_Balance/main/PO_Balance"));
 const WIP = React.lazy(() => import("@/pages/WIP/main/WIP"));
+const Planning_Summary = React.lazy(
+  () => import("@/pages/Planning_Summary/main/Planning_Summary")
+);
 
 // =========================================
 // ⚙️ BASE CONFIG
@@ -44,6 +47,14 @@ export const routes_planning: AppRoute[] = [
     Title: "WIP",
     icon: Cog,
   },
+  {
+    path: `${BASE}/planning_summary`,
+    element: <Planning_Summary />,
+    label: "PLANNING SUMMARY",
+    Title: "PLANNING SUMMARY",
+    icon: LayoutDashboard,
+  },
+
 ];
 
 export const routes_External: AppRoute[] = [
