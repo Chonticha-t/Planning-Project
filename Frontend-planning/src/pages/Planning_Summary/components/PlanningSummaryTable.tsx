@@ -1,10 +1,11 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useCallback } from "react";
 import {
   DataGrid,
   GridColDef,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { LayoutDashboard, FileSpreadsheet } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, Info, AlertCircle, AlertTriangle } from "lucide-react";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { SORT_OPTIONS, type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
 
@@ -114,9 +115,34 @@ const PriorityCell = ({ priority }: { priority: string | null | undefined }) => 
 };
 
 // ── Clean Lot Status Badge ──
-const LotStatusBadge = ({ status }: { status: string }) => {
+const LotStatusBadge = ({
+  status,
+  row,
+  onOpenPendingModal,
+}: {
+  status: string;
+  row?: PlanningSummaryRow;
+  onOpenPendingModal?: (row: PlanningSummaryRow) => void;
+}) => {
   if (!status || status.trim() === "") return <span className="text-base-content/25">-</span>;
   const upper = status.toUpperCase().trim();
+
+  if (upper === "PENDING" && onOpenPendingModal && row) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenPendingModal(row);
+        }}
+        className="lot-badge-pending inline-flex items-center justify-center gap-1 h-[22px] px-2.5 rounded-md text-[11px] tracking-wider uppercase font-bold leading-none whitespace-nowrap shrink-0 shadow-xs hover:ring-2 hover:ring-amber-500/40 active:scale-95 transition-all cursor-pointer"
+        title="Click to view Pending Details"
+      >
+        <span>{upper}</span>
+        <Info size={11} className="opacity-70 shrink-0" />
+      </button>
+    );
+  }
 
   let colorClass = "bg-base-200 text-base-content/70 border border-base-content/20";
   if (upper === "HOLD") colorClass = "lot-badge-hold font-bold";
@@ -146,6 +172,66 @@ const PlanningSummaryTable = memo(
     onSortModelChange,
     onExport,
   }: PlanningSummaryTableProps) => {
+    const confirm = useConfirm();
+
+    const handleOpenPendingModal = useCallback(
+      async (row: PlanningSummaryRow) => {
+        await confirm({
+          variant: "info",
+          size: "md",
+          title: "Pending Details",
+          description: (
+            <div className="flex flex-col gap-3 pt-1 text-sm">
+              <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl border border-base-300 text-xs">
+                <span className="font-semibold text-base-content">
+                  Product: <span className="font-bold text-primary">{row.prd_name}</span>
+                </span>
+                <span className="text-base-content/40">•</span>
+                <span className="font-semibold text-base-content">
+                  Lot No: <span className="font-mono font-bold">{row.lot_no || "-"}</span>
+                </span>
+                {row.proc_disp && (
+                  <>
+                    <span className="text-base-content/40">•</span>
+                    <span className="font-semibold text-base-content">
+                      Process: <span className="font-medium">{row.proc_disp}</span>
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-amber-500/40">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                  <AlertCircle size={14} />
+                  <span>Pending Reason</span>
+                </div>
+                <p className="text-[13px] text-base-content/90 font-medium whitespace-pre-wrap leading-relaxed">
+                  {row.pending_reason && row.pending_reason.trim() !== ""
+                    ? row.pending_reason
+                    : "No pending reason specified"}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/40">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
+                  <AlertTriangle size={14} />
+                  <span>Lot Problem</span>
+                </div>
+                <p className="text-[13px] text-base-content/90 font-medium whitespace-pre-wrap leading-relaxed">
+                  {row.lot_problem && row.lot_problem.trim() !== ""
+                    ? row.lot_problem
+                    : "No lot problem specified"}
+                </p>
+              </div>
+            </div>
+          ),
+          confirmText: "Close",
+          hideCancel: true,
+        });
+      },
+      [confirm]
+    );
+
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(
       () => [
         // ── Plan Overview ─────────────────────────
@@ -269,10 +355,16 @@ const PlanningSummaryTable = memo(
           align: "center",
           minWidth: 130,
           flex: 0.9,
-          renderCell: ({ value }) => <LotStatusBadge status={value} />,
+          renderCell: ({ row, value }) => (
+            <LotStatusBadge
+              status={value}
+              row={row}
+              onOpenPendingModal={handleOpenPendingModal}
+            />
+          ),
         },
       ],
-      []
+      [handleOpenPendingModal]
     );
 
     return (

@@ -2,21 +2,23 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 
-export type ConfirmVariant = "save" | "edit" | "delete";
+export type ConfirmVariant = "save" | "edit" | "delete" | "info";
 
 export interface ConfirmOptions {
   title?: string;
   description?: React.ReactNode;
   confirmText?: string;
   cancelText?: string;
+  hideCancel?: boolean;
   variant?: ConfirmVariant;
   from?: "top" | "bottom" | "left" | "right";
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 }
 
 const SIZES = {
   sm: "max-w-sm",
   md: "max-w-md",
+  lg: "max-w-lg",
 };
 
 const VARIANTS: Record<ConfirmVariant, { button: string; title: string; confirmText: string }> = {
@@ -34,6 +36,11 @@ const VARIANTS: Record<ConfirmVariant, { button: string; title: string; confirmT
     button: "!bg-red-600 hover:!bg-red-700 !border-red-600 !text-white shadow-xs",
     title: "Are you absolutely sure?",
     confirmText: "Delete",
+  },
+  info: {
+    button: "btn-primary",
+    title: "Details",
+    confirmText: "Close",
   },
 };
 
@@ -87,8 +94,8 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [open, close]);
 
-  const variant = VARIANTS[options.variant ?? "save"];
-  const offset = OFFSET[options.from ?? "top"];
+  const variant = VARIANTS[options.variant ?? "save"] ?? VARIANTS.save;
+  const offset = OFFSET[options.from ?? "top"] ?? OFFSET.top;
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -110,7 +117,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 aria-modal="true"
                 aria-labelledby="confirm-dialog-title"
                 aria-describedby="confirm-dialog-description"
-                className={`relative w-full ${SIZES[options.size ?? "sm"]} bg-base-100 text-base-content rounded-2xl shadow-2xl border border-base-300 overflow-hidden transform-gpu`}
+                className={`relative w-full ${SIZES[options.size ?? "sm"] ?? SIZES.sm} bg-base-100 text-base-content rounded-2xl shadow-2xl border border-base-300 overflow-hidden transform-gpu`}
                 initial={{ opacity: 0, scale: 0.97, ...offset }}
                 animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97, ...offset }}
@@ -130,13 +137,15 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   </div>
                 </div>
                 <div className="bg-base-200/50 border-t border-base-300 px-5 py-3.5 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => close(false)}
-                    className="btn btn-sm btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content rounded-full px-5 font-semibold"
-                  >
-                    {options.cancelText ?? "Cancel"}
-                  </button>
+                  {!options.hideCancel && (
+                    <button
+                      type="button"
+                      onClick={() => close(false)}
+                      className="btn btn-sm btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content rounded-full px-5 font-semibold"
+                    >
+                      {options.cancelText ?? "Cancel"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     autoFocus
