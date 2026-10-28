@@ -51,11 +51,13 @@ export interface PlanningSummaryKPI {
   total_rows: number;
   total_products: number;
   total_lots: number;
-  total_po_bal: number;
-  total_inventory: number;
   total_net_required: number;
   total_net_wip: number;
-  total_problems: number;
+  urgent_count?: number;
+  high_count?: number;
+  wip_count?: number;
+  hold_count?: number;
+  pending_count?: number;
   last_updated?: string;
 }
 

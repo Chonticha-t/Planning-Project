@@ -317,27 +317,6 @@ const FilterBar = ({
           </select>
         </Field>
 
-        {/* Factory Filter */}
-        {filterOptions.factories.length > 0 && (
-          <Field label="Factory" className="w-full sm:w-36">
-            <select
-              className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
-              value={filter.factory_desc}
-              onChange={(e) => {
-                const next = set("factory_desc", e.target.value);
-                onSearch(next);
-              }}
-            >
-              <option value="">All Factories</option>
-              {filterOptions.factories.map((fc) => (
-                <option key={fc} value={fc}>
-                  {fc}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-
         {/* Sort Filter */}
         <Field label="Sort">
           <SortByDropdown
