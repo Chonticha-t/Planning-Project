@@ -2,10 +2,9 @@ import { memo, useMemo } from "react";
 import {
   DataGrid,
   GridColDef,
-  GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { LayoutDashboard, AlertCircle, FileSpreadsheet } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet } from "lucide-react";
 import { SORT_OPTIONS, type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
 
@@ -135,36 +134,7 @@ const LotStatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// Tooltip Cell
-const TruncatedTooltipCell = ({
-  text,
-  isAlert = false,
-}: {
-  text: string | null | undefined;
-  isAlert?: boolean;
-}) => {
-  if (!text || text.trim() === "") {
-    return <span className="text-base-content/25">-</span>;
-  }
 
-  return (
-    <div
-      className="group relative flex items-center gap-1.5 max-w-full cursor-help"
-      title={text}
-    >
-      {isAlert && <AlertCircle size={14} className="text-rose-500 shrink-0" />}
-      <span
-        className={`truncate text-[13px] ${
-          isAlert ? "text-rose-600 font-medium" : "text-base-content/75"
-        }`}
-      >
-        {text}
-      </span>
-    </div>
-  );
-};
-
-const GROUP_HEADER_H = 28;
 const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
 const headerBg = "var(--color-base-200)";
 
@@ -183,8 +153,8 @@ const PlanningSummaryTable = memo(
           field: "prd_name",
           headerName: "Product",
           headerAlign: "center",
-          minWidth: 165,
-          flex: 1.3,
+          minWidth: 170,
+          flex: 1.2,
           renderCell: ({ value }) => (
             <span className="font-semibold text-base-content text-[14px] truncate">
               {value}
@@ -241,30 +211,13 @@ const PlanningSummaryTable = memo(
 
         // ── Group 1: Demand & Balance ────────────
         {
-          field: "po_bal",
-          headerName: "PO Bal",
-          headerAlign: "center",
-          align: "center",
-          type: "number",
-          minWidth: 110,
-          renderCell: ({ value }) => <NumberCell value={value} />,
-        },
-        {
-          field: "inventory",
-          headerName: "Inventory",
-          headerAlign: "center",
-          align: "center",
-          type: "number",
-          minWidth: 110,
-          renderCell: ({ value }) => <NumberCell value={value} />,
-        },
-        {
           field: "net_required_pcs",
           headerName: "Net Required",
           headerAlign: "center",
           align: "center",
           type: "number",
-          minWidth: 120,
+          minWidth: 130,
+          flex: 1,
           renderCell: ({ value }) => <NumberCell value={value} strong />,
         },
 
@@ -275,33 +228,10 @@ const PlanningSummaryTable = memo(
           headerAlign: "center",
           align: "center",
           minWidth: 160,
+          flex: 1.1,
           renderCell: ({ value }) => (
             <span className="font-mono font-bold text-[15px] text-base-content tracking-wide select-all">
               {value || "-"}
-            </span>
-          ),
-        },
-        {
-          field: "proc_disp",
-          headerName: "Process",
-          headerAlign: "center",
-          minWidth: 140,
-          renderCell: ({ value }) => (
-            <span className="text-[13.5px] text-base-content/80 truncate">
-              {value || "-"}
-            </span>
-          ),
-        },
-        {
-          field: "seq",
-          headerName: "Seq",
-          headerAlign: "center",
-          align: "center",
-          type: "number",
-          minWidth: 70,
-          renderCell: ({ value }) => (
-            <span className="tabular-nums font-medium text-xs text-base-content/60">
-              {value ?? "-"}
             </span>
           ),
         },
@@ -311,7 +241,8 @@ const PlanningSummaryTable = memo(
           headerAlign: "center",
           align: "center",
           type: "number",
-          minWidth: 110,
+          minWidth: 120,
+          flex: 0.9,
           renderCell: ({ value }) => (
             <NumberCell
               value={value}
@@ -320,144 +251,25 @@ const PlanningSummaryTable = memo(
           ),
         },
         {
-          field: "yield",
-          headerName: "Yield %",
+          field: "proc_disp",
+          headerName: "Process",
           headerAlign: "center",
-          align: "center",
-          type: "number",
-          minWidth: 85,
+          minWidth: 140,
+          flex: 1,
           renderCell: ({ value }) => (
-            <span className="tabular-nums font-medium text-[13.5px] text-base-content/75">
-              {value != null ? `${Number(value).toFixed(1)}%` : "-"}
-            </span>
-          ),
-        },
-
-        // ── Group 3: Attributes ──────────────────
-        {
-          field: "factory_desc",
-          headerName: "Factory",
-          headerAlign: "center",
-          align: "center",
-          minWidth: 110,
-          renderCell: ({ value }) => (
-            <span className="text-[13px] text-base-content/70 truncate">
+            <span className="text-[13.5px] text-base-content/80 truncate">
               {value || "-"}
             </span>
           ),
         },
-        {
-          field: "prd_type",
-          headerName: "Type",
-          headerAlign: "center",
-          align: "center",
-          minWidth: 80,
-          renderCell: ({ value }) => (
-            <span className="text-xs text-base-content/60 font-medium">
-              {value || "-"}
-            </span>
-          ),
-        },
-        {
-          field: "gate_name",
-          headerName: "Gate",
-          headerAlign: "center",
-          align: "center",
-          minWidth: 110,
-          renderCell: ({ value }) => (
-            <span className="text-[13px] text-base-content/70 truncate">
-              {value || "-"}
-            </span>
-          ),
-        },
-
-        // ── Group 4: Issues & Remarks ────────────
         {
           field: "lot_status",
           headerName: "Lot Status",
           headerAlign: "center",
           align: "center",
           minWidth: 130,
+          flex: 0.9,
           renderCell: ({ value }) => <LotStatusBadge status={value} />,
-        },
-        {
-          field: "lot_problem",
-          headerName: "Lot Problem",
-          headerAlign: "center",
-          minWidth: 160,
-          flex: 1,
-          renderCell: ({ value }) => (
-            <TruncatedTooltipCell text={value} isAlert={!!value} />
-          ),
-        },
-        {
-          field: "pending_reason",
-          headerName: "Pending Reason",
-          headerAlign: "center",
-          minWidth: 160,
-          flex: 1,
-          renderCell: ({ value }) => <TruncatedTooltipCell text={value} />,
-        },
-      ],
-      []
-    );
-
-    // ── Group Model ตรงตามภาพ ──
-    const columnGroupingModel: GridColumnGroupingModel = useMemo(
-      () => [
-        {
-          groupId: "plan_overview",
-          headerName: "PLAN OVERVIEW",
-          headerAlign: "center",
-          children: [
-            { field: "prd_name" },
-            { field: "due_date" },
-            { field: "ship_to_p1" },
-            { field: "priority" },
-            { field: "status" },
-          ],
-        },
-        {
-          groupId: "demand_balance",
-          headerName: "DEMAND & BALANCE",
-          headerAlign: "center",
-          children: [
-            { field: "po_bal" },
-            { field: "inventory" },
-            { field: "net_required_pcs" },
-          ],
-        },
-        {
-          groupId: "wip_tracking",
-          headerName: "WIP & LOT TRACKING",
-          headerAlign: "center",
-          children: [
-            { field: "lot_no" },
-            { field: "proc_disp" },
-            { field: "seq" },
-            { field: "net_wip_qty" },
-            { field: "yield" },
-          ],
-        },
-        {
-          groupId: "attributes",
-          headerName: "ATTRIBUTES",
-          headerAlign: "center",
-          children: [
-            { field: "factory_desc" },
-            { field: "prd_type" },
-            { field: "gate_name" },
-          ],
-        },
-        {
-          groupId: "issues_remarks",
-          headerName: "ISSUES & REMARKS",
-          headerAlign: "center",
-          children: [
-            { field: "lot_status" },
-            { field: "lot_problem" },
-            { field: "pending_reason" },
-          ],
         },
       ],
       []
@@ -510,13 +322,11 @@ const PlanningSummaryTable = memo(
           <DataGrid
             rows={rows}
             columns={columns}
-            columnGroupingModel={columnGroupingModel}
             loading={loading}
             getRowId={(r) => r.id}
             rowHeight={44}
             resizeThrottleMs={0}
-            columnHeaderHeight={36}
-            columnGroupHeaderHeight={GROUP_HEADER_H}
+            columnHeaderHeight={40}
             disableRowSelectionOnClick
             disableColumnMenu
             showColumnVerticalBorder
@@ -552,34 +362,6 @@ const PlanningSummaryTable = memo(
                 textTransform: "uppercase",
                 color:
                   "color-mix(in oklab, var(--color-base-content) 75%, transparent)",
-              },
-
-              // ── Group Header Styling ──
-              "& .MuiDataGrid-columnHeaderGroupCell": {
-                backgroundColor:
-                  "color-mix(in oklab, var(--color-base-content) 5%, var(--color-base-200))",
-                borderBottom: `1px solid ${border} !important`,
-                borderRight: `1px solid ${border} !important`,
-                padding: "0 !important",
-              },
-              "& .MuiDataGrid-columnHeader--filledGroup": {
-                borderBottom: `1px solid ${border} !important`,
-                borderRight: `1px solid ${border} !important`,
-              },
-              "& .MuiDataGrid-columnHeader--filledGroup .MuiDataGrid-columnHeaderTitleContainer": {
-                borderBottom: "none !important",
-                padding: "0 12px",
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              },
-              "& .MuiDataGrid-columnHeaderGroupCell .MuiDataGrid-columnHeaderTitle": {
-                fontWeight: 800,
-                fontSize: 12,
-                letterSpacing: "0.06em",
-                color: "var(--color-base-content)",
               },
 
               // Borders & Sort Arrows Removal (เหมือนหน้า PO)

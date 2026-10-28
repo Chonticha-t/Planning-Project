@@ -1,6 +1,7 @@
 export interface PlanningSummaryRow {
   id: number | string;
   prd_name: string;
+  item?: string;
   due_date: string;
   ship_to_p1?: string | null;
   priority?: string | null;
@@ -30,24 +31,26 @@ export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] 
   { field: "ship_to_p1", label: "Ship to P1" },
   { field: "priority", label: "Priority" },
   { field: "status", label: "Status" },
-  { field: "po_bal", label: "PO Bal" },
-  { field: "inventory", label: "Inventory" },
   { field: "net_required_pcs", label: "Net Required" },
   { field: "lot_no", label: "Lot No" },
-  { field: "proc_disp", label: "Process" },
-  { field: "seq", label: "Seq" },
   { field: "net_wip_qty", label: "Net WIP" },
-  { field: "yield", label: "Yield %" },
-  { field: "factory_desc", label: "Factory" },
-  { field: "prd_type", label: "Type" },
-  { field: "gate_name", label: "Gate" },
+  { field: "proc_disp", label: "Process" },
   { field: "lot_status", label: "Lot Status" },
+];
+
+export type ItemUnitFilter = "" | "94" | "95";
+
+export const ITEM_UNIT_OPTIONS: { value: ItemUnitFilter; label: "ALL" | "FPC" | "SMT" }[] = [
+  { value: "", label: "ALL" },
+  { value: "94", label: "FPC" },
+  { value: "95", label: "SMT" },
 ];
 
 export interface PlanningSummaryFilter {
   prd_name: string;
   status: string;
   priority?: string;
+  item_prefix?: string;
   lot_status: string;
   factory_desc: string;
   startdate: string;
@@ -58,11 +61,13 @@ export interface PlanningSummaryKPI {
   total_rows: number;
   total_products: number;
   total_lots: number;
-  total_po_bal: number;
-  total_inventory: number;
   total_net_required: number;
   total_net_wip: number;
-  total_problems: number;
+  urgent_count?: number;
+  high_count?: number;
+  wip_count?: number;
+  hold_count?: number;
+  pending_count?: number;
   last_updated?: string;
 }
 

@@ -9,7 +9,7 @@ import {
   Check,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
-import { SORT_OPTIONS, type PlanningSummaryFilter, type DistinctFilters } from "../types";
+import { SORT_OPTIONS, ITEM_UNIT_OPTIONS, type PlanningSummaryFilter, type DistinctFilters } from "../types";
 import ProductCombobox from "./ProductCombobox";
 import CallyDatePicker from "@/components/CallyCalendar";
 
@@ -260,6 +260,24 @@ const FilterBar = ({
           />
         </Field>
 
+        {/* Type Filter (94 = FPC, 95 = SMT) */}
+        <Field label="Type" className="w-full sm:w-28">
+          <select
+            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            value={filter.item_prefix || ""}
+            onChange={(e) => {
+              const next = set("item_prefix", e.target.value);
+              onSearch(next);
+            }}
+          >
+            {ITEM_UNIT_OPTIONS.map((opt) => (
+              <option key={opt.label} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         {/* Status Filter */}
         <Field label="Status" className="w-full sm:w-36">
           <select
@@ -316,27 +334,6 @@ const FilterBar = ({
             ))}
           </select>
         </Field>
-
-        {/* Factory Filter */}
-        {filterOptions.factories.length > 0 && (
-          <Field label="Factory" className="w-full sm:w-36">
-            <select
-              className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
-              value={filter.factory_desc}
-              onChange={(e) => {
-                const next = set("factory_desc", e.target.value);
-                onSearch(next);
-              }}
-            >
-              <option value="">All Factories</option>
-              {filterOptions.factories.map((fc) => (
-                <option key={fc} value={fc}>
-                  {fc}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
 
         {/* Sort Filter */}
         <Field label="Sort">

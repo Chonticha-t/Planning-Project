@@ -1,10 +1,11 @@
 import { memo, type ReactNode } from "react";
 import {
-  Package,
-  Layers,
-  ClipboardList,
+  Target,
   Cpu,
-  AlertTriangle,
+  Flame,
+  Boxes,
+  Activity,
+  type LucideIcon,
 } from "lucide-react";
 import type { PlanningSummaryKPI } from "../types";
 
@@ -16,109 +17,121 @@ const fmt = (n: number | null | undefined) =>
   Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 const SummaryCards = ({ kpi }: SummaryCardsProps) => {
+  const urgentCount = kpi.urgent_count ?? 0;
+  const highCount = kpi.high_count ?? 0;
+  const totalPriority = urgentCount + highCount;
+
+  const wipCount = kpi.wip_count ?? 0;
+  const holdCount = kpi.hold_count ?? 0;
+  const pendingCount = kpi.pending_count ?? 0;
+
   const cards: {
     title: string;
     value: string;
     unit: string;
     sub: ReactNode;
-    icon: typeof Package;
+    icon: LucideIcon;
     cardStyle: string;
     iconStyle: string;
     valueColor: string;
   }[] = [
-    {
-      title: "Total PO Balance",
-      value: fmt(kpi.total_po_bal),
-      unit: "pcs",
-      sub: (
-        <div className="flex items-center justify-between gap-2 text-base-content/70">
-          <span className="shrink-0">Total Lines</span>
-          <span className="font-bold text-info truncate">
-            {fmt(kpi.total_rows)} lines
-          </span>
-        </div>
-      ),
-      icon: Package,
-      cardStyle:
-        "border-info/35 bg-gradient-to-br from-info/[0.05] to-base-100 hover:border-info/70",
-      iconStyle: "bg-info/15 text-info ring-1 ring-info/25",
-      valueColor: "text-info",
-    },
-    {
-      title: "Total Inventory",
-      value: fmt(kpi.total_inventory),
-      unit: "pcs",
-      sub: (
-        <div className="flex items-center justify-between gap-2 text-base-content/70">
-          <span className="shrink-0">In Stock</span>
-          <span className="font-bold text-primary truncate">
-            {fmt(kpi.total_products)} items
-          </span>
-        </div>
-      ),
-      icon: Layers,
-      cardStyle:
-        "border-primary/35 bg-gradient-to-br from-primary/[0.05] to-base-100 hover:border-primary/70",
-      iconStyle: "bg-primary/15 text-primary ring-1 ring-primary/25",
-      valueColor: "text-primary",
-    },
+    // 1. Net Required
     {
       title: "Net Required",
       value: fmt(kpi.total_net_required),
       unit: "pcs",
       sub: (
         <div className="flex items-center justify-between gap-2 text-base-content/70">
-          <span className="shrink-0">Target Plan</span>
+          <span className="shrink-0">Demand Plan</span>
           <span className="font-bold text-amber-500 truncate">
-            Active Demand
+            {fmt(kpi.total_products)} products
           </span>
         </div>
       ),
-      icon: ClipboardList,
-      cardStyle:
-        "border-warning/35 bg-gradient-to-br from-warning/[0.05] to-base-100 hover:border-warning/70",
-      iconStyle: "bg-warning/15 text-warning ring-1 ring-warning/25",
+      icon: Target,
+      cardStyle: "border-base-200/90 bg-base-100 hover:border-amber-500/50",
+      iconStyle: "bg-amber-500/15 text-amber-500 ring-1 ring-amber-500/25",
       valueColor: "text-amber-500",
     },
+
+    // 2. Net WIP Qty
     {
-      title: "Total WIP Qty",
+      title: "Total Net WIP",
       value: fmt(kpi.total_net_wip),
       unit: "pcs",
       sub: (
         <div className="flex items-center justify-between gap-2 text-base-content/70">
-          <span className="shrink-0">In-Process</span>
+          <span className="shrink-0">In Process</span>
           <span className="font-bold text-emerald-500 truncate">
             {fmt(kpi.total_lots)} lots
           </span>
         </div>
       ),
       icon: Cpu,
-      cardStyle:
-        "border-success/35 bg-gradient-to-br from-success/[0.05] to-base-100 hover:border-success/70",
-      iconStyle: "bg-success/15 text-success ring-1 ring-success/25",
+      cardStyle: "border-base-200/90 bg-base-100 hover:border-emerald-500/50",
+      iconStyle: "bg-emerald-500/15 text-emerald-500 ring-1 ring-emerald-500/25",
       valueColor: "text-emerald-500",
     },
+
+    // 3. Priority: Urgent / High
     {
-      title: "Hold / Issues",
-      value: fmt(kpi.total_problems),
-      unit: "lots",
+      title: "Priority Orders",
+      value: fmt(totalPriority),
+      unit: "lines",
       sub: (
         <div className="flex items-center justify-between gap-2 text-base-content/70">
-          <span className="shrink-0">Attention</span>
-          <span
-            className={`font-bold truncate ${
-              kpi.total_problems > 0 ? "text-error" : "text-base-content/50"
-            }`}
-          >
-            {kpi.total_problems > 0 ? "Action Required" : "Normal"}
+          <span className="shrink-0 font-medium text-rose-600">
+            Urgent: <span className="font-bold">{fmt(urgentCount)}</span>
+          </span>
+          <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">
+            High: <span className="font-bold">{fmt(highCount)}</span>
           </span>
         </div>
       ),
-      icon: AlertTriangle,
-      cardStyle:
-        "border-error/35 bg-gradient-to-br from-error/[0.05] to-base-100 hover:border-error/70",
-      iconStyle: "bg-error/15 text-error ring-1 ring-error/25",
-      valueColor: "text-error",
+      icon: Flame,
+      cardStyle: "border-base-200/90 bg-base-100 hover:border-rose-500/50",
+      iconStyle: "bg-rose-500/15 text-rose-600 ring-1 ring-rose-500/25",
+      valueColor: "text-rose-600",
+    },
+
+    // 4. Products & Lots
+    {
+      title: "Products & Lots",
+      value: fmt(kpi.total_products),
+      unit: "products",
+      sub: (
+        <div className="flex items-center justify-between gap-2 text-base-content/70">
+          <span className="shrink-0">Total Lines</span>
+          <span className="font-bold text-primary truncate">
+            {fmt(kpi.total_rows)} lines
+          </span>
+        </div>
+      ),
+      icon: Boxes,
+      cardStyle: "border-base-200/90 bg-base-100 hover:border-primary/50",
+      iconStyle: "bg-primary/15 text-primary ring-1 ring-primary/25",
+      valueColor: "text-primary",
+    },
+
+    // 5. Lot Status
+    {
+      title: "Lot Status",
+      value: fmt(wipCount),
+      unit: "WIP",
+      sub: (
+        <div className="flex items-center justify-between gap-2 text-base-content/70">
+          <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">
+            Pending: <span className="font-bold">{fmt(pendingCount)}</span>
+          </span>
+          <span className="shrink-0 font-medium text-error">
+            Hold: <span className="font-bold">{fmt(holdCount)}</span>
+          </span>
+        </div>
+      ),
+      icon: Activity,
+      cardStyle: "border-base-200/90 bg-base-100 hover:border-info/50",
+      iconStyle: "bg-info/15 text-info ring-1 ring-info/25",
+      valueColor: "text-info",
     },
   ];
 

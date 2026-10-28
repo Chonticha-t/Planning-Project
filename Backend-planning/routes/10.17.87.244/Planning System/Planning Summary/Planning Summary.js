@@ -17,7 +17,7 @@ const setNoCache = (res) => {
  * Helper build WHERE conditions for filters
  */
 const buildWhereClause = (queryParams) => {
-  const { prd_name, lot_no, search, status, priority, lot_status, factory_desc, startdate, stopdate } =
+  const { prd_name, lot_no, search, status, priority, lot_status, factory_desc, startdate, stopdate, item_prefix, type } =
     queryParams;
   const conditions = [];
   const params = [];
@@ -41,6 +41,13 @@ const buildWhereClause = (queryParams) => {
   if (priority && String(priority).trim() !== "") {
     conditions.push(`priority = $${idx}`);
     params.push(String(priority).trim());
+    idx++;
+  }
+
+  const prefix = (item_prefix || type || "").trim();
+  if (prefix !== "") {
+    conditions.push(`item LIKE $${idx}`);
+    params.push(`${prefix}%`);
     idx++;
   }
 
@@ -90,6 +97,7 @@ router.get("/table", async (req, res) => {
       SELECT
         ROW_NUMBER() OVER () AS id,
         prd_name,
+        item,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
         to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
         priority,
@@ -146,14 +154,13 @@ router.get("/summary", async (req, res) => {
         COUNT(*)::int AS total_rows,
         COUNT(DISTINCT prd_name)::int AS total_products,
         COUNT(DISTINCT lot_no) FILTER (WHERE lot_no IS NOT NULL AND lot_no <> '')::int AS total_lots,
-        COALESCE(SUM(po_bal), 0)::float8 AS total_po_bal,
-        COALESCE(SUM(inventory), 0)::float8 AS total_inventory,
         COALESCE(SUM(net_required_pcs), 0)::float8 AS total_net_required,
         COALESCE(SUM(net_wip_qty), 0)::float8 AS total_net_wip,
-        COUNT(*) FILTER (
-          WHERE UPPER(lot_status) = 'HOLD' 
-             OR (lot_problem IS NOT NULL AND TRIM(lot_problem) <> '')
-        )::int AS total_problems,
+        COUNT(*) FILTER (WHERE UPPER(priority) = 'URGENT' OR priority = 'P1')::int AS urgent_count,
+        COUNT(*) FILTER (WHERE UPPER(priority) = 'HIGH' OR priority = 'P2')::int AS high_count,
+        COUNT(*) FILTER (WHERE UPPER(lot_status) = 'WIP')::int AS wip_count,
+        COUNT(*) FILTER (WHERE UPPER(lot_status) = 'HOLD')::int AS hold_count,
+        COUNT(*) FILTER (WHERE UPPER(lot_status) = 'PENDING')::int AS pending_count,
         to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS last_updated
       FROM planning.planning_summary
       ${whereSql}

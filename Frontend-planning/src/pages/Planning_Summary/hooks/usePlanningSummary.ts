@@ -28,11 +28,13 @@ export const INITIAL_KPI: PlanningSummaryKPI = {
   total_rows: 0,
   total_products: 0,
   total_lots: 0,
-  total_po_bal: 0,
-  total_inventory: 0,
   total_net_required: 0,
   total_net_wip: 0,
-  total_problems: 0,
+  urgent_count: 0,
+  high_count: 0,
+  wip_count: 0,
+  hold_count: 0,
+  pending_count: 0,
 };
 
 const AJAX_TIMEOUT_MS = 15_000;
@@ -83,6 +85,7 @@ export const usePlanningSummary = () => {
     if (f.prd_name) params.prd_name = f.prd_name;
     if (f.status) params.status = f.status;
     if (f.priority) params.priority = f.priority;
+    if (f.item_prefix) params.item_prefix = f.item_prefix;
     if (f.lot_status) params.lot_status = f.lot_status;
     if (f.factory_desc) params.factory_desc = f.factory_desc;
     if (f.startdate) params.startdate = f.startdate;
