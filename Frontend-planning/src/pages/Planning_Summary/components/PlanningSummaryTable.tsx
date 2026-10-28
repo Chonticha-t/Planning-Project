@@ -6,10 +6,10 @@ import {
 } from "@mui/x-data-grid";
 import { LayoutDashboard, FileSpreadsheet, Info, AlertCircle, AlertTriangle } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { SORT_OPTIONS, type PlanningSummaryRow } from "../types";
+import { type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
 
-export { SORT_OPTIONS };
+
 
 interface PlanningSummaryTableProps {
   rows: PlanningSummaryRow[];
@@ -167,7 +167,7 @@ const headerBg = "var(--color-base-200)";
 const PlanningSummaryTable = memo(
   ({
     rows,
-    loading = false,
+
     sortModel,
     onSortModelChange,
     onExport,
@@ -414,7 +414,8 @@ const PlanningSummaryTable = memo(
           <DataGrid
             rows={rows}
             columns={columns}
-            loading={loading}
+            loading={false}
+            slots={{ loadingOverlay: () => null }}
             getRowId={(r) => r.id}
             rowHeight={44}
             resizeThrottleMs={0}
@@ -492,6 +493,13 @@ const PlanningSummaryTable = memo(
               },
               "& .MuiDataGrid-virtualScroller": {
                 opacity: "1 !important",
+                willChange: "transform",
+              },
+              "& .MuiDataGrid-overlayWrapper": {
+                display: "none !important",
+              },
+              "& .MuiDataGrid-overlay": {
+                backgroundColor: "transparent",
               },
               "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
                 { outline: "none" },

@@ -220,8 +220,8 @@ const FilterBar = ({
   onChange,
   onSearch,
   onReset,
-  onExport,
-  loading: _loading,
+
+
 }: FilterBarProps) => {
   const searchOptions = useMemo(() => {
     const prds = filterOptions.products || [];
@@ -266,7 +266,13 @@ const FilterBar = ({
             className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
             value={filter.item_prefix || ""}
             onChange={(e) => {
-              const next = set("item_prefix", e.target.value);
+              const nextPrefix = e.target.value;
+              const next: PlanningSummaryFilter = {
+                ...filter,
+                item_prefix: nextPrefix,
+                ...(nextPrefix && filter.item_prefix !== nextPrefix ? { prd_name: "" } : {}),
+              };
+              onChange(next);
               onSearch(next);
             }}
           >

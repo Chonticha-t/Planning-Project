@@ -4,8 +4,8 @@ import toast from "react-hot-toast";
 
 import {
   PLANNING_SUMMARY_TABLE_API,
-  PLANNING_SUMMARY_KPI_API,
   PLANNING_SUMMARY_FILTERS_API,
+  PLANNING_SUMMARY_STREAM_API,
 } from "./api";
 import type {
   ApiResponse,
@@ -18,6 +18,8 @@ import type {
 export const EMPTY_FILTER: PlanningSummaryFilter = {
   prd_name: "",
   status: "",
+  priority: "",
+  item_prefix: "",
   lot_status: "",
   factory_desc: "",
   startdate: "",
@@ -37,110 +39,264 @@ export const INITIAL_KPI: PlanningSummaryKPI = {
   pending_count: 0,
 };
 
-const AJAX_TIMEOUT_MS = 15_000;
+// กำหนด Timeout ของแต่ละ Request เพื่อความเสถียร (เหมือนหน้า PO Balance)
+const AJAX_TIMEOUT_MS = 10_000;
 
+// คำนวณ KPI จากแถวข้อมูลที่ถูก filter โดยตรง (ลดการยิง API ซ้ำซ้อนและทำให้ตารางกับ KPI อัปเดตพร้อมกัน 100%)
+export const computeKPIFromRows = (rows: PlanningSummaryRow[]): PlanningSummaryKPI => {
+  const products = new Set<string>();
+  const lots = new Set<string>();
+  let total_net_required = 0;
+  let total_net_wip = 0;
+  let urgent_count = 0;
+  let high_count = 0;
+  let wip_count = 0;
+  let hold_count = 0;
+  let pending_count = 0;
+  let last_updated = "";
+
+  for (const r of rows) {
+    if (r.prd_name) products.add(r.prd_name);
+    if (r.lot_no && r.lot_no.trim() !== "") lots.add(r.lot_no);
+
+    total_net_required += Number(r.net_required_pcs) || 0;
+    total_net_wip += Number(r.net_wip_qty) || 0;
+
+    const prio = (r.priority || "").toUpperCase().trim();
+    if (prio === "URGENT" || prio === "P1") urgent_count += 1;
+    else if (prio === "HIGH" || prio === "P2") high_count += 1;
+
+    const lStatus = (r.lot_status || "").toUpperCase().trim();
+    if (lStatus === "WIP") wip_count += 1;
+    else if (lStatus === "HOLD") hold_count += 1;
+    else if (lStatus === "PENDING") pending_count += 1;
+
+    if (r.updated_at && (!last_updated || r.updated_at > last_updated)) {
+      last_updated = r.updated_at;
+    }
+  }
+
+  return {
+    total_rows: rows.length,
+    total_products: products.size,
+    total_lots: lots.size,
+    total_net_required,
+    total_net_wip,
+    urgent_count,
+    high_count,
+    wip_count,
+    hold_count,
+    pending_count,
+    ...(last_updated ? { last_updated } : {}),
+  };
+};
+
+// ดึงข้อมูลตาราง + KPI ของหน้า Planning Summary ด้วย SSE (Server-Sent Events) แบบ Real-time เหมือนหน้า PO Balance
 export const usePlanningSummary = () => {
   const [rows, setRows] = useState<PlanningSummaryRow[]>([]);
   const [kpi, setKpi] = useState<PlanningSummaryKPI>(INITIAL_KPI);
   const [filtersOptions, setFiltersOptions] = useState<DistinctFilters>({
     products: [],
+    lot_nos: [],
     statuses: [],
+    priorities: [],
     lot_statuses: [],
     factories: [],
   });
   const [loading, setLoading] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const [dbVersion, setDbVersion] = useState(0);
 
-  // ดึงค่า Distinct สำหรับ Dropdowns
-  const fetchFilterOptions = useCallback(async () => {
+  const activeFilterRef = useRef<PlanningSummaryFilter>(EMPTY_FILTER);
+  const lastRowsJsonRef = useRef<string>("");
+  const lastFiltersJsonRef = useRef<string>("");
+  const lastItemPrefixRef = useRef<string | null>(null);
+  const isFetchingRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const filtersAbortRef = useRef<AbortController | null>(null);
+
+  // ดึงค่า Distinct สำหรับ Dropdowns (รองรับการกรองตาม item_prefix เหมือนหน้า PO Balance)
+  const fetchFilterOptions = useCallback(async (item_prefix = "") => {
+    filtersAbortRef.current?.abort();
+    const controller = new AbortController();
+    filtersAbortRef.current = controller;
+
     try {
       const res = await axios.get<ApiResponse<DistinctFilters>>(
         PLANNING_SUMMARY_FILTERS_API,
-        { timeout: AJAX_TIMEOUT_MS }
+        {
+          params: { ...(item_prefix ? { item_prefix } : {}), _t: Date.now() },
+          timeout: AJAX_TIMEOUT_MS,
+          signal: controller.signal,
+        }
       );
+      lastItemPrefixRef.current = item_prefix;
       if (res.data?.status === "OK" && res.data.data) {
-        setFiltersOptions({
+        const nextFilters: DistinctFilters = {
           ...res.data.data,
           statuses: (res.data.data.statuses || []).filter(
             (s) => s.toLowerCase() !== "ready"
           ),
-        });
+        };
+        const nextFiltersJson = JSON.stringify(nextFilters);
+        if (nextFiltersJson !== lastFiltersJsonRef.current) {
+          lastFiltersJsonRef.current = nextFiltersJson;
+          setFiltersOptions(nextFilters);
+        }
       }
     } catch (err) {
-      console.error("Failed to fetch filter options:", err);
+      if (!axios.isCancel(err)) {
+        console.error("Failed to fetch filter options:", err);
+      }
     }
   }, []);
 
-  // ดึงข้อมูลหลัก (ตาราง + KPI)
-  const fetchData = useCallback(async (f: PlanningSummaryFilter = EMPTY_FILTER) => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+  // ดึงข้อมูลหลัก (ตาราง + คำนวณ KPI อัตโนมัติ) รองรับโหมด silent สำหรับ Background Refresh
+  const fetchData = useCallback(
+    async (f: PlanningSummaryFilter = EMPTY_FILTER, options?: { silent?: boolean }) => {
+      const silent = options?.silent ?? false;
+      activeFilterRef.current = f;
 
-    setLoading(true);
+      // ถ้ายิงค้นหาใหม่ด้วยตัวเอง ให้ยกเลิก Request เก่าที่อาจค้างอยู่ทันที
+      if (!silent && abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
 
-    const params: Record<string, string> = {};
-    if (f.prd_name) params.prd_name = f.prd_name;
-    if (f.status) params.status = f.status;
-    if (f.priority) params.priority = f.priority;
-    if (f.item_prefix) params.item_prefix = f.item_prefix;
-    if (f.lot_status) params.lot_status = f.lot_status;
-    if (f.factory_desc) params.factory_desc = f.factory_desc;
-    if (f.startdate) params.startdate = f.startdate;
-    if (f.stopdate) params.stopdate = f.stopdate;
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      isFetchingRef.current = true;
 
-    try {
-      const [tableRes, kpiRes] = await Promise.all([
-        axios.get<ApiResponse<PlanningSummaryRow[]>>(PLANNING_SUMMARY_TABLE_API, {
-          params,
-          signal: controller.signal,
-          timeout: AJAX_TIMEOUT_MS,
-        }),
-        axios.get<ApiResponse<PlanningSummaryKPI>>(PLANNING_SUMMARY_KPI_API, {
-          params,
-          signal: controller.signal,
-          timeout: AJAX_TIMEOUT_MS,
-        }),
-      ]);
+      if (!silent) {
+        setLoading(true);
+      }
 
-      if (tableRes.data?.status === "OK") {
-        const nonReadyRows = (tableRes.data.data || []).filter(
-          (r) => r.status?.toLowerCase() !== "ready"
+      const currentPrefix = f.item_prefix || "";
+      if (lastItemPrefixRef.current !== currentPrefix) {
+        fetchFilterOptions(currentPrefix);
+      }
+
+      try {
+        // ส่งเฉพาะ filter ที่มีค่า พร้อม _t ป้องกัน Browser/Proxy จำค่าเก่า (Cache)
+        const filterParams = Object.fromEntries(
+          Object.entries(f).filter(([, v]) => v !== undefined && v !== "")
         );
-        setRows(
-          nonReadyRows.map((row, idx) => ({
+        const params = { ...filterParams, _t: Date.now() };
+
+        const tableRes = await axios.get<ApiResponse<PlanningSummaryRow[]>>(
+          PLANNING_SUMMARY_TABLE_API,
+          {
+            params,
+            signal: controller.signal,
+            timeout: AJAX_TIMEOUT_MS,
+          }
+        );
+
+        if (tableRes.data?.status === "OK") {
+          const rawData = (tableRes.data.data ?? []).filter(
+            (r) => r.status?.toLowerCase() !== "ready"
+          );
+          const filteredByPrefix = currentPrefix
+            ? rawData.filter((r) => !r.item || r.item.trim().startsWith(currentPrefix))
+            : rawData;
+
+          const tableData = filteredByPrefix.map((row, idx) => ({
             ...row,
-            id: row.id ?? `${row.prd_name}_${row.due_date}_${row.lot_no}_${idx}`,
-          }))
-        );
-      } else {
-        toast.error(tableRes.data?.message || "Failed to load table data");
-      }
+            id: `${row.prd_name}|${row.due_date}|${row.lot_no || ""}|${row.seq ?? ""}|${idx}`,
+          }));
 
-      if (kpiRes.data?.status === "OK") {
-        setKpi(kpiRes.data.data || INITIAL_KPI);
-      }
-    } catch (err: any) {
-      if (axios.isCancel(err)) return;
-      console.error("Error fetching planning summary:", err);
-      toast.error(err?.response?.data?.message || "Error fetching Planning Summary data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+          const nextJson = JSON.stringify(tableData);
 
+          // อัปเดต State เฉพาะเมื่อข้อมูลในตารางมีการเปลี่ยนแปลงจริง หรือเป็นการกดค้นหาใหม่
+          if (!silent || nextJson !== lastRowsJsonRef.current) {
+            lastRowsJsonRef.current = nextJson;
+            setRows(tableData);
+            setKpi(computeKPIFromRows(tableData));
+            if (silent) {
+              fetchFilterOptions(currentPrefix);
+            }
+          }
+        } else if (!silent) {
+          toast.error(tableRes.data?.message || "Failed to load table data");
+        }
+      } catch (err: unknown) {
+        if (axios.isCancel(err)) return;
+        console.error("Error fetching planning summary:", err);
+        if (!silent) {
+          const msg = axios.isAxiosError(err) ? err.response?.data?.message : undefined;
+          toast.error(msg || "Failed to fetch data. Please check that the backend is running.");
+        }
+      } finally {
+        if (abortControllerRef.current === controller) {
+          isFetchingRef.current = false;
+        }
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [fetchFilterOptions]
+  );
+
+  // โหลดข้อมูลครั้งแรก
   useEffect(() => {
-    fetchFilterOptions();
     fetchData(EMPTY_FILTER);
 
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      abortControllerRef.current?.abort();
+      filtersAbortRef.current?.abort();
+    };
+  }, [fetchData]);
+
+  // เชื่อมต่อ SSE Stream: รับการแจ้งเตือนจาก Backend เมื่อ Database เปลี่ยนจริง (เหมือนหน้า PO Balance)
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let isSubscribed = true;
+
+    const connectSSE = () => {
+      try {
+        eventSource = new EventSource(PLANNING_SUMMARY_STREAM_API);
+
+        eventSource.onmessage = (event) => {
+          if (!isSubscribed) return;
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "PLANNING_SUMMARY_UPDATED") {
+              // ดึงข้อมูลใหม่แบบเงียบๆ ทันทีที่ Backend ส่งสัญญาณ
+              setDbVersion((v) => v + 1);
+              fetchData(activeFilterRef.current, { silent: true });
+            }
+          } catch {
+            // ignore non-json messages (heartbeats)
+          }
+        };
+
+        eventSource.onerror = () => {
+          // Browser จะพยายามต่อ SSE ใหม่อัตโนมัติเมื่อเกิดข้อผิดพลาด
+        };
+      } catch (err) {
+        console.error("SSE Connection Error:", err);
       }
     };
-  }, [fetchFilterOptions, fetchData]);
+
+    connectSSE();
+
+    // ดึงข้อมูลใหม่เฉพาะเมื่อสลับแท็บกลับมาที่หน้าเว็บ (Visibility Change) หรือกลับมา Online — ไม่ใช้ window focus เพื่อป้องกัน Card กระพริบ
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setDbVersion((v) => v + 1);
+        fetchData(activeFilterRef.current, { silent: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleVisibilityChange);
+
+    return () => {
+      isSubscribed = false;
+      eventSource?.close();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleVisibilityChange);
+    };
+  }, [fetchData]);
 
   return {
     rows,
@@ -149,8 +305,8 @@ export const usePlanningSummary = () => {
     loading,
     fetchData,
     fetchFilterOptions,
+    dbVersion,
   };
 };
 
 export default usePlanningSummary;
-

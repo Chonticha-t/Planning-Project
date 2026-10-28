@@ -4,7 +4,7 @@ const router = express.Router();
 const { pool_smart } = require("../../config");
 const query = (text, params) => pool_smart.query(text, params);
 
-// ป้องกัน Browser หรือ Proxy จำค่าเก่า
+// ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
 const setNoCache = (res) => {
   res.set({
     "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
@@ -13,72 +13,207 @@ const setNoCache = (res) => {
   });
 };
 
+// ── SSE (Server-Sent Events) Real-time Sync ────────────────────────
+const sseClients = new Set();
+
+const broadcastChange = () => {
+  const payload = `data: ${JSON.stringify({ type: "PLANNING_SUMMARY_UPDATED", timestamp: Date.now() })}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(payload);
+      if (typeof client.flush === "function") client.flush();
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+};
+
+let lastDbFingerprint = null;
+let isCheckingDb = false;
+
+// Backend ตรวจจับการเปลี่ยนแปลงใน Database ทุกๆ 2.5 วินาที (เฉพาะเมื่อมีหน้าเว็บเปิดค้างอยู่)
+setInterval(async () => {
+  if (sseClients.size === 0 || isCheckingDb) return;
+  isCheckingDb = true;
+
+  try {
+    const queryStr = `
+      SELECT
+        to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') AS max_updated_at,
+        COUNT(*)::int AS total_rows,
+        COALESCE(SUM(net_required_pcs), 0)::float8 AS total_net_required,
+        COALESCE(SUM(net_wip_qty), 0)::float8 AS total_net_wip,
+        COUNT(*) FILTER (WHERE UPPER(priority) = 'URGENT' OR priority = 'P1')::int AS urgent_count,
+        COUNT(*) FILTER (WHERE UPPER(priority) = 'HIGH' OR priority = 'P2')::int AS high_count,
+        COUNT(*) FILTER (WHERE UPPER(lot_status) = 'WIP')::int AS wip_count,
+        COUNT(*) FILTER (WHERE UPPER(lot_status) = 'HOLD')::int AS hold_count,
+        COUNT(*) FILTER (WHERE UPPER(lot_status) = 'PENDING')::int AS pending_count,
+        COUNT(*) FILTER (WHERE TRIM(item) LIKE '94%')::int AS fpc_rows
+      FROM planning.planning_summary
+      WHERE (status IS NULL OR LOWER(status) != 'ready')
+    `;
+    const { rows } = await query(queryStr);
+    const row = rows[0];
+    if (row) {
+      const fingerprint = [
+        row.max_updated_at,
+        row.total_rows,
+        row.total_net_required,
+        row.total_net_wip,
+        row.urgent_count,
+        row.high_count,
+        row.wip_count,
+        row.hold_count,
+        row.pending_count,
+        row.fpc_rows,
+      ].join("|");
+
+      if (lastDbFingerprint !== null && fingerprint !== lastDbFingerprint) {
+        broadcastChange();
+      }
+      lastDbFingerprint = fingerprint;
+    }
+  } catch {
+    // ป้องกัน background query error รบกวน console
+  } finally {
+    isCheckingDb = false;
+  }
+}, 2500);
+
+// GET /api_p1/planning/planning_summary/stream — ท่อเชื่อมต่อ SSE แบบ Real-time
+router.get("/stream", (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  res.write(`data: ${JSON.stringify({ type: "CONNECTED" })}\n\n`);
+  if (typeof res.flush === "function") res.flush();
+
+  sseClients.add(res);
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": keep-alive\n\n");
+      if (typeof res.flush === "function") res.flush();
+    } catch {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 25000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
+});
+
+// GET /api_p1/planning/planning_summary/test_notify — สำหรับทดสอบสั่งให้หน้าเว็บอัปเดตข้อมูลทันทีโดยไม่ต้องแก้ DB
+router.get("/test_notify", (req, res) => {
+  setNoCache(res);
+  broadcastChange();
+  return res.json({
+    status: "OK",
+    message: `Broadcasted update event to ${sseClients.size} client(s).`,
+    clients_count: sseClients.size,
+  });
+});
+
+// Helper แปลง query parameter ให้เป็น string ที่ปลอดภัยเสมอ
+const asStr = (val) => {
+  if (Array.isArray(val)) return String(val[0] ?? "").trim();
+  return typeof val === "string" ? val.trim() : "";
+};
+
+// Helper ป้องกันอักขระพิเศษ %, _, \ ใน LIKE / ILIKE
+const escapeLike = (str) => str.replace(/[\\%_]/g, "\\$&");
+
+// Helper ตรวจสอบวันที่รูปแบบ YYYY-MM-DD ที่ถูกต้องตามปฏิทินจริง
+const isValidDateParam = (str) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const [y, m, d] = str.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+};
+
 /**
  * Helper build WHERE conditions for filters
  */
 const buildWhereClause = (queryParams) => {
-  const { prd_name, lot_no, search, status, priority, lot_status, factory_desc, startdate, stopdate, item_prefix, type } =
-    queryParams;
+  const prd_name = asStr(queryParams.prd_name);
+  const lot_no = asStr(queryParams.lot_no);
+  const search = asStr(queryParams.search);
+  const status = asStr(queryParams.status);
+  const priority = asStr(queryParams.priority);
+  const lot_status = asStr(queryParams.lot_status);
+  const factory_desc = asStr(queryParams.factory_desc);
+  const startdate = asStr(queryParams.startdate);
+  const stopdate = asStr(queryParams.stopdate);
+  const item_prefix = asStr(queryParams.item_prefix || queryParams.type);
+
+  if (startdate && !isValidDateParam(startdate)) {
+    return { error: "Invalid startdate format. Expected YYYY-MM-DD." };
+  }
+  if (stopdate && !isValidDateParam(stopdate)) {
+    return { error: "Invalid stopdate format. Expected YYYY-MM-DD." };
+  }
+
   const conditions = [];
   const params = [];
-  let idx = 1;
 
   // ❌ ไม่นำ status = 'ready' มาแสดง
   conditions.push(`(status IS NULL OR LOWER(status) != 'ready')`);
 
   // 🔍 ค้นหาคำค้นได้ทั้งจากชื่อ Product และ Lot No ในช่องเดียวกัน
-  const searchTerm = (prd_name || search || "").trim();
+  const searchTerm = prd_name || search;
   if (searchTerm !== "") {
-    conditions.push(`(prd_name ILIKE $${idx} OR lot_no ILIKE $${idx})`);
-    params.push(`%${searchTerm}%`);
-    idx++;
-  } else if (lot_no && String(lot_no).trim() !== "") {
-    conditions.push(`lot_no ILIKE $${idx}`);
-    params.push(`%${String(lot_no).trim()}%`);
-    idx++;
+    params.push(`%${escapeLike(searchTerm)}%`);
+    conditions.push(`(prd_name ILIKE $${params.length} ESCAPE '\\' OR lot_no ILIKE $${params.length} ESCAPE '\\')`);
+  } else if (lot_no !== "") {
+    params.push(`%${escapeLike(lot_no)}%`);
+    conditions.push(`lot_no ILIKE $${params.length} ESCAPE '\\'`);
   }
 
-  if (priority && String(priority).trim() !== "") {
-    conditions.push(`priority = $${idx}`);
-    params.push(String(priority).trim());
-    idx++;
+  if (priority !== "") {
+    params.push(priority);
+    conditions.push(`priority = $${params.length}`);
   }
 
-  const prefix = (item_prefix || type || "").trim();
-  if (prefix !== "") {
-    conditions.push(`item LIKE $${idx}`);
-    params.push(`${prefix}%`);
-    idx++;
+  if (item_prefix !== "") {
+    params.push(`${escapeLike(item_prefix)}%`);
+    conditions.push(`TRIM(item) LIKE $${params.length} ESCAPE '\\'`);
   }
 
-  if (status && String(status).trim() !== "") {
-    conditions.push(`status = $${idx}`);
-    params.push(String(status).trim());
-    idx++;
+  if (status !== "") {
+    params.push(status);
+    conditions.push(`status = $${params.length}`);
   }
 
-  if (lot_status && String(lot_status).trim() !== "") {
-    conditions.push(`lot_status = $${idx}`);
-    params.push(String(lot_status).trim());
-    idx++;
+  if (lot_status !== "") {
+    params.push(lot_status);
+    conditions.push(`lot_status = $${params.length}`);
   }
 
-  if (factory_desc && String(factory_desc).trim() !== "") {
-    conditions.push(`factory_desc = $${idx}`);
-    params.push(String(factory_desc).trim());
-    idx++;
+  if (factory_desc !== "") {
+    params.push(factory_desc);
+    conditions.push(`factory_desc = $${params.length}`);
   }
 
   if (startdate) {
-    conditions.push(`due_date >= $${idx}::date`);
     params.push(startdate);
-    idx++;
+    conditions.push(`due_date >= $${params.length}::date`);
   }
 
   if (stopdate) {
-    conditions.push(`due_date <= $${idx}::date`);
     params.push(stopdate);
-    idx++;
+    conditions.push(`due_date <= $${params.length}::date`);
   }
 
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -90,12 +225,19 @@ const buildWhereClause = (queryParams) => {
  */
 router.get("/table", async (req, res) => {
   setNoCache(res);
-  try {
-    const { whereSql, params } = buildWhereClause(req.query);
+  const { whereSql, params, error } = buildWhereClause(req.query);
+  if (error) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: [],
+      message: error,
+    });
+  }
 
+  try {
     const sql = `
       SELECT
-        ROW_NUMBER() OVER () AS id,
+        ROW_NUMBER() OVER (ORDER BY due_date ASC, prd_name ASC, seq DESC NULLS LAST, lot_no ASC)::int AS id,
         prd_name,
         item,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
@@ -129,7 +271,7 @@ router.get("/table", async (req, res) => {
     return res.json({
       status: "OK",
       data: rows,
-      message: "success",
+      message: rows.length > 0 ? "Data found." : "No data found.",
     });
   } catch (err) {
     console.error("Error in GET /planning_summary/table:", err);
@@ -146,9 +288,16 @@ router.get("/table", async (req, res) => {
  */
 router.get("/summary", async (req, res) => {
   setNoCache(res);
-  try {
-    const { whereSql, params } = buildWhereClause(req.query);
+  const { whereSql, params, error } = buildWhereClause(req.query);
+  if (error) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: {},
+      message: error,
+    });
+  }
 
+  try {
     const sql = `
       SELECT
         COUNT(*)::int AS total_rows,
@@ -184,22 +333,31 @@ router.get("/summary", async (req, res) => {
 });
 
 /**
- * 🔽 3. GET /distinct_filters: ค่าตัวเลือกสำหรับ Filter Dropdowns
+ * 🔽 3. GET /distinct_filters: ค่าตัวเลือกสำหรับ Filter Dropdowns (รองรับการกรองตาม item_prefix เหมือนหน้า PO Balance)
  */
 router.get("/distinct_filters", async (req, res) => {
   setNoCache(res);
+  const item_prefix = asStr(req.query.item_prefix);
+  const params = [];
+  let itemCondition = "";
+
+  if (item_prefix !== "") {
+    params.push(`${escapeLike(item_prefix)}%`);
+    itemCondition = ` AND TRIM(item) LIKE $1 ESCAPE '\\'`;
+  }
+
   try {
     const sql = `
       SELECT
-        ARRAY(SELECT DISTINCT prd_name FROM planning.planning_summary WHERE prd_name IS NOT NULL ORDER BY prd_name) AS products,
-        ARRAY(SELECT DISTINCT lot_no FROM planning.planning_summary WHERE lot_no IS NOT NULL AND lot_no <> '' ORDER BY lot_no) AS lot_nos,
+        ARRAY(SELECT DISTINCT prd_name FROM planning.planning_summary WHERE prd_name IS NOT NULL AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY prd_name) AS products,
+        ARRAY(SELECT DISTINCT lot_no FROM planning.planning_summary WHERE lot_no IS NOT NULL AND lot_no <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY lot_no) AS lot_nos,
         ARRAY(SELECT DISTINCT status FROM planning.planning_summary WHERE status IS NOT NULL AND status <> '' AND LOWER(status) != 'ready' ORDER BY status) AS statuses,
-        ARRAY(SELECT DISTINCT priority FROM planning.planning_summary WHERE priority IS NOT NULL AND priority <> '' ORDER BY priority) AS priorities,
-        ARRAY(SELECT DISTINCT lot_status FROM planning.planning_summary WHERE lot_status IS NOT NULL AND lot_status <> '' ORDER BY lot_status) AS lot_statuses,
-        ARRAY(SELECT DISTINCT factory_desc FROM planning.planning_summary WHERE factory_desc IS NOT NULL AND factory_desc <> '' ORDER BY factory_desc) AS factories
+        ARRAY(SELECT DISTINCT priority FROM planning.planning_summary WHERE priority IS NOT NULL AND priority <> '' AND (status IS NULL OR LOWER(status) != 'ready') ORDER BY priority) AS priorities,
+        ARRAY(SELECT DISTINCT lot_status FROM planning.planning_summary WHERE lot_status IS NOT NULL AND lot_status <> '' AND (status IS NULL OR LOWER(status) != 'ready') ORDER BY lot_status) AS lot_statuses,
+        ARRAY(SELECT DISTINCT factory_desc FROM planning.planning_summary WHERE factory_desc IS NOT NULL AND factory_desc <> '' AND (status IS NULL OR LOWER(status) != 'ready') ORDER BY factory_desc) AS factories
     `;
 
-    const { rows } = await query(sql);
+    const { rows } = await query(sql, params);
     const result = rows[0] || { products: [], lot_nos: [], statuses: [], priorities: [], lot_statuses: [], factories: [] };
 
     return res.json({
@@ -218,4 +376,3 @@ router.get("/distinct_filters", async (req, res) => {
 });
 
 module.exports = router;
-

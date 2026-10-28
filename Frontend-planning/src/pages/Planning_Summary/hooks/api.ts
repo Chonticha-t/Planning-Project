@@ -11,3 +11,5 @@ export const PLANNING_SUMMARY_KPI_API = `${API_BASE_URL}/planning_summary/summar
 // 🔽 รายชื่อ Dropdown filters (products, statuses, lot_statuses, factories)
 export const PLANNING_SUMMARY_FILTERS_API = `${API_BASE_URL}/planning_summary/distinct_filters`;
 
+// ⚡ Server-Sent Events (SSE) Stream สำหรับรับสัญญาณ Real-time เมื่อ Database อัปเดต
+export const PLANNING_SUMMARY_STREAM_API = `${API_BASE_URL}/planning_summary/stream`;
