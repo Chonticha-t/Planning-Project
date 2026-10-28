@@ -240,7 +240,12 @@ const FilterBar = ({
             className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
             value={filter.item_prefix}
             onChange={(e) => {
-              const next = { ...filter, item_prefix: e.target.value as PlanningFilter["item_prefix"] };
+              const nextPrefix = e.target.value as PlanningFilter["item_prefix"];
+              const next: PlanningFilter = {
+                ...filter,
+                item_prefix: nextPrefix,
+                ...(nextPrefix && filter.item_prefix !== nextPrefix ? { prd_name: "" } : {}),
+              };
               onChange(next);
               onSearch(next);
             }}

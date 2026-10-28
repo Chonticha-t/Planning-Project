@@ -47,6 +47,8 @@ setInterval(async () => {
         (SELECT COALESCE(SUM(unmovement), 0)::float8 FROM planning.po_balance)                            AS total_unmovement,
         (SELECT COALESCE(SUM(f_g), 0)::float8 FROM planning.po_balance)                                   AS total_fg,
         (SELECT COALESCE(SUM(net_required_pcs), 0)::float8 FROM planning.po_balance)                      AS total_net_required,
+        (SELECT COUNT(*)::int FROM planning.po_balance WHERE status = 'ready')                            AS ready_rows,
+        (SELECT COUNT(*)::int FROM planning.po_balance WHERE TRIM(item) LIKE '94%')                       AS fpc_rows,
 
         -- ตรวจสอบ po_price
         (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.po_price)              AS price_updated_at,
@@ -66,6 +68,8 @@ setInterval(async () => {
         row.total_unmovement,
         row.total_fg,
         row.total_net_required,
+        row.ready_rows,
+        row.fpc_rows,
         row.price_updated_at,
         row.price_total_rows,
         row.total_price,
@@ -126,12 +130,42 @@ router.get("/test_notify", (req, res) => {
   });
 });
 
-// GET /api_p1/planning/table?status=ready&prd_name=ABC&startdate=2026-10-01&stopdate=2026-10-31
-router.get("/table", async (req, res) => {
-  setNoCache(res);
-  const { status, prd_name, startdate, stopdate, item_prefix } = req.query;
+// Helper แปลง query parameter ให้เป็น string ที่ปลอดภัยเสมอ (กันกรณีส่งซ้ำเป็น array เช่น ?status=a&status=b)
+const asStr = (val) => {
+  if (Array.isArray(val)) return String(val[0] ?? "").trim();
+  return typeof val === "string" ? val.trim() : "";
+};
 
-  // สร้างเงื่อนไขตาม filter ที่ส่งมา (ใช้ $1, $2 ... กัน SQL injection)
+// Helper ป้องกันอักขระพิเศษ %, _, \ ใน LIKE / ILIKE
+const escapeLike = (str) => str.replace(/[\\%_]/g, "\\$&");
+
+// Helper ตรวจสอบวันที่รูปแบบ YYYY-MM-DD ที่ถูกต้องตามปฏิทินจริง
+const isValidDateParam = (str) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const [y, m, d] = str.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+};
+
+// สร้าง WHERE clause และ params ที่ใช้ร่วมกันระหว่าง /table และ /summary
+const buildPlanningFilter = (queryObj) => {
+  const status = asStr(queryObj.status);
+  const prd_name = asStr(queryObj.prd_name);
+  const startdate = asStr(queryObj.startdate);
+  const stopdate = asStr(queryObj.stopdate);
+  const item_prefix = asStr(queryObj.item_prefix);
+
+  if (startdate && !isValidDateParam(startdate)) {
+    return { error: "Invalid startdate format. Expected YYYY-MM-DD." };
+  }
+  if (stopdate && !isValidDateParam(stopdate)) {
+    return { error: "Invalid stopdate format. Expected YYYY-MM-DD." };
+  }
+
   const where = [];
   const params = [];
 
@@ -140,8 +174,8 @@ router.get("/table", async (req, res) => {
     where.push(`v.status = $${params.length}`);
   }
   if (prd_name) {
-    params.push(`%${prd_name}%`);
-    where.push(`v.prd_name ILIKE $${params.length}`);
+    params.push(`%${escapeLike(prd_name)}%`);
+    where.push(`v.prd_name ILIKE $${params.length} ESCAPE '\\'`);
   }
   if (startdate) {
     params.push(startdate);
@@ -152,8 +186,23 @@ router.get("/table", async (req, res) => {
     where.push(`v.due_date <= $${params.length}::date`);
   }
   if (item_prefix) {
-    params.push(`${item_prefix}%`);
-    where.push(`TRIM(pb.item) LIKE $${params.length}`);
+    params.push(`${escapeLike(item_prefix)}%`);
+    where.push(`TRIM(pb.item) LIKE $${params.length} ESCAPE '\\'`);
+  }
+
+  return { where, params };
+};
+
+// GET /api_p1/planning/table?status=ready&prd_name=ABC&startdate=2026-10-01&stopdate=2026-10-31&item_prefix=94
+router.get("/table", async (req, res) => {
+  setNoCache(res);
+  const { where, params, error } = buildPlanningFilter(req.query);
+  if (error) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: [],
+      message: error,
+    });
   }
 
   try {
@@ -201,30 +250,13 @@ router.get("/table", async (req, res) => {
 // GET /api_p1/planning/summary — สรุปจำนวนแถว / ยอดที่ต้องผลิต แยกตาม status (รองรับ filter เดียวกับ /table)
 router.get("/summary", async (req, res) => {
   setNoCache(res);
-  const { status, prd_name, startdate, stopdate, item_prefix } = req.query;
-
-  const where = [];
-  const params = [];
-
-  if (status) {
-    params.push(status);
-    where.push(`v.status = $${params.length}`);
-  }
-  if (prd_name) {
-    params.push(`%${prd_name}%`);
-    where.push(`v.prd_name ILIKE $${params.length}`);
-  }
-  if (startdate) {
-    params.push(startdate);
-    where.push(`v.due_date >= $${params.length}::date`);
-  }
-  if (stopdate) {
-    params.push(stopdate);
-    where.push(`v.due_date <= $${params.length}::date`);
-  }
-  if (item_prefix) {
-    params.push(`${item_prefix}%`);
-    where.push(`TRIM(pb.item) LIKE $${params.length}`);
+  const { where, params, error } = buildPlanningFilter(req.query);
+  if (error) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: [],
+      message: error,
+    });
   }
 
   try {
@@ -265,13 +297,13 @@ router.get("/summary", async (req, res) => {
 // GET /api_p1/planning/distinct_product — รายชื่อ product สำหรับ dropdown
 router.get("/distinct_product", async (req, res) => {
   setNoCache(res);
-  const { item_prefix } = req.query;
+  const item_prefix = asStr(req.query.item_prefix);
   const where = [];
   const params = [];
 
   if (item_prefix) {
-    params.push(`${item_prefix}%`);
-    where.push(`TRIM(item) LIKE $${params.length}`);
+    params.push(`${escapeLike(item_prefix)}%`);
+    where.push(`TRIM(item) LIKE $${params.length} ESCAPE '\\'`);
   }
 
   try {

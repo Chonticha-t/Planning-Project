@@ -5,6 +5,7 @@ import { toDMY } from "../utils";
 
 interface SummaryCardsProps {
   summary: PlanningSummaryRow[];
+  lastUpdatedAt?: string;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -15,12 +16,19 @@ const fmtMoney = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-const SummaryCards = ({ summary }: SummaryCardsProps) => {
+const SummaryCards = ({ summary, lastUpdatedAt }: SummaryCardsProps) => {
   const ready = summary.find((s) => s.status === "ready");
   const plan = summary.find((s) => s.status === "production plan");
   const totalRows = summary.reduce((sum, s) => sum + s.total_rows, 0);
   const totalPo = summary.reduce((sum, s) => sum + s.po_bal, 0);
-  const updatedAt = summary.map((s) => s.updated_at).sort().pop() ?? "-";
+  const updatedAt =
+    summary
+      .map((s) => s.updated_at)
+      .filter(Boolean)
+      .sort()
+      .pop() ||
+    lastUpdatedAt ||
+    "-";
 
   const cards: {
     title: string;

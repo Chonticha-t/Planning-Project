@@ -55,6 +55,7 @@ const numberCol = (
   headerName: string,
   strong = false,
   transform?: (value: number) => number,
+  ignoreSign = false,
 ): GridColDef<PlanningRow> => ({
   field,
   headerName,
@@ -63,6 +64,7 @@ const numberCol = (
   minWidth: 110,
   align: "center",
   headerAlign: "center",
+  ...(ignoreSign && { sortComparator: absSortComparator }),
   ...(transform && {
     valueGetter: (value: number) => (value == null ? value : transform(value)),
   }),
@@ -151,7 +153,7 @@ const columns: GridColDef<PlanningRow>[] = [
   invCol("f_g", "F/G"),
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
-  numberCol("net_required_pcs", "Net Required", true),
+  numberCol("net_required_pcs", "Net Required", true, undefined, true),
   amountCol("wh_fg_amount", "W/H F/G", "text-emerald-500 font-semibold"),
   amountCol("output_amount", "Output Amt", "text-red-500 font-semibold", true),
   {

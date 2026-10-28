@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import {
   PO_BALANCE_DISTINCT_PRODUCT_API,
   PO_BALANCE_STREAM_API,
-  PO_BALANCE_SUMMARY_API,
   PO_BALANCE_TABLE_API,
 } from "./api";
 import type { ApiResponse, PlanningFilter, PlanningRow, PlanningStatus, PlanningSummaryRow } from "../types";
@@ -77,21 +76,29 @@ const usePOBalance = () => {
   const [rows, setRows] = useState<PlanningRow[]>([]);
   const [summary, setSummary] = useState<PlanningSummaryRow[]>([]);
   const [products, setProducts] = useState<string[]>([]);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string>("-");
   const [loading, setLoading] = useState(false);
   const [dbVersion, setDbVersion] = useState(0);
 
   const activeFilterRef = useRef<PlanningFilter>(EMPTY_FILTER);
   const lastRowsJsonRef = useRef<string>("");
+  const lastProductPrefixRef = useRef<string | null>(null);
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const productsAbortRef = useRef<AbortController | null>(null);
 
-  const fetchProducts = useCallback(async (item_prefix?: string, signal?: AbortSignal) => {
+  const fetchProducts = useCallback(async (item_prefix = "") => {
+    productsAbortRef.current?.abort();
+    const controller = new AbortController();
+    productsAbortRef.current = controller;
+
     try {
       const res = await axios.get<ApiResponse<{ prd_name: string }[]>>(PO_BALANCE_DISTINCT_PRODUCT_API, {
         params: { ...(item_prefix ? { item_prefix } : {}), _t: Date.now() },
         timeout: AJAX_TIMEOUT_MS,
-        signal,
+        signal: controller.signal,
       });
+      lastProductPrefixRef.current = item_prefix;
       const nextProducts = (res.data.data ?? []).map((r) => r.prd_name).filter(Boolean);
       setProducts((prev) =>
         prev.length === nextProducts.length && prev.every((p, i) => p === nextProducts[i])
@@ -123,28 +130,20 @@ const usePOBalance = () => {
         setLoading(true);
       }
 
+      if (lastProductPrefixRef.current !== f.item_prefix) {
+        fetchProducts(f.item_prefix);
+      }
+
       try {
         // ส่งเฉพาะ filter ที่มีค่า พร้อม _t ป้องกัน Browser/Proxy จำค่าเก่า (Cache)
         const filterParams = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ""));
         const params = { ...filterParams, _t: Date.now() };
 
-        const [table] = await Promise.all([
-          axios.get<ApiResponse<PlanningRow[]>>(PO_BALANCE_TABLE_API, {
-            params,
-            timeout: AJAX_TIMEOUT_MS,
-            signal: controller.signal,
-          }),
-          // เรียก summary เฉพาะตอนโหลดครั้งแรกหรือกดค้นหา
-          !silent
-            ? axios
-                .get<ApiResponse<PlanningSummaryRow[]>>(PO_BALANCE_SUMMARY_API, {
-                  params,
-                  timeout: AJAX_TIMEOUT_MS,
-                  signal: controller.signal,
-                })
-                .catch(() => null)
-            : Promise.resolve(null),
-        ]);
+        const table = await axios.get<ApiResponse<PlanningRow[]>>(PO_BALANCE_TABLE_API, {
+          params,
+          timeout: AJAX_TIMEOUT_MS,
+          signal: controller.signal,
+        });
 
         const rawData = table.data.data ?? [];
         const tableData = f.item_prefix
@@ -156,8 +155,19 @@ const usePOBalance = () => {
         if (!silent || nextJson !== lastRowsJsonRef.current) {
           lastRowsJsonRef.current = nextJson;
           setRows(tableData);
-          setSummary(computeSummaryFromRows(tableData));
-          fetchProducts(f.item_prefix);
+          const nextSummary = computeSummaryFromRows(tableData);
+          setSummary(nextSummary);
+          const maxUpdated = nextSummary
+            .map((s) => s.updated_at)
+            .filter(Boolean)
+            .sort()
+            .pop();
+          if (maxUpdated) {
+            setLastUpdatedAt(maxUpdated);
+          }
+          if (silent) {
+            fetchProducts(f.item_prefix);
+          }
         }
       } catch (err) {
         if (axios.isCancel(err)) return;
@@ -180,11 +190,11 @@ const usePOBalance = () => {
   // โหลดข้อมูลครั้งแรก
   useEffect(() => {
     fetchData(EMPTY_FILTER);
-    fetchProducts();
     return () => {
       abortControllerRef.current?.abort();
+      productsAbortRef.current?.abort();
     };
-  }, [fetchData, fetchProducts]);
+  }, [fetchData]);
 
   // เชื่อมต่อ SSE Stream: รับการแจ้งเตือนจาก Backend เมื่อ Database เปลี่ยนจริง
   useEffect(() => {
@@ -238,7 +248,7 @@ const usePOBalance = () => {
     };
   }, [fetchData]);
 
-  return { rows, summary, products, loading, fetchData, dbVersion };
+  return { rows, summary, products, lastUpdatedAt, loading, fetchData, dbVersion };
 };
 
 export default usePOBalance;

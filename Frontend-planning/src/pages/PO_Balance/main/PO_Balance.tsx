@@ -15,7 +15,7 @@ const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const [isExchangeRateModalOpen, setIsExchangeRateModalOpen] = useState(false);
-  const { rows, summary, products, loading, fetchData, dbVersion } = usePOBalance();
+  const { rows, summary, products, lastUpdatedAt, loading, fetchData, dbVersion } = usePOBalance();
 
   const handleReset = useCallback(() => {
     setFilter(EMPTY_FILTER);
@@ -73,7 +73,7 @@ const PO_Balance = () => {
 
   return (
     <div className="flex flex-col gap-3">
-      <SummaryCards summary={summary} />
+      <SummaryCards summary={summary} lastUpdatedAt={lastUpdatedAt} />
       <FilterBar
         filter={filter}
         products={products}
