@@ -5,7 +5,7 @@ import {
   GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { LayoutDashboard, AlertCircle } from "lucide-react";
+import { LayoutDashboard, AlertCircle, FileSpreadsheet } from "lucide-react";
 import { SORT_OPTIONS, type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
 
@@ -16,6 +16,7 @@ interface PlanningSummaryTableProps {
   loading?: boolean;
   sortModel: GridSortModel;
   onSortModelChange: (model: GridSortModel) => void;
+  onExport?: () => void;
 }
 
 const num = (value: number | null | undefined, decimals = 0) =>
@@ -144,6 +145,7 @@ const PlanningSummaryTable = memo(
     loading = false,
     sortModel,
     onSortModelChange,
+    onExport,
   }: PlanningSummaryTableProps) => {
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(
       () => [
@@ -408,7 +410,7 @@ const PlanningSummaryTable = memo(
     return (
       <div className="rounded-2xl border border-base-300/80 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
         {/* Table Top Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-base-300/80 bg-base-100">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-base-300/80 bg-base-100">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
               <LayoutDashboard size={17} />
@@ -417,9 +419,21 @@ const PlanningSummaryTable = memo(
               PLANNING SUMMARY
             </h2>
           </div>
-          <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70 tabular-nums">
-            {rows.length.toLocaleString("en-US")} rows
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70 tabular-nums">
+              {rows.length.toLocaleString("en-US")} rows
+            </span>
+            {onExport && (
+              <button
+                type="button"
+                className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white border-none rounded-lg text-[13px] gap-1.5 font-medium shadow-xs transition-colors cursor-pointer"
+                onClick={onExport}
+              >
+                <FileSpreadsheet size={15} />
+                Export Excel
+              </button>
+            )}
+          </div>
         </div>
 
         {/* DataGrid Container */}

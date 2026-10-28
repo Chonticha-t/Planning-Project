@@ -175,6 +175,7 @@ const Planning_Summary: React.FC = () => {
         loading={loading}
         sortModel={sortModel}
         onSortModelChange={setSortModel}
+        onExport={handleExport}
       />
     </div>
   );

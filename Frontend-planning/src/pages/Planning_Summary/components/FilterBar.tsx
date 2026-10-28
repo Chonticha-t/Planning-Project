@@ -2,7 +2,6 @@ import { memo, useState, useRef, useEffect, useMemo, type ReactNode } from "reac
 import {
   Search,
   RotateCcw,
-  FileSpreadsheet,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -22,7 +21,7 @@ interface FilterBarProps {
   onChange: (filter: PlanningSummaryFilter) => void;
   onSearch: (filter?: PlanningSummaryFilter) => void;
   onReset: () => void;
-  onExport: () => void;
+  onExport?: () => void;
   loading?: boolean;
 }
 
@@ -373,17 +372,7 @@ const FilterBar = ({
           </div>
         </Field>
 
-        {/* Export Button on the right */}
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            type="button"
-            className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white border-none rounded-lg text-[13px] gap-1.5 font-medium shadow-xs transition-colors cursor-pointer"
-            onClick={onExport}
-          >
-            <FileSpreadsheet size={15} />
-            Export Excel
-          </button>
-        </div>
+
       </div>
     </div>
   );
