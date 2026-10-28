@@ -22,7 +22,6 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
   const totalPriority = urgentCount + highCount;
 
   const wipCount = kpi.wip_count ?? 0;
-  const holdCount = kpi.hold_count ?? 0;
   const pendingCount = kpi.pending_count ?? 0;
 
   const cards: {
@@ -120,11 +119,9 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       unit: "WIP",
       sub: (
         <div className="flex items-center justify-between gap-2 text-base-content/70">
-          <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">
-            Pending: <span className="font-bold">{fmt(pendingCount)}</span>
-          </span>
-          <span className="shrink-0 font-medium text-error">
-            Hold: <span className="font-bold">{fmt(holdCount)}</span>
+          <span className="shrink-0">Pending</span>
+          <span className="font-bold text-amber-600 dark:text-amber-400 truncate">
+            {fmt(pendingCount)} lots
           </span>
         </div>
       ),
