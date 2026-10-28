@@ -30,17 +30,10 @@ export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] 
   { field: "ship_to_p1", label: "Ship to P1" },
   { field: "priority", label: "Priority" },
   { field: "status", label: "Status" },
-  { field: "po_bal", label: "PO Bal" },
-  { field: "inventory", label: "Inventory" },
   { field: "net_required_pcs", label: "Net Required" },
   { field: "lot_no", label: "Lot No" },
-  { field: "proc_disp", label: "Process" },
-  { field: "seq", label: "Seq" },
   { field: "net_wip_qty", label: "Net WIP" },
-  { field: "yield", label: "Yield %" },
-  { field: "factory_desc", label: "Factory" },
-  { field: "prd_type", label: "Type" },
-  { field: "gate_name", label: "Gate" },
+  { field: "proc_disp", label: "Process" },
   { field: "lot_status", label: "Lot Status" },
 ];
 

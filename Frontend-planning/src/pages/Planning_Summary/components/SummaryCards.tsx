@@ -40,7 +40,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       ),
       icon: Package,
       cardStyle:
-        "border-info/35 bg-gradient-to-br from-info/[0.05] to-base-100 hover:border-info/70",
+        "border-base-200/90 bg-base-100 hover:border-info/50",
       iconStyle: "bg-info/15 text-info ring-1 ring-info/25",
       valueColor: "text-info",
     },
@@ -58,7 +58,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       ),
       icon: Layers,
       cardStyle:
-        "border-primary/35 bg-gradient-to-br from-primary/[0.05] to-base-100 hover:border-primary/70",
+        "border-base-200/90 bg-base-100 hover:border-primary/50",
       iconStyle: "bg-primary/15 text-primary ring-1 ring-primary/25",
       valueColor: "text-primary",
     },
@@ -76,7 +76,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       ),
       icon: ClipboardList,
       cardStyle:
-        "border-warning/35 bg-gradient-to-br from-warning/[0.05] to-base-100 hover:border-warning/70",
+        "border-base-200/90 bg-base-100 hover:border-warning/50",
       iconStyle: "bg-warning/15 text-warning ring-1 ring-warning/25",
       valueColor: "text-amber-500",
     },
@@ -94,7 +94,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       ),
       icon: Cpu,
       cardStyle:
-        "border-success/35 bg-gradient-to-br from-success/[0.05] to-base-100 hover:border-success/70",
+        "border-base-200/90 bg-base-100 hover:border-success/50",
       iconStyle: "bg-success/15 text-success ring-1 ring-success/25",
       valueColor: "text-emerald-500",
     },
@@ -116,7 +116,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       ),
       icon: AlertTriangle,
       cardStyle:
-        "border-error/35 bg-gradient-to-br from-error/[0.05] to-base-100 hover:border-error/70",
+        "border-base-200/90 bg-base-100 hover:border-error/50",
       iconStyle: "bg-error/15 text-error ring-1 ring-error/25",
       valueColor: "text-error",
     },
