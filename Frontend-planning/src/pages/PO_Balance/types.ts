@@ -1,7 +1,16 @@
 export type PlanningStatus = "ready" | "production plan";
 
+export type ItemUnitFilter = "" | "94" | "95";
+
+export const ITEM_UNIT_OPTIONS: { value: ItemUnitFilter; label: "ALL" | "FPC" | "SMT" }[] = [
+  { value: "", label: "ALL" },
+  { value: "94", label: "FPC" },
+  { value: "95", label: "SMT" },
+];
+
 export interface PlanningRow {
   prd_name: string;
+  item?: string;
   due_date: string;
   po_bal: number;
   unmovement: number;
@@ -46,6 +55,7 @@ export interface PlanningFilter {
   prd_name: string;
   startdate: string;
   stopdate: string;
+  item_prefix: ItemUnitFilter;
 }
 
 export interface ApiResponse<T> {

@@ -10,7 +10,13 @@ import {
 } from "./api";
 import type { ApiResponse, PlanningFilter, PlanningRow, PlanningStatus, PlanningSummaryRow } from "../types";
 
-export const EMPTY_FILTER: PlanningFilter = { status: "", prd_name: "", startdate: "", stopdate: "" };
+export const EMPTY_FILTER: PlanningFilter = {
+  status: "",
+  prd_name: "",
+  startdate: "",
+  stopdate: "",
+  item_prefix: "",
+};
 
 // กำหนด Timeout ของแต่ละ Request เพื่อความเสถียร
 const AJAX_TIMEOUT_MS = 10_000;
@@ -79,10 +85,10 @@ const usePOBalance = () => {
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchProducts = useCallback(async (signal?: AbortSignal) => {
+  const fetchProducts = useCallback(async (item_prefix?: string, signal?: AbortSignal) => {
     try {
       const res = await axios.get<ApiResponse<{ prd_name: string }[]>>(PO_BALANCE_DISTINCT_PRODUCT_API, {
-        params: { _t: Date.now() },
+        params: { ...(item_prefix ? { item_prefix } : {}), _t: Date.now() },
         timeout: AJAX_TIMEOUT_MS,
         signal,
       });
@@ -140,7 +146,10 @@ const usePOBalance = () => {
             : Promise.resolve(null),
         ]);
 
-        const tableData = table.data.data ?? [];
+        const rawData = table.data.data ?? [];
+        const tableData = f.item_prefix
+          ? rawData.filter((r) => !r.item || r.item.trim().startsWith(f.item_prefix))
+          : rawData;
         const nextJson = JSON.stringify(tableData);
 
         // อัปเดต State เฉพาะเมื่อข้อมูลในตารางมีการเปลี่ยนแปลงจริง หรือเป็นการกดค้นหาใหม่
@@ -148,9 +157,7 @@ const usePOBalance = () => {
           lastRowsJsonRef.current = nextJson;
           setRows(tableData);
           setSummary(computeSummaryFromRows(tableData));
-          if (silent) {
-            fetchProducts();
-          }
+          fetchProducts(f.item_prefix);
         }
       } catch (err) {
         if (axios.isCancel(err)) return;

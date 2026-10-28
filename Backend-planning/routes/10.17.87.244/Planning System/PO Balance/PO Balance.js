@@ -129,7 +129,7 @@ router.get("/test_notify", (req, res) => {
 // GET /api_p1/planning/table?status=ready&prd_name=ABC&startdate=2026-10-01&stopdate=2026-10-31
 router.get("/table", async (req, res) => {
   setNoCache(res);
-  const { status, prd_name, startdate, stopdate } = req.query;
+  const { status, prd_name, startdate, stopdate, item_prefix } = req.query;
 
   // สร้างเงื่อนไขตาม filter ที่ส่งมา (ใช้ $1, $2 ... กัน SQL injection)
   const where = [];
@@ -137,19 +137,23 @@ router.get("/table", async (req, res) => {
 
   if (status) {
     params.push(status);
-    where.push(`status = $${params.length}`);
+    where.push(`v.status = $${params.length}`);
   }
   if (prd_name) {
     params.push(`%${prd_name}%`);
-    where.push(`prd_name ILIKE $${params.length}`);
+    where.push(`v.prd_name ILIKE $${params.length}`);
   }
   if (startdate) {
     params.push(startdate);
-    where.push(`due_date >= $${params.length}::date`);
+    where.push(`v.due_date >= $${params.length}::date`);
   }
   if (stopdate) {
     params.push(stopdate);
-    where.push(`due_date <= $${params.length}::date`);
+    where.push(`v.due_date <= $${params.length}::date`);
+  }
+  if (item_prefix) {
+    params.push(`${item_prefix}%`);
+    where.push(`TRIM(pb.item) LIKE $${params.length}`);
   }
 
   try {
@@ -157,22 +161,25 @@ router.get("/table", async (req, res) => {
     // ดึงจาก view v_po_amount (po_balance + ราคา + อัตราแลกเปลี่ยน) เพื่อได้ยอดเงิน W/H F/G และ Output (THB)
     const queryStr = `
       SELECT
-        prd_name,
-        to_char(due_date, 'YYYY-MM-DD')                 AS due_date,
-        po_bal::float8                                  AS po_bal,
-        unmovement::float8                              AS unmovement,
-        f_g::float8                                     AS f_g,
+        v.prd_name,
+        pb.item                                         AS item,
+        to_char(v.due_date, 'YYYY-MM-DD')               AS due_date,
+        v.po_bal::float8                                AS po_bal,
+        v.unmovement::float8                            AS unmovement,
+        v.f_g::float8                                   AS f_g,
 
-        net_required_pcs::float8                        AS net_required_pcs,
-        rem_unmovement::float8                          AS rem_unmovement,
-        rem_fg::float8                                  AS rem_fg,
-        wh_fg_amount::float8                            AS wh_fg_amount,
-        output_amount::float8                           AS output_amount,
-        status,
-        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS')    AS updated_at
-      FROM planning.v_po_amount
+        v.net_required_pcs::float8                      AS net_required_pcs,
+        v.rem_unmovement::float8                        AS rem_unmovement,
+        v.rem_fg::float8                                AS rem_fg,
+        v.wh_fg_amount::float8                          AS wh_fg_amount,
+        v.output_amount::float8                         AS output_amount,
+        v.status,
+        to_char(v.updated_at, 'YYYY-MM-DD HH24:MI:SS')  AS updated_at
+      FROM planning.v_po_amount v
+      LEFT JOIN planning.po_balance pb
+        ON pb.prd_name = v.prd_name AND pb.due_date = v.due_date
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
-      ORDER BY due_date, prd_name
+      ORDER BY v.due_date, v.prd_name
     `;
 
     const { rows } = await query(queryStr, params);
@@ -194,43 +201,49 @@ router.get("/table", async (req, res) => {
 // GET /api_p1/planning/summary — สรุปจำนวนแถว / ยอดที่ต้องผลิต แยกตาม status (รองรับ filter เดียวกับ /table)
 router.get("/summary", async (req, res) => {
   setNoCache(res);
-  const { status, prd_name, startdate, stopdate } = req.query;
+  const { status, prd_name, startdate, stopdate, item_prefix } = req.query;
 
   const where = [];
   const params = [];
 
   if (status) {
     params.push(status);
-    where.push(`status = $${params.length}`);
+    where.push(`v.status = $${params.length}`);
   }
   if (prd_name) {
     params.push(`%${prd_name}%`);
-    where.push(`prd_name ILIKE $${params.length}`);
+    where.push(`v.prd_name ILIKE $${params.length}`);
   }
   if (startdate) {
     params.push(startdate);
-    where.push(`due_date >= $${params.length}::date`);
+    where.push(`v.due_date >= $${params.length}::date`);
   }
   if (stopdate) {
     params.push(stopdate);
-    where.push(`due_date <= $${params.length}::date`);
+    where.push(`v.due_date <= $${params.length}::date`);
+  }
+  if (item_prefix) {
+    params.push(`${item_prefix}%`);
+    where.push(`TRIM(pb.item) LIKE $${params.length}`);
   }
 
   try {
     const queryStr = `
       SELECT
-        status,
-        COUNT(*)::int                        AS total_rows,
-        COUNT(DISTINCT prd_name)::int        AS total_products,
-        COALESCE(SUM(po_bal), 0)::float8     AS po_bal,
-        COALESCE(SUM(net_required_pcs), 0)::float8 AS net_required_pcs,
-        COALESCE(SUM(wh_fg_amount), 0)::float8     AS wh_fg_amount,
-        COALESCE(SUM(output_amount), 0)::float8    AS output_amount,
-        to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-      FROM planning.v_po_amount
+        v.status,
+        COUNT(*)::int                                       AS total_rows,
+        COUNT(DISTINCT v.prd_name)::int                     AS total_products,
+        COALESCE(SUM(v.po_bal), 0)::float8                  AS po_bal,
+        COALESCE(SUM(v.net_required_pcs), 0)::float8        AS net_required_pcs,
+        COALESCE(SUM(v.wh_fg_amount), 0)::float8            AS wh_fg_amount,
+        COALESCE(SUM(v.output_amount), 0)::float8           AS output_amount,
+        to_char(MAX(v.updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+      FROM planning.v_po_amount v
+      LEFT JOIN planning.po_balance pb
+        ON pb.prd_name = v.prd_name AND pb.due_date = v.due_date
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
-      GROUP BY status
-      ORDER BY status
+      GROUP BY v.status
+      ORDER BY v.status
     `;
 
     const { rows } = await query(queryStr, params);
@@ -252,14 +265,24 @@ router.get("/summary", async (req, res) => {
 // GET /api_p1/planning/distinct_product — รายชื่อ product สำหรับ dropdown
 router.get("/distinct_product", async (req, res) => {
   setNoCache(res);
+  const { item_prefix } = req.query;
+  const where = [];
+  const params = [];
+
+  if (item_prefix) {
+    params.push(`${item_prefix}%`);
+    where.push(`TRIM(item) LIKE $${params.length}`);
+  }
+
   try {
     const queryStr = `
       SELECT DISTINCT prd_name
       FROM planning.po_balance
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY prd_name
     `;
 
-    const result = await query(queryStr);
+    const result = await query(queryStr, params);
 
     return res.json({
       status: "OK",
