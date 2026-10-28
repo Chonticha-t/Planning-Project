@@ -1,6 +1,7 @@
 export interface PlanningSummaryRow {
   id: number | string;
   prd_name: string;
+  item?: string;
   due_date: string;
   ship_to_p1?: string | null;
   priority?: string | null;
@@ -37,10 +38,19 @@ export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] 
   { field: "lot_status", label: "Lot Status" },
 ];
 
+export type ItemUnitFilter = "" | "94" | "95";
+
+export const ITEM_UNIT_OPTIONS: { value: ItemUnitFilter; label: "ALL" | "FPC" | "SMT" }[] = [
+  { value: "", label: "ALL" },
+  { value: "94", label: "FPC" },
+  { value: "95", label: "SMT" },
+];
+
 export interface PlanningSummaryFilter {
   prd_name: string;
   status: string;
   priority?: string;
+  item_prefix?: string;
   lot_status: string;
   factory_desc: string;
   startdate: string;

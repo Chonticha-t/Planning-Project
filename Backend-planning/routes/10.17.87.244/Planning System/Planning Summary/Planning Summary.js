@@ -17,7 +17,7 @@ const setNoCache = (res) => {
  * Helper build WHERE conditions for filters
  */
 const buildWhereClause = (queryParams) => {
-  const { prd_name, lot_no, search, status, priority, lot_status, factory_desc, startdate, stopdate } =
+  const { prd_name, lot_no, search, status, priority, lot_status, factory_desc, startdate, stopdate, item_prefix, type } =
     queryParams;
   const conditions = [];
   const params = [];
@@ -41,6 +41,13 @@ const buildWhereClause = (queryParams) => {
   if (priority && String(priority).trim() !== "") {
     conditions.push(`priority = $${idx}`);
     params.push(String(priority).trim());
+    idx++;
+  }
+
+  const prefix = (item_prefix || type || "").trim();
+  if (prefix !== "") {
+    conditions.push(`item LIKE $${idx}`);
+    params.push(`${prefix}%`);
     idx++;
   }
 
@@ -90,6 +97,7 @@ router.get("/table", async (req, res) => {
       SELECT
         ROW_NUMBER() OVER () AS id,
         prd_name,
+        item,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
         to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
         priority,

@@ -85,6 +85,7 @@ export const usePlanningSummary = () => {
     if (f.prd_name) params.prd_name = f.prd_name;
     if (f.status) params.status = f.status;
     if (f.priority) params.priority = f.priority;
+    if (f.item_prefix) params.item_prefix = f.item_prefix;
     if (f.lot_status) params.lot_status = f.lot_status;
     if (f.factory_desc) params.factory_desc = f.factory_desc;
     if (f.startdate) params.startdate = f.startdate;
