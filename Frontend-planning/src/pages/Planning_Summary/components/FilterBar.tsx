@@ -279,6 +279,25 @@ const FilterBar = ({
           </select>
         </Field>
 
+        {/* Priority Filter */}
+        <Field label="Priority" className="w-full sm:w-36">
+          <select
+            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            value={filter.priority || ""}
+            onChange={(e) => {
+              const next = set("priority", e.target.value);
+              onSearch(next);
+            }}
+          >
+            <option value="">All Priorities</option>
+            {(filterOptions.priorities || []).map((pr) => (
+              <option key={pr} value={pr}>
+                {pr}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         {/* Lot Status Filter */}
         <Field label="Lot Status" className="w-full sm:w-36">
           <select

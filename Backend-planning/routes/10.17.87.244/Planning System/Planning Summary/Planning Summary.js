@@ -17,7 +17,7 @@ const setNoCache = (res) => {
  * Helper build WHERE conditions for filters
  */
 const buildWhereClause = (queryParams) => {
-  const { prd_name, lot_no, search, status, lot_status, factory_desc, startdate, stopdate } =
+  const { prd_name, lot_no, search, status, priority, lot_status, factory_desc, startdate, stopdate } =
     queryParams;
   const conditions = [];
   const params = [];
@@ -35,6 +35,12 @@ const buildWhereClause = (queryParams) => {
   } else if (lot_no && String(lot_no).trim() !== "") {
     conditions.push(`lot_no ILIKE $${idx}`);
     params.push(`%${String(lot_no).trim()}%`);
+    idx++;
+  }
+
+  if (priority && String(priority).trim() !== "") {
+    conditions.push(`priority = $${idx}`);
+    params.push(String(priority).trim());
     idx++;
   }
 
@@ -85,6 +91,8 @@ router.get("/table", async (req, res) => {
         ROW_NUMBER() OVER () AS id,
         prd_name,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
+        to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
+        priority,
         po_bal::float8,
         inventory::float8,
         net_required_pcs::float8,
@@ -94,6 +102,7 @@ router.get("/table", async (req, res) => {
         proc_disp,
         seq::int4,
         net_wip_qty::float8,
+        rem_wip_qty::float8,
         factory_desc,
         prd_type,
         gate_name,
@@ -178,12 +187,13 @@ router.get("/distinct_filters", async (req, res) => {
         ARRAY(SELECT DISTINCT prd_name FROM planning.planning_summary WHERE prd_name IS NOT NULL ORDER BY prd_name) AS products,
         ARRAY(SELECT DISTINCT lot_no FROM planning.planning_summary WHERE lot_no IS NOT NULL AND lot_no <> '' ORDER BY lot_no) AS lot_nos,
         ARRAY(SELECT DISTINCT status FROM planning.planning_summary WHERE status IS NOT NULL AND status <> '' AND LOWER(status) != 'ready' ORDER BY status) AS statuses,
+        ARRAY(SELECT DISTINCT priority FROM planning.planning_summary WHERE priority IS NOT NULL AND priority <> '' ORDER BY priority) AS priorities,
         ARRAY(SELECT DISTINCT lot_status FROM planning.planning_summary WHERE lot_status IS NOT NULL AND lot_status <> '' ORDER BY lot_status) AS lot_statuses,
         ARRAY(SELECT DISTINCT factory_desc FROM planning.planning_summary WHERE factory_desc IS NOT NULL AND factory_desc <> '' ORDER BY factory_desc) AS factories
     `;
 
     const { rows } = await query(sql);
-    const result = rows[0] || { products: [], lot_nos: [], statuses: [], lot_statuses: [], factories: [] };
+    const result = rows[0] || { products: [], lot_nos: [], statuses: [], priorities: [], lot_statuses: [], factories: [] };
 
     return res.json({
       status: "OK",
@@ -194,7 +204,7 @@ router.get("/distinct_filters", async (req, res) => {
     console.error("Error in GET /planning_summary/distinct_filters:", err);
     return res.status(500).json({
       status: "ERROR",
-      data: { products: [], lot_nos: [], statuses: [], lot_statuses: [], factories: [] },
+      data: { products: [], lot_nos: [], statuses: [], priorities: [], lot_statuses: [], factories: [] },
       message: err.message || "Internal server error",
     });
   }

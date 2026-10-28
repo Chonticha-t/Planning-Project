@@ -85,6 +85,35 @@ const StatusPill = ({ value }: { value: string }) => {
   );
 };
 
+// ── Priority Cell ──
+const PriorityCell = ({ priority }: { priority: string | null | undefined }) => {
+  if (!priority || priority.trim() === "") return <span className="text-base-content/25">-</span>;
+  const p = priority.trim();
+  const upper = p.toUpperCase();
+
+  if (upper.includes("URGENT") || upper === "P1") {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#dc2626] text-white font-bold text-[12px] tracking-wider uppercase select-all">
+        {p}
+      </div>
+    );
+  }
+
+  if (upper.includes("HIGH") || upper === "P2") {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#facc15] text-black font-bold text-[12px] tracking-wider uppercase select-all">
+        {p}
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-full flex items-center justify-center text-base-content/75 font-medium text-[12px] tracking-wide">
+      {p}
+    </div>
+  );
+};
+
 // ── Clean Lot Status Badge ──
 const LotStatusBadge = ({ status }: { status: string }) => {
   if (!status || status.trim() === "") return <span className="text-base-content/25">-</span>;
@@ -174,6 +203,31 @@ const PlanningSummaryTable = memo(
               {toDMY(value)}
             </span>
           ),
+        },
+        {
+          field: "ship_to_p1",
+          headerName: "Ship to P1",
+          headerAlign: "center",
+          align: "center",
+          minWidth: 125,
+          flex: 0.9,
+          renderCell: ({ value }) =>
+            value ? (
+              <span className="font-medium tabular-nums text-[#0D47A1] dark:text-[#60a5fa] text-[14px] whitespace-nowrap">
+                {toDMY(value)}
+              </span>
+            ) : (
+              <span className="text-base-content/25">-</span>
+            ),
+        },
+        {
+          field: "priority",
+          headerName: "Priority",
+          headerAlign: "center",
+          align: "center",
+          minWidth: 110,
+          flex: 0.8,
+          renderCell: ({ value }) => <PriorityCell priority={value} />,
         },
         {
           field: "status",
@@ -358,6 +412,8 @@ const PlanningSummaryTable = memo(
           children: [
             { field: "prd_name" },
             { field: "due_date" },
+            { field: "ship_to_p1" },
+            { field: "priority" },
             { field: "status" },
           ],
         },
@@ -549,6 +605,12 @@ const PlanningSummaryTable = memo(
                 justifyContent: "center",
                 display: "flex",
                 alignItems: "center",
+              },
+              "& .MuiDataGrid-cell[data-field='priority']": {
+                p: "0 !important",
+                display: "flex",
+                alignItems: "stretch",
+                justifyContent: "stretch",
               },
               "& .MuiDataGrid-row:hover": {
                 backgroundColor:

@@ -39,6 +39,8 @@ const Planning_Summary: React.FC = () => {
       columns: [
         { header: "PRODUCT", key: "prd_name", group: "PLAN OVERVIEW", align: "left" },
         { header: "DUE DATE", key: "due_date", group: "PLAN OVERVIEW", align: "center" },
+        { header: "SHIP TO P1", key: "ship_to_p1", group: "PLAN OVERVIEW", align: "center" },
+        { header: "PRIORITY", key: "priority", group: "PLAN OVERVIEW", align: "center" },
         { header: "STATUS", key: "status", group: "PLAN OVERVIEW", align: "center" },
         {
           header: "PO BAL",
@@ -132,6 +134,8 @@ const Planning_Summary: React.FC = () => {
       data: rows.map((r) => ({
         prd_name: r.prd_name,
         due_date: toDMY(r.due_date),
+        ship_to_p1: r.ship_to_p1 ? toDMY(r.ship_to_p1) : "",
+        priority: r.priority || "",
         status: r.status,
         po_bal: r.po_bal,
         inventory: r.inventory,

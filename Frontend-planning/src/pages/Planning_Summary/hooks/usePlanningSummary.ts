@@ -82,6 +82,7 @@ export const usePlanningSummary = () => {
     const params: Record<string, string> = {};
     if (f.prd_name) params.prd_name = f.prd_name;
     if (f.status) params.status = f.status;
+    if (f.priority) params.priority = f.priority;
     if (f.lot_status) params.lot_status = f.lot_status;
     if (f.factory_desc) params.factory_desc = f.factory_desc;
     if (f.startdate) params.startdate = f.startdate;
