@@ -41,6 +41,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
         item,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
         to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
+        to_char(scan_in, 'YYYY-MM-DD HH24:MI:SS') AS scan_in,
         priority,
         day_left::int4 AS day_left,
         po_bal::float8 AS po_bal,
@@ -104,16 +105,16 @@ const reallocateProductWithSkips = async (client, prdName) => {
         day_left: r.day_left,
         po_bal: r.po_bal,
         inventory: r.inventory,
-        net_required_pcs: Number(r.net_required_pcs) || 0,
+        // แปลงเป็นค่าบวกสำหรับใช้คำนวณตัดยอด WIP
+        total_needed: Math.abs(Number(r.net_required_pcs) || 0),
         prd_type: r.prd_type,
-        cal_sum: 0,
         base_priority: null,
         base_day_left: null,
         first_priority: r.priority || "Normal",
+        first_day_left: r.day_left ?? null,
       });
     }
     const po = poMap.get(due);
-    po.cal_sum += Number(r.cal_net_required) || 0;
     if (!po.item && r.item) po.item = r.item;
     if (!po.prd_type && r.prd_type) po.prd_type = r.prd_type;
 
@@ -131,11 +132,8 @@ const reallocateProductWithSkips = async (client, prdName) => {
   );
 
   for (const po of poList) {
-    po.total_needed = po.cal_sum > 0 ? po.cal_sum : po.net_required_pcs;
     if (po.base_day_left === null || po.base_day_left === undefined) {
-      if (po.day_left !== null && po.day_left !== undefined) {
-        po.base_day_left = po.day_left;
-      }
+      po.base_day_left = po.first_day_left;
     }
     if (!po.base_priority) {
       if (po.base_day_left !== null && po.base_day_left !== undefined) {
@@ -172,6 +170,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
         remaining_wip: Number(r.net_wip_qty) || 0,
         factory_desc: r.factory_desc,
         prd_type: r.prd_type,
+        scan_in: r.scan_in || null,
         gate_name: r.gate_name,
         yield: r.yield,
         lot_status: r.lot_status,
@@ -184,6 +183,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
       if (wip > existing.net_wip_qty) {
         existing.net_wip_qty = wip;
         existing.remaining_wip = wip;
+      }
+      if (!existing.scan_in && r.scan_in) {
+        existing.scan_in = r.scan_in;
       }
     }
   }
@@ -212,6 +214,8 @@ const reallocateProductWithSkips = async (client, prdName) => {
         continue;
       }
 
+      // cal_net_required ก่อนหัก Lot นี้ (ติดลบ ตามสูตร -(a.net_required_pcs - l.elig_start))
+      const calNetRequiredBeforeLot = -poRemaining;
       const allocated = Math.min(poRemaining, lot.remaining_wip);
       lot.remaining_wip -= allocated;
       poRemaining -= allocated;
@@ -236,12 +240,13 @@ const reallocateProductWithSkips = async (client, prdName) => {
         item: lot.item || po.item,
         due_date: po.due_date,
         ship_to_p1: po.ship_to_p1,
+        scan_in: lot.scan_in || null,
         priority: rowPriority,
         day_left: rowDayLeft,
         po_bal: po.po_bal,
         inventory: po.inventory,
-        net_required_pcs: po.net_required_pcs,
-        cal_net_required: allocated,
+        net_required_pcs: -po.total_needed,
+        cal_net_required: calNetRequiredBeforeLot,
         status: "production plan",
         lot_no: lot.lot_no,
         proc_disp: lot.proc_disp,
@@ -265,12 +270,13 @@ const reallocateProductWithSkips = async (client, prdName) => {
         item: po.item,
         due_date: po.due_date,
         ship_to_p1: po.ship_to_p1,
+        scan_in: null,
         priority: po.base_priority,
         day_left: po.base_day_left,
         po_bal: po.po_bal,
         inventory: po.inventory,
-        net_required_pcs: po.net_required_pcs,
-        cal_net_required: poRemaining,
+        net_required_pcs: -po.total_needed,
+        cal_net_required: -poRemaining,
         status: "need wip",
         lot_no: null,
         proc_disp: null,
@@ -306,6 +312,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
           item,
           due_date,
           ship_to_p1,
+          scan_in,
           priority,
           day_left,
           po_bal,
@@ -327,10 +334,10 @@ const reallocateProductWithSkips = async (client, prdName) => {
           pending_reason,
           updated_at
         ) VALUES (
-          $1, $2, $3::date, $4::date, $5, $6::int4,
-          $7::numeric, $8::numeric, $9::numeric, $10::numeric,
-          $11, $12, $13, $14::int4, $15::numeric, $16::numeric,
-          $17, $18, $19, $20::numeric, $21, $22, $23, CURRENT_TIMESTAMP
+          $1, $2, $3::date, $4::date, $5::timestamp, $6, $7::int4,
+          $8::numeric, $9::numeric, $10::numeric, $11::numeric,
+          $12, $13, $14, $15::int4, $16::numeric, $17::numeric,
+          $18, $19, $20, $21::numeric, $22, $23, $24, CURRENT_TIMESTAMP
         )
       `,
       [
@@ -338,6 +345,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
         row.item,
         row.due_date,
         row.ship_to_p1,
+        row.scan_in,
         row.priority,
         row.day_left,
         row.po_bal,
@@ -361,7 +369,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
     );
   }
 
-  // 5. อัปเดตคอลัมน์ due_date (Due Date ใหม่ที่ย้ายไปลง) ในตาราง planning.planning_lot_skip
+    // 5. อัปเดตคอลัมน์ due_date (Due Date ใหม่ที่ย้ายไปลง) ในตาราง planning.planning_lot_skip
   for (const [lotNo] of skipMap.entries()) {
     const newTargetDue = assignedDueDateByLot.get(lotNo) || null;
     await client.query(
@@ -629,6 +637,7 @@ router.get("/table", async (req, res) => {
         item,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
         to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
+        to_char(scan_in, 'YYYY-MM-DD HH24:MI:SS') AS scan_in,
         priority,
         day_left::int4,
         po_bal::float8,
