@@ -58,7 +58,7 @@ const Planning_Summary: React.FC = () => {
         { header: "STATUS", key: "status", align: "center" },
         {
           header: "NET REQUIRED",
-          key: "net_required_pcs",
+          key: "cal_net_required",
           align: "center",
           numFmt: "#,##0",
         },
@@ -91,7 +91,7 @@ const Planning_Summary: React.FC = () => {
         priority: r.priority || "",
         day_left: r.day_left ?? "",
         status: r.status,
-        net_required_pcs: r.net_required_pcs,
+        cal_net_required: r.cal_net_required,
         lot_no: r.lot_no,
         net_wip_qty: r.net_wip_qty,
         proc_disp: r.proc_disp

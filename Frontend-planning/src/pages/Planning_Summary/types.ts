@@ -34,7 +34,7 @@ export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] 
   { field: "priority", label: "Priority" },
   { field: "day_left", label: "Day Left" },
   { field: "status", label: "Status" },
-  { field: "net_required_pcs", label: "Net Required" },
+  { field: "cal_net_required", label: "Net Required" },
   { field: "lot_no", label: "Lot No" },
   { field: "net_wip_qty", label: "Net WIP" },
   { field: "proc_disp", label: "Process (Gate Process)" },

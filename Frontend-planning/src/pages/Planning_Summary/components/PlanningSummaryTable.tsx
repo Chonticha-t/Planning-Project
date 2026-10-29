@@ -468,7 +468,7 @@ const PlanningSummaryTable = memo(
 
         // ── Group 1: Demand & Balance ────────────
         {
-          field: "net_required_pcs",
+          field: "cal_net_required",
           headerName: "Net Required",
           headerAlign: "center",
           align: "center",
