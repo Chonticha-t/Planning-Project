@@ -47,7 +47,7 @@ const Planning_Summary: React.FC = () => {
       columns: [
         { header: "PRODUCT", key: "prd_name", align: "left" },
         { header: "DUE DATE", key: "due_date", align: "center" },
-        { header: "SHIP TO P1", key: "ship_to_p1", align: "center" },
+        { header: "TARGET SHIP P1", key: "ship_to_p1", align: "center" },
         { header: "PRIORITY", key: "priority", align: "center" },
         {
           header: "DAY LEFT",

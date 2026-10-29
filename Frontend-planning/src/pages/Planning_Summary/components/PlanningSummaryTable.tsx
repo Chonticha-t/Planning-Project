@@ -390,10 +390,10 @@ const PlanningSummaryTable = memo(
         },
         {
           field: "ship_to_p1",
-          headerName: "Ship to P1",
+          headerName: "Target Ship P1",
           headerAlign: "center",
           align: "center",
-          minWidth: 125,
+          minWidth: 140,
           flex: 0.9,
           renderCell: ({ value }) =>
             value ? (

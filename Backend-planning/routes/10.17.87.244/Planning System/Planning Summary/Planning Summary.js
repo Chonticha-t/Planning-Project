@@ -107,6 +107,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
         prd_type: r.prd_type,
         cal_sum: 0,
         base_priority: null,
+        base_day_left: null,
         first_priority: r.priority || "Normal",
       });
     }
@@ -118,6 +119,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
     const st = (r.status || "").toLowerCase().trim();
     if (st === "need wip" || r.gate_name === "PRE_FFPC") {
       if (r.priority) po.base_priority = r.priority;
+      if (r.day_left !== null && r.day_left !== undefined) {
+        po.base_day_left = r.day_left;
+      }
     }
   }
 
@@ -127,8 +131,13 @@ const reallocateProductWithSkips = async (client, prdName) => {
 
   for (const po of poList) {
     po.total_needed = po.cal_sum > 0 ? po.cal_sum : po.net_required_pcs;
-    if (!po.base_priority) {
+    if (po.base_day_left === null || po.base_day_left === undefined) {
       if (po.day_left !== null && po.day_left !== undefined) {
+        po.base_day_left = po.day_left;
+      }
+    }
+    if (!po.base_priority) {
+      if (po.base_day_left !== null && po.base_day_left !== undefined) {
         let leadDays = 2;
         if (po.due_date && po.ship_to_p1) {
           const diffMs =
@@ -137,8 +146,8 @@ const reallocateProductWithSkips = async (client, prdName) => {
           const diffDays = Math.round(diffMs / 86400000);
           if (diffDays > 0) leadDays = diffDays;
         }
-        if (po.day_left <= leadDays) po.base_priority = "Urgent";
-        else if (po.day_left <= leadDays + 3) po.base_priority = "High";
+        if (po.base_day_left <= leadDays) po.base_priority = "Urgent";
+        else if (po.base_day_left <= leadDays + 3) po.base_priority = "High";
         else po.base_priority = "Normal";
       } else {
         po.base_priority = po.first_priority || "Normal";
@@ -212,6 +221,11 @@ const reallocateProductWithSkips = async (client, prdName) => {
           ? "Normal"
           : po.base_priority;
 
+      const rowDayLeft =
+        lot.gate_name && lot.gate_name !== "PRE_FFPC"
+          ? null
+          : po.base_day_left;
+
       if (!assignedDueDateByLot.has(lot.lot_no)) {
         assignedDueDateByLot.set(lot.lot_no, po.due_date);
       }
@@ -222,7 +236,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
         due_date: po.due_date,
         ship_to_p1: po.ship_to_p1,
         priority: rowPriority,
-        day_left: po.day_left,
+        day_left: rowDayLeft,
         po_bal: po.po_bal,
         inventory: po.inventory,
         net_required_pcs: po.net_required_pcs,
@@ -251,7 +265,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
         due_date: po.due_date,
         ship_to_p1: po.ship_to_p1,
         priority: po.base_priority,
-        day_left: po.day_left,
+        day_left: po.base_day_left,
         po_bal: po.po_bal,
         inventory: po.inventory,
         net_required_pcs: po.net_required_pcs,

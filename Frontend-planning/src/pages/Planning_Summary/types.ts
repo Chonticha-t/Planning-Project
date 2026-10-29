@@ -30,7 +30,7 @@ export interface PlanningSummaryRow {
 export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] = [
   { field: "prd_name", label: "Product" },
   { field: "due_date", label: "Due Date" },
-  { field: "ship_to_p1", label: "Ship to P1" },
+  { field: "ship_to_p1", label: "Target Ship P1" },
   { field: "priority", label: "Priority" },
   { field: "day_left", label: "Day Left" },
   { field: "status", label: "Status" },
