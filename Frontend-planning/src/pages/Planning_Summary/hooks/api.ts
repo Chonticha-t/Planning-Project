@@ -13,3 +13,6 @@ export const PLANNING_SUMMARY_FILTERS_API = `${API_BASE_URL}/planning_summary/di
 
 // ⚡ Server-Sent Events (SSE) Stream สำหรับรับสัญญาณ Real-time เมื่อ Database อัปเดต
 export const PLANNING_SUMMARY_STREAM_API = `${API_BASE_URL}/planning_summary/stream`;
+
+// ⏭️ กดปุ่ม Skip Due สำหรับย้าย Lot ที่ติด PENDING ไป Due Date ถัดไป
+export const PLANNING_SUMMARY_SKIP_DUE_API = `${API_BASE_URL}/planning_summary/skip_due`;

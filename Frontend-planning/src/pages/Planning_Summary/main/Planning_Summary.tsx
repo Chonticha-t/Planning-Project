@@ -13,7 +13,8 @@ import { toDMY } from "../../PO_Balance/utils";
 const Planning_Summary: React.FC = () => {
   const [filter, setFilter] = useState<PlanningSummaryFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
-  const { rows, kpi, filtersOptions, loading, fetchData } = usePlanningSummary();
+  const { rows, kpi, filtersOptions, loading, fetchData, skipLotDueDate } =
+    usePlanningSummary();
 
   const handleReset = useCallback(() => {
     setFilter(EMPTY_FILTER);
@@ -41,6 +42,12 @@ const Planning_Summary: React.FC = () => {
         { header: "DUE DATE", key: "due_date", align: "center" },
         { header: "SHIP TO P1", key: "ship_to_p1", align: "center" },
         { header: "PRIORITY", key: "priority", align: "center" },
+        {
+          header: "DAY LEFT",
+          key: "day_left",
+          align: "center",
+          numFmt: "#,##0",
+        },
         { header: "STATUS", key: "status", align: "center" },
         {
           header: "NET REQUIRED",
@@ -75,6 +82,7 @@ const Planning_Summary: React.FC = () => {
         due_date: toDMY(r.due_date),
         ship_to_p1: r.ship_to_p1 ? toDMY(r.ship_to_p1) : "",
         priority: r.priority || "",
+        day_left: r.day_left ?? "",
         status: r.status,
         net_required_pcs: r.net_required_pcs,
         lot_no: r.lot_no,
@@ -110,6 +118,7 @@ const Planning_Summary: React.FC = () => {
         sortModel={sortModel}
         onSortModelChange={setSortModel}
         onExport={handleExport}
+        onSkipDue={skipLotDueDate}
       />
     </div>
   );

@@ -4,12 +4,17 @@ import {
   GridColDef,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { LayoutDashboard, FileSpreadsheet, Info, AlertCircle, AlertTriangle } from "lucide-react";
+import {
+  LayoutDashboard,
+  FileSpreadsheet,
+  Info,
+  AlertCircle,
+  AlertTriangle,
+  FastForward,
+} from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
-
-
 
 interface PlanningSummaryTableProps {
   rows: PlanningSummaryRow[];
@@ -17,6 +22,7 @@ interface PlanningSummaryTableProps {
   sortModel: GridSortModel;
   onSortModelChange: (model: GridSortModel) => void;
   onExport?: () => void;
+  onSkipDue?: (row: PlanningSummaryRow) => Promise<void> | void;
 }
 
 const num = (value: number | null | undefined, decimals = 0) =>
@@ -160,23 +166,22 @@ const LotStatusBadge = ({
   );
 };
 
-
 const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
 const headerBg = "var(--color-base-200)";
 
 const PlanningSummaryTable = memo(
   ({
     rows,
-
     sortModel,
     onSortModelChange,
     onExport,
+    onSkipDue,
   }: PlanningSummaryTableProps) => {
     const confirm = useConfirm();
 
     const handleOpenPendingModal = useCallback(
       async (row: PlanningSummaryRow) => {
-        await confirm({
+        const shouldSkip = await confirm({
           variant: "info",
           size: "md",
           title: "Pending Details",
@@ -198,7 +203,27 @@ const PlanningSummaryTable = memo(
                     </span>
                   </>
                 )}
+                {row.due_date && (
+                  <>
+                    <span className="text-base-content/40">•</span>
+                    <span className="font-semibold text-base-content">
+                      Due Date: <span className="font-bold tabular-nums">{toDMY(row.due_date)}</span>
+                    </span>
+                  </>
+                )}
               </div>
+
+              {row.skipped_due_date && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                  <FastForward size={13} className="shrink-0" />
+                  <span>
+                    Skipped from Due Date:{" "}
+                    <span className="font-bold tabular-nums">
+                      {toDMY(row.skipped_due_date)}
+                    </span>
+                  </span>
+                </div>
+              )}
 
               <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-amber-500/40">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
@@ -225,11 +250,51 @@ const PlanningSummaryTable = memo(
               </div>
             </div>
           ),
-          confirmText: "Close",
-          hideCancel: true,
+          cancelText: "Close",
+          confirmText: "Skip Due",
+          hideCancel: false,
         });
+
+        if (shouldSkip && onSkipDue) {
+          await new Promise((r) => setTimeout(r, 160));
+          const isConfirmed = await confirm({
+            variant: "save",
+            size: "sm",
+            title: "Confirm Skip Due?",
+            description: (
+              <div className="flex flex-col gap-2.5 pt-1 text-sm">
+                <p className="text-base-content/70 text-[13px]">
+                  Move this pending lot to the next nearest Due Date?
+                </p>
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-base-300 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base-content/60 font-medium">Product</span>
+                    <span className="font-bold text-primary">{row.prd_name}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base-content/60 font-medium">Lot No</span>
+                    <span className="font-mono font-bold text-[15px] text-base-content">{row.lot_no}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base-content/60 font-medium">Skip Due Date</span>
+                    <span className="font-bold text-[14px] text-base-content tabular-nums">
+                      {toDMY(row.due_date)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ),
+            cancelText: "Cancel",
+            confirmText: "Confirm",
+            hideCancel: false,
+          });
+
+          if (isConfirmed) {
+            await onSkipDue(row);
+          }
+        }
       },
-      [confirm]
+      [confirm, onSkipDue]
     );
 
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(
@@ -284,6 +349,33 @@ const PlanningSummaryTable = memo(
           minWidth: 110,
           flex: 0.8,
           renderCell: ({ value }) => <PriorityCell priority={value} />,
+        },
+        {
+          field: "day_left",
+          headerName: "Day Left",
+          headerAlign: "center",
+          align: "center",
+          type: "number",
+          minWidth: 105,
+          flex: 0.8,
+          renderCell: ({ value }) => {
+            if (value === null || value === undefined || value === "") {
+              return <span className="text-base-content/25">-</span>;
+            }
+            const days = Number(value);
+            const isNegative = days < 0;
+            return (
+              <span
+                className={`tabular-nums text-[14px] ${
+                  isNegative
+                    ? "font-bold text-red-600 dark:text-red-400"
+                    : "font-medium text-base-content/85"
+                }`}
+              >
+                {num(days)}
+              </span>
+            );
+          },
         },
         {
           field: "status",

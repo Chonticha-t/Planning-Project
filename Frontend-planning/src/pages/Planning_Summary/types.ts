@@ -5,6 +5,7 @@ export interface PlanningSummaryRow {
   due_date: string;
   ship_to_p1?: string | null;
   priority?: string | null;
+  day_left?: number | null;
   po_bal: number;
   inventory: number;
   net_required_pcs: number;
@@ -22,6 +23,7 @@ export interface PlanningSummaryRow {
   lot_status: string;
   lot_problem: string;
   pending_reason: string;
+  skipped_due_date?: string | null;
   updated_at: string;
 }
 
@@ -30,6 +32,7 @@ export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] 
   { field: "due_date", label: "Due Date" },
   { field: "ship_to_p1", label: "Ship to P1" },
   { field: "priority", label: "Priority" },
+  { field: "day_left", label: "Day Left" },
   { field: "status", label: "Status" },
   { field: "net_required_pcs", label: "Net Required" },
   { field: "lot_no", label: "Lot No" },

@@ -6,6 +6,7 @@ import {
   PLANNING_SUMMARY_TABLE_API,
   PLANNING_SUMMARY_FILTERS_API,
   PLANNING_SUMMARY_STREAM_API,
+  PLANNING_SUMMARY_SKIP_DUE_API,
 } from "./api";
 import type {
   ApiResponse,
@@ -14,6 +15,7 @@ import type {
   PlanningSummaryKPI,
   DistinctFilters,
 } from "../types";
+import { toDMY } from "../../PO_Balance/utils";
 
 export const EMPTY_FILTER: PlanningSummaryFilter = {
   prd_name: "",
@@ -236,6 +238,54 @@ export const usePlanningSummary = () => {
     [fetchFilterOptions]
   );
 
+  // กดปุ่ม Skip Due เพื่อย้าย Lot ที่ติด PENDING ข้ามไป Due Date ถัดไปที่ใกล้ที่สุด
+  const skipLotDueDate = useCallback(
+    async (row: PlanningSummaryRow) => {
+      const toastId = toast.loading(`Skipping Due Date for Lot ${row.lot_no}...`);
+      try {
+        const res = await axios.post<
+          ApiResponse<{
+            prd_name: string;
+            lot_no: string;
+            skipped_due_date: string;
+            new_due_date: string | null;
+          }>
+        >(
+          PLANNING_SUMMARY_SKIP_DUE_API,
+          {
+            prd_name: row.prd_name,
+            lot_no: row.lot_no,
+            due_date: row.due_date,
+            seq: row.seq,
+            process: row.proc_disp,
+          },
+          { timeout: AJAX_TIMEOUT_MS }
+        );
+
+        if (res.data?.status === "OK") {
+          const newDue = res.data.data?.new_due_date;
+          toast.success(
+            newDue
+              ? `Skipped Lot ${row.lot_no} from ${toDMY(row.due_date)} to Due Date ${toDMY(newDue)}`
+              : `Skipped Lot ${row.lot_no} (${toDMY(row.due_date)}) — waiting for next Due Date`,
+            { id: toastId, duration: 4000 }
+          );
+          await fetchData(activeFilterRef.current, { silent: true });
+        } else {
+          toast.error(res.data?.message || "Failed to skip Due Date", {
+            id: toastId,
+          });
+        }
+      } catch (err) {
+        const msg = axios.isAxiosError(err)
+          ? err.response?.data?.message
+          : undefined;
+        toast.error(msg || "Error skipping Due Date", { id: toastId });
+      }
+    },
+    [fetchData]
+  );
+
   // โหลดข้อมูลครั้งแรก
   useEffect(() => {
     fetchData(EMPTY_FILTER);
@@ -305,6 +355,7 @@ export const usePlanningSummary = () => {
     loading,
     fetchData,
     fetchFilterOptions,
+    skipLotDueDate,
     dbVersion,
   };
 };
