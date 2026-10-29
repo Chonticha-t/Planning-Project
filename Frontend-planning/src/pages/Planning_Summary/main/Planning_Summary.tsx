@@ -94,7 +94,13 @@ const Planning_Summary: React.FC = () => {
         net_required_pcs: r.net_required_pcs,
         lot_no: r.lot_no,
         net_wip_qty: r.net_wip_qty,
-        proc_disp: r.proc_disp,
+        proc_disp: r.proc_disp
+          ? r.gate_name
+            ? `${r.proc_disp} (${r.gate_name})`
+            : r.proc_disp
+          : r.gate_name
+          ? `(${r.gate_name})`
+          : "",
         lot_status: r.lot_status,
       })),
     });

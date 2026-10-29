@@ -122,6 +122,18 @@ const PriorityCell = ({ priority }: { priority: string | null | undefined }) => 
   );
 };
 
+// ── Gate Process Badge ──
+const GateBadge = ({ gate }: { gate?: string | null }) => {
+  if (!gate || gate.trim() === "") return null;
+  const g = gate.trim();
+
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold tracking-wide uppercase bg-base-200 text-base-content/70 border border-base-300 leading-none shrink-0">
+      {g}
+    </span>
+  );
+};
+
 // ── Clean Lot Status Badge ──
 const LotStatusBadge = ({
   status,
@@ -200,11 +212,15 @@ const PlanningSummaryTable = memo(
                 <span className="font-semibold text-base-content">
                   Lot No: <span className="font-mono font-bold">{row.lot_no || "-"}</span>
                 </span>
-                {row.proc_disp && (
+                {(row.proc_disp || row.gate_name) && (
                   <>
                     <span className="text-base-content/40">•</span>
-                    <span className="font-semibold text-base-content">
-                      Process: <span className="font-medium">{row.proc_disp}</span>
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-base-content">
+                      <span>Process:</span>
+                      {row.proc_disp && (
+                        <span className="font-bold">{row.proc_disp}</span>
+                      )}
+                      <GateBadge gate={row.gate_name} />
                     </span>
                   </>
                 )}
@@ -493,15 +509,27 @@ const PlanningSummaryTable = memo(
         },
         {
           field: "proc_disp",
-          headerName: "Process",
+          headerName: "Process ",
           headerAlign: "center",
-          minWidth: 140,
-          flex: 1,
-          renderCell: ({ value }) => (
-            <span className="text-[13.5px] text-base-content/80 truncate">
-              {value || "-"}
-            </span>
-          ),
+          minWidth: 195,
+          flex: 1.2,
+          renderCell: ({ row, value }) => {
+            const proc = value ? String(value).trim() : "";
+            const gate = row.gate_name ? String(row.gate_name).trim() : "";
+            if (!proc && !gate) {
+              return <span className="text-base-content/25">-</span>;
+            }
+            return (
+              <div className="flex items-center gap-2 h-full overflow-hidden">
+                {proc && (
+                  <span className="font-semibold text-[13.5px] text-base-content truncate">
+                    {proc}
+                  </span>
+                )}
+                <GateBadge gate={gate} />
+              </div>
+            );
+          },
         },
         {
           field: "lot_status",
