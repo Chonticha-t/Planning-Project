@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { pool_smart } = require("../../config");
+const { verifyAdmin } = require("../Auth/Auth");
 const query = (text, params) => pool_smart.query(text, params);
 
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
@@ -457,7 +458,7 @@ router.get("/exchange_rate", async (req, res) => {
 });
 
 // POST /api_p1/planning/exchange_rate — บันทึกหรืออัปเดตอัตราแลกเปลี่ยน (UPSERT)
-router.post("/exchange_rate", async (req, res) => {
+router.post("/exchange_rate", verifyAdmin, async (req, res) => {
   setNoCache(res);
   const { year, month_name, month_no, rates } = req.body;
 
@@ -530,18 +531,20 @@ router.post("/exchange_rate", async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    const updatedBy = req.user?.username || "admin";
     const upsertQuery = `
-      INSERT INTO planning.exchange_rate_monthly ("year", month_no, month_name, currency, rate_per_thb, updated_at)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      INSERT INTO planning.exchange_rate_monthly ("year", month_no, month_name, currency, rate_per_thb, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
       ON CONFLICT ("year", month_no, currency)
       DO UPDATE SET
         rate_per_thb = EXCLUDED.rate_per_thb,
         month_name   = EXCLUDED.month_name,
+        updated_by   = EXCLUDED.updated_by,
         updated_at   = CURRENT_TIMESTAMP;
     `;
 
     for (const [curr, rate] of entries) {
-      await client.query(upsertQuery, [y, mNo, mName, curr, parseFloat(rate)]);
+      await client.query(upsertQuery, [y, mNo, mName, curr, parseFloat(rate), updatedBy]);
     }
 
     await client.query("COMMIT");
@@ -566,7 +569,7 @@ router.post("/exchange_rate", async (req, res) => {
 });
 
 // DELETE /api_p1/planning/exchange_rate — ลบอัตราแลกเปลี่ยนของเดือนและปีที่ระบุ
-router.delete("/exchange_rate", async (req, res) => {
+router.delete("/exchange_rate", verifyAdmin, async (req, res) => {
   setNoCache(res);
   const yearParam = req.query.year || req.body?.year;
   const monthParam =

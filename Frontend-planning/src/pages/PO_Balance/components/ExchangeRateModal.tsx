@@ -19,6 +19,7 @@ import toast from "react-hot-toast";
 import { AnimatePresence, motion } from "motion/react";
 import { PO_BALANCE_EXCHANGE_RATE_API } from "../hooks/api";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
 
 export interface ExchangeRateData {
   jpy: number;
@@ -146,6 +147,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
   const confirm = useConfirm();
+  const { isAdmin, requireAdmin } = useAuth();
   const cacheRef = useRef<Map<string, CachedRate>>(new Map());
   const inFlightRef = useRef<Map<string, Promise<void>>>(new Map());
 
@@ -357,7 +359,9 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   }, [dbVersion, fetchRate]);
 
   const handleStartEdit = () => {
-    setIsEditing(true);
+    void requireAdmin(() => {
+      setIsEditing(true);
+    });
   };
 
   const handleCancelEdit = () => {
@@ -366,7 +370,18 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
     setIsEditing(false);
   };
 
+  // หาก Logout หรือหมดเวลา Session ขณะกำลังเปิดหน้าแก้ไข ให้กลับสู่โหมดอ่านอย่างเดียวทันที
+  useEffect(() => {
+    if (!isAdmin && isEditing) {
+      setJpyRate(savedJpyRate);
+      setUsdRate(savedUsdRate);
+      setIsEditing(false);
+    }
+  }, [isAdmin, isEditing, savedJpyRate, savedUsdRate]);
+
   const handleSave = async () => {
+    if (!(await requireAdmin())) return;
+
     const numJpy = parseFloat(jpyRate);
     const numUsd = parseFloat(usdRate);
 
@@ -472,6 +487,8 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   };
 
   const handleDelete = async () => {
+    if (!(await requireAdmin())) return;
+
     const ok = await confirm({
       variant: "delete",
       title: "Delete exchange rates?",
@@ -544,8 +561,8 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const numUsd = parseFloat(usdRate);
   const thbPerUsd = !isNaN(numUsd) && numUsd > 0 ? (1 / numUsd).toFixed(2) : null;
 
-  // Input is active if it's a new month (!isFromDb) OR user clicked Edit on an existing month
-  const isInputActive = !isFromDb || isEditing;
+  // Input is active only when logged in as Admin AND (it's a new month or user clicked Edit)
+  const isInputActive = isAdmin && (!isFromDb || isEditing);
 
   return createPortal(
     <AnimatePresence>
@@ -827,7 +844,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                   <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                     <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">¥</span>
                     <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                      {jpyRate}
+                      {jpyRate || <span className="text-base-content/30">-</span>}
                     </span>
                   </div>
                 )}
@@ -898,7 +915,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
                   <div className="bg-base-200/50 border border-base-300 rounded-xl px-3 py-1.5 sm:py-2 flex items-center justify-between w-28 sm:w-32 transition-all shrink-0">
                     <span className="text-primary font-semibold text-xs sm:text-sm mr-1.5 select-none">$</span>
                     <span className="w-full text-right font-bold text-[16px] text-base-content select-text">
-                      {usdRate}
+                      {usdRate || <span className="text-base-content/30">-</span>}
                     </span>
                   </div>
                 )}
@@ -936,8 +953,8 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               <div className="h-4 w-10 bg-primary-content/40 rounded animate-pulse" />
             </button>
           </div>
-        ) : !isFromDb ? (
-          // New Month (Not in DB yet): Cancel + Save directly
+        ) : !isFromDb && isAdmin ? (
+          // New Month (Not in DB yet) + Admin: Cancel + Save directly
           <div className="flex items-center gap-3 mb-4">
             <button
               type="button"

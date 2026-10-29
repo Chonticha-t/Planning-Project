@@ -11,6 +11,7 @@ import {
 import { getThemeColors, observeThemeChanges } from "./themeUtils";
 import AppRoutes from "@/routes/AppRoutes";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
+import { AuthProvider } from "@/context/AuthContext";
 
 function App() {
   const [themeColors, setThemeColors] = useState<any>({});
@@ -65,7 +66,9 @@ function App() {
       <ThemeProvider disableTransitionOnChange>
         <BrowserRouter>
           <ConfirmProvider>
-            <AppRoutes />
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
           </ConfirmProvider>
           <Toaster
             position="top-center"

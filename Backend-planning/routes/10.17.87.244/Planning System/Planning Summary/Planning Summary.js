@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { pool_smart } = require("../../config");
+const { verifyAdmin } = require("../Auth/Auth");
 const query = (text, params) => pool_smart.query(text, params);
 
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
@@ -670,7 +671,7 @@ router.get("/table", async (req, res) => {
  * - ย้าย Lot ที่กด Skip ข้ามไปเกาะที่ Due Date ถัดไปที่ใกล้ที่สุด (หรือเก็บไว้รอหากยังไม่มี Due Date ถัดไป)
  * - ดึง Lot ปกติถัดไปขึ้นมาเสียบแทนที่ Due Date เดิม และเรียงลำดับ FIFO (seq DESC, lot_no ASC) ใหม่
  */
-router.post("/skip_due", async (req, res) => {
+router.post("/skip_due", verifyAdmin, async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.body?.prd_name);
   const lot_no = asStr(req.body?.lot_no);
@@ -708,6 +709,7 @@ router.post("/skip_due", async (req, res) => {
     const initialNextDue = nextDueRes.rows[0]?.next_due_date || null;
 
     // 2. บันทึกหรืออัปเดตลงตาราง planning.planning_lot_skip
+    const skippedBy = req.user?.username || "admin";
     await client.query(
       `
         INSERT INTO planning.planning_lot_skip (
@@ -717,18 +719,20 @@ router.post("/skip_due", async (req, res) => {
           skipped_due_date,
           seq,
           process,
+          skipped_by,
           updated_at
         )
-        VALUES ($1, $2, $3::date, $4::date, $5::int4, $6, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3::date, $4::date, $5::int4, $6, $7, CURRENT_TIMESTAMP)
         ON CONFLICT (lot_no) DO UPDATE SET
           prd_name = EXCLUDED.prd_name,
           due_date = EXCLUDED.due_date,
           skipped_due_date = GREATEST(planning.planning_lot_skip.skipped_due_date, EXCLUDED.skipped_due_date),
           seq = COALESCE(EXCLUDED.seq, planning.planning_lot_skip.seq),
           process = COALESCE(EXCLUDED.process, planning.planning_lot_skip.process),
+          skipped_by = EXCLUDED.skipped_by,
           updated_at = CURRENT_TIMESTAMP
       `,
-      [prd_name, lot_no, initialNextDue, due_date, seq, process || null]
+      [prd_name, lot_no, initialNextDue, due_date, seq, process || null, skippedBy]
     );
 
     // 3. คำนวณจับคู่ PO และเรียง FIFO ใหม่สำหรับ prd_name นี้ทันที
@@ -775,7 +779,7 @@ router.post("/skip_due", async (req, res) => {
 /**
  * ↩️ POST /unskip_due: ยกเลิกการ Skip Due (คืนค่า Lot กลับสู่คิว FIFO ปกติ)
  */
-router.post("/unskip_due", async (req, res) => {
+router.post("/unskip_due", verifyAdmin, async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.body?.prd_name);
   const lot_no = asStr(req.body?.lot_no);

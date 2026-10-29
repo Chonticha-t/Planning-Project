@@ -14,6 +14,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
 import { type PlanningSummaryRow } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
 
@@ -193,6 +194,7 @@ const PlanningSummaryTable = memo(
     onUnskipDue,
   }: PlanningSummaryTableProps) => {
     const confirm = useConfirm();
+    const { requireAdmin } = useAuth();
 
     const handleOpenPendingModal = useCallback(
       async (row: PlanningSummaryRow) => {
@@ -293,6 +295,9 @@ const PlanningSummaryTable = memo(
         });
 
         if (requestedUndo && onUnskipDue) {
+          const isAuthorized = await requireAdmin();
+          if (!isAuthorized) return;
+
           await new Promise((r) => setTimeout(r, 160));
           const isUndoConfirmed = await confirm({
             variant: "save",
@@ -335,6 +340,9 @@ const PlanningSummaryTable = memo(
         }
 
         if (shouldSkip && onSkipDue) {
+          const isAuthorized = await requireAdmin();
+          if (!isAuthorized) return;
+
           await new Promise((r) => setTimeout(r, 160));
           const isConfirmed = await confirm({
             variant: "save",
@@ -373,7 +381,7 @@ const PlanningSummaryTable = memo(
           }
         }
       },
-      [confirm, onSkipDue, onUnskipDue]
+      [confirm, onSkipDue, onUnskipDue, requireAdmin]
     );
 
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(
