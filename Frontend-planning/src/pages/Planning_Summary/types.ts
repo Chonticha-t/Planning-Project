@@ -54,6 +54,8 @@ export interface PlanningSummaryFilter {
   status: string;
   priority?: string;
   item_prefix?: string;
+  proc_disp?: string;
+  gate_name?: string;
   lot_status: string;
   factory_desc: string;
   startdate: string;
@@ -79,6 +81,8 @@ export interface DistinctFilters {
   lot_nos?: string[];
   statuses: string[];
   priorities?: string[];
+  processes?: string[];
+  gate_names?: string[];
   lot_statuses: string[];
   factories: string[];
 }

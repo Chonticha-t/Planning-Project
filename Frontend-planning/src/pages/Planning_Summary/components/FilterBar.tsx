@@ -212,6 +212,9 @@ const SortByDropdown = ({
   );
 };
 
+const selectClass =
+  "select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors whitespace-nowrap truncate";
+
 const FilterBar = ({
   filter,
   filterOptions,
@@ -220,8 +223,6 @@ const FilterBar = ({
   onChange,
   onSearch,
   onReset,
-
-
 }: FilterBarProps) => {
   const searchOptions = useMemo(() => {
     const prds = filterOptions.products || [];
@@ -263,14 +264,16 @@ const FilterBar = ({
         {/* Type Filter (94 = FPC, 95 = SMT) */}
         <Field label="Type" className="w-full sm:w-28">
           <select
-            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            className={selectClass}
             value={filter.item_prefix || ""}
             onChange={(e) => {
               const nextPrefix = e.target.value;
               const next: PlanningSummaryFilter = {
                 ...filter,
                 item_prefix: nextPrefix,
-                ...(nextPrefix && filter.item_prefix !== nextPrefix ? { prd_name: "" } : {}),
+                ...(nextPrefix && filter.item_prefix !== nextPrefix
+                  ? { prd_name: "", proc_disp: "", gate_name: "" }
+                  : {}),
               };
               onChange(next);
               onSearch(next);
@@ -287,7 +290,7 @@ const FilterBar = ({
         {/* Status Filter */}
         <Field label="Status" className="w-full sm:w-36">
           <select
-            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            className={selectClass}
             value={filter.status}
             onChange={(e) => {
               const next = set("status", e.target.value);
@@ -306,7 +309,7 @@ const FilterBar = ({
         {/* Priority Filter */}
         <Field label="Priority" className="w-full sm:w-36">
           <select
-            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            className={selectClass}
             value={filter.priority || ""}
             onChange={(e) => {
               const next = set("priority", e.target.value);
@@ -322,10 +325,48 @@ const FilterBar = ({
           </select>
         </Field>
 
+        {/* Process Filter */}
+        <Field label="Process" className="w-full sm:w-40">
+          <select
+            className={selectClass}
+            value={filter.proc_disp || ""}
+            onChange={(e) => {
+              const next = set("proc_disp", e.target.value);
+              onSearch(next);
+            }}
+          >
+            <option value="">All Processes</option>
+            {(filterOptions.processes || []).map((proc) => (
+              <option key={proc} value={proc}>
+                {proc}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        {/* Gate Process Filter */}
+        <Field label="Gate Process" className="w-full sm:w-44">
+          <select
+            className={selectClass}
+            value={filter.gate_name || ""}
+            onChange={(e) => {
+              const next = set("gate_name", e.target.value);
+              onSearch(next);
+            }}
+          >
+            <option value="">All Gate Process</option>
+            {(filterOptions.gate_names || []).map((gate) => (
+              <option key={gate} value={gate}>
+                {gate}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         {/* Lot Status Filter */}
         <Field label="Lot Status" className="w-full sm:w-36">
           <select
-            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
+            className={selectClass}
             value={filter.lot_status}
             onChange={(e) => {
               const next = set("lot_status", e.target.value);
@@ -393,8 +434,6 @@ const FilterBar = ({
             </button>
           </div>
         </Field>
-
-
       </div>
     </div>
   );
