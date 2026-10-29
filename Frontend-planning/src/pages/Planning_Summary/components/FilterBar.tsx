@@ -9,7 +9,12 @@ import {
   Check,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
-import { SORT_OPTIONS, ITEM_UNIT_OPTIONS, type PlanningSummaryFilter, type DistinctFilters } from "../types";
+import {
+  SORT_OPTIONS,
+  ITEM_UNIT_OPTIONS,
+  type PlanningSummaryFilter,
+  type DistinctFilters,
+} from "../types";
 import ProductCombobox from "./ProductCombobox";
 import CallyDatePicker from "@/components/CallyCalendar";
 
@@ -35,7 +40,7 @@ const Field = ({
   children: ReactNode;
 }) => (
   <div className={`flex flex-col gap-1.5 ${className}`}>
-    <span className="text-[11px] font-semibold text-base-content/50 uppercase tracking-wider">
+    <span className="text-[11px] font-semibold text-base-content/50 uppercase tracking-wider whitespace-nowrap">
       {label}
     </span>
     {children}
@@ -95,7 +100,7 @@ const SortByDropdown = ({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`btn btn-sm bg-base-100 text-base-content text-[13px] gap-1.5 font-medium shadow-none hover:bg-base-200/60 rounded-lg focus:outline-none transition-colors border ${
+        className={`btn btn-sm bg-base-100 text-base-content text-[13px] gap-1.5 font-medium shadow-none hover:bg-base-200/60 rounded-lg focus:outline-none transition-colors border whitespace-nowrap ${
           open
             ? "border-primary bg-primary/5 text-primary"
             : activeField
@@ -244,9 +249,9 @@ const FilterBar = ({
 
   return (
     <div className="rounded-2xl border border-base-200/80 bg-base-100 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-2.5">
         {/* Product / Lot No Filter */}
-        <Field label="Product / Lot No" className="w-full sm:w-64">
+        <Field label="Product / Lot No" className="w-full sm:w-48">
           <ProductCombobox
             value={filter.prd_name}
             options={searchOptions}
@@ -262,7 +267,7 @@ const FilterBar = ({
         </Field>
 
         {/* Type Filter (94 = FPC, 95 = SMT) */}
-        <Field label="Type" className="w-full sm:w-28">
+        <Field label="Type" className="w-full sm:w-20">
           <select
             className={selectClass}
             value={filter.item_prefix || ""}
@@ -272,7 +277,7 @@ const FilterBar = ({
                 ...filter,
                 item_prefix: nextPrefix,
                 ...(nextPrefix && filter.item_prefix !== nextPrefix
-                  ? { prd_name: "", proc_disp: "", gate_name: "" }
+                  ? { prd_name: "", gate_name: "" }
                   : {}),
               };
               onChange(next);
@@ -288,7 +293,7 @@ const FilterBar = ({
         </Field>
 
         {/* Status Filter */}
-        <Field label="Status" className="w-full sm:w-36">
+        <Field label="Status" className="w-full sm:w-32">
           <select
             className={selectClass}
             value={filter.status}
@@ -307,7 +312,7 @@ const FilterBar = ({
         </Field>
 
         {/* Priority Filter */}
-        <Field label="Priority" className="w-full sm:w-36">
+        <Field label="Priority" className="w-full sm:w-28">
           <select
             className={selectClass}
             value={filter.priority || ""}
@@ -325,27 +330,8 @@ const FilterBar = ({
           </select>
         </Field>
 
-        {/* Process Filter */}
-        <Field label="Process" className="w-full sm:w-40">
-          <select
-            className={selectClass}
-            value={filter.proc_disp || ""}
-            onChange={(e) => {
-              const next = set("proc_disp", e.target.value);
-              onSearch(next);
-            }}
-          >
-            <option value="">All Processes</option>
-            {(filterOptions.processes || []).map((proc) => (
-              <option key={proc} value={proc}>
-                {proc}
-              </option>
-            ))}
-          </select>
-        </Field>
-
         {/* Gate Process Filter */}
-        <Field label="Gate Process" className="w-full sm:w-44">
+        <Field label="Gate Process" className="w-full sm:w-36">
           <select
             className={selectClass}
             value={filter.gate_name || ""}
@@ -364,7 +350,7 @@ const FilterBar = ({
         </Field>
 
         {/* Lot Status Filter */}
-        <Field label="Lot Status" className="w-full sm:w-36">
+        <Field label="Lot Status" className="w-full sm:w-32">
           <select
             className={selectClass}
             value={filter.lot_status}
@@ -383,7 +369,7 @@ const FilterBar = ({
         </Field>
 
         {/* Sort Filter */}
-        <Field label="Sort">
+        <Field label="Sort" className="shrink-0">
           <SortByDropdown
             sortModel={sortModel}
             onSortModelChange={onSortModelChange}
@@ -392,11 +378,12 @@ const FilterBar = ({
 
         {/* Due date Filter with Cally Calendar */}
         <Field label="Due date" className="w-full sm:w-auto">
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
             <CallyDatePicker
               value={filter.startdate}
               max={filter.stopdate || undefined}
               placeholder="Start date"
+              className="w-full sm:w-38"
               onChange={(v) => set("startdate", v)}
             />
             <span className="text-base-content/40">–</span>
@@ -404,11 +391,12 @@ const FilterBar = ({
               value={filter.stopdate}
               min={filter.startdate || undefined}
               placeholder="End date"
+              className="w-full sm:w-38"
               onChange={(v) => set("stopdate", v)}
             />
             <button
               type="button"
-              className="btn btn-sm btn-primary rounded-lg text-[13px] font-medium shadow-xs px-3.5 gap-1.5 cursor-pointer"
+              className="btn btn-sm btn-primary rounded-lg text-[13px] font-medium shadow-xs px-3 gap-1.5 cursor-pointer"
               onClick={() => onSearch()}
             >
               <Search size={14} className="shrink-0" />
@@ -416,17 +404,17 @@ const FilterBar = ({
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-ghost rounded-lg text-[13px] gap-1 text-base-content/60 hover:text-base-content cursor-pointer"
+              className="btn btn-sm btn-ghost rounded-lg text-[13px] gap-1 px-2 text-base-content/60 hover:text-base-content cursor-pointer"
               onClick={handleClearDate}
               disabled={!filter.startdate && !filter.stopdate}
               title="Clear date"
             >
-              <RotateCcw size={14} />
-              Clear
+              <RotateCcw size={13} />
+              <span>Clear</span>
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-ghost rounded-lg text-[13px] gap-1 text-base-content/60 hover:text-base-content cursor-pointer"
+              className="btn btn-sm btn-ghost rounded-lg text-[13px] gap-1 px-2 text-base-content/60 hover:text-base-content cursor-pointer"
               onClick={onReset}
               title="Reset all filters"
             >
