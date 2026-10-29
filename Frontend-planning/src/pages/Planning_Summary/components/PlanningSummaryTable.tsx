@@ -11,6 +11,7 @@ import {
   AlertCircle,
   AlertTriangle,
   FastForward,
+  RotateCcw,
 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { type PlanningSummaryRow } from "../types";
@@ -23,6 +24,7 @@ interface PlanningSummaryTableProps {
   onSortModelChange: (model: GridSortModel) => void;
   onExport?: () => void;
   onSkipDue?: (row: PlanningSummaryRow) => Promise<void> | void;
+  onUnskipDue?: (row: PlanningSummaryRow) => Promise<void> | void;
 }
 
 const num = (value: number | null | undefined, decimals = 0) =>
@@ -176,11 +178,14 @@ const PlanningSummaryTable = memo(
     onSortModelChange,
     onExport,
     onSkipDue,
+    onUnskipDue,
   }: PlanningSummaryTableProps) => {
     const confirm = useConfirm();
 
     const handleOpenPendingModal = useCallback(
       async (row: PlanningSummaryRow) => {
+        let requestedUndo = false;
+
         const shouldSkip = await confirm({
           variant: "info",
           size: "md",
@@ -213,18 +218,6 @@ const PlanningSummaryTable = memo(
                 )}
               </div>
 
-              {row.skipped_due_date && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 text-xs font-semibold text-amber-700 dark:text-amber-400">
-                  <FastForward size={13} className="shrink-0" />
-                  <span>
-                    Skipped from Due Date:{" "}
-                    <span className="font-bold tabular-nums">
-                      {toDMY(row.skipped_due_date)}
-                    </span>
-                  </span>
-                </div>
-              )}
-
               <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-amber-500/40">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
                   <AlertCircle size={14} />
@@ -248,12 +241,82 @@ const PlanningSummaryTable = memo(
                     : "No lot problem specified"}
                 </p>
               </div>
+
+              {row.skipped_due_date && (
+                <div className="flex items-center gap-1.5 px-1 pt-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  <FastForward size={14} className="shrink-0" />
+                  <span>
+                    Skipped from Due Date:{" "}
+                    <span className="font-bold tabular-nums">
+                      {toDMY(row.skipped_due_date)}
+                    </span>
+                  </span>
+                </div>
+              )}
             </div>
           ),
+          leftAction:
+            row.skipped_due_date && onUnskipDue ? (
+              <button
+                type="button"
+                onClick={() => {
+                  requestedUndo = true;
+                  window.dispatchEvent(
+                    new KeyboardEvent("keydown", { key: "Escape" })
+                  );
+                }}
+                className="btn btn-sm !bg-amber-500 hover:!bg-amber-600 !border-amber-500 !text-white rounded-full px-4 font-semibold gap-1.5 shadow-xs"
+              >
+                <RotateCcw size={13} />
+                <span>Undo Skip</span>
+              </button>
+            ) : undefined,
           cancelText: "Close",
           confirmText: "Skip Due",
           hideCancel: false,
         });
+
+        if (requestedUndo && onUnskipDue) {
+          await new Promise((r) => setTimeout(r, 160));
+          const isUndoConfirmed = await confirm({
+            variant: "save",
+            size: "sm",
+            title: "Confirm Undo Skip?",
+            description: (
+              <div className="flex flex-col gap-2.5 pt-1 text-sm">
+                <p className="text-base-content/70 text-[13px]">
+                  Restore this lot back to its original Due Date queue?
+                </p>
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-base-300 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base-content/60 font-medium">Product</span>
+                    <span className="font-bold text-primary">{row.prd_name}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base-content/60 font-medium">Lot No</span>
+                    <span className="font-mono font-bold text-[15px] text-base-content">{row.lot_no}</span>
+                  </div>
+                  {row.skipped_due_date && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-base-content/60 font-medium">Restore To</span>
+                      <span className="font-bold text-[14px] text-base-content tabular-nums">
+                        {toDMY(row.skipped_due_date)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ),
+            cancelText: "Cancel",
+            confirmText: "Confirm",
+            hideCancel: false,
+          });
+
+          if (isUndoConfirmed) {
+            await onUnskipDue(row);
+          }
+          return;
+        }
 
         if (shouldSkip && onSkipDue) {
           await new Promise((r) => setTimeout(r, 160));
@@ -294,7 +357,7 @@ const PlanningSummaryTable = memo(
           }
         }
       },
-      [confirm, onSkipDue]
+      [confirm, onSkipDue, onUnskipDue]
     );
 
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(
@@ -509,6 +572,9 @@ const PlanningSummaryTable = memo(
             loading={false}
             slots={{ loadingOverlay: () => null }}
             getRowId={(r) => r.id}
+            getRowClassName={({ row }) =>
+              row.skipped_due_date ? "skipped-due-row" : ""
+            }
             rowHeight={44}
             resizeThrottleMs={0}
             columnHeaderHeight={40}
@@ -582,6 +648,12 @@ const PlanningSummaryTable = memo(
               "& .MuiDataGrid-row:hover": {
                 backgroundColor:
                   "color-mix(in oklab, var(--color-base-content) 3.5%, transparent)",
+              },
+              "& .MuiDataGrid-row.skipped-due-row": {
+                backgroundColor: "color-mix(in oklab, #f59e0b 14%, transparent)",
+              },
+              "& .MuiDataGrid-row.skipped-due-row:hover": {
+                backgroundColor: "color-mix(in oklab, #f59e0b 22%, transparent)",
               },
               "& .MuiDataGrid-virtualScroller": {
                 opacity: "1 !important",

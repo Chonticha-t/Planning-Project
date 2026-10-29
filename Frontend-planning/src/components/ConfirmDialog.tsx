@@ -10,6 +10,7 @@ export interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   hideCancel?: boolean;
+  leftAction?: React.ReactNode;
   variant?: ConfirmVariant;
   from?: "top" | "bottom" | "left" | "right";
   size?: "sm" | "md" | "lg";
@@ -136,24 +137,27 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     )}
                   </div>
                 </div>
-                <div className="bg-base-200/50 border-t border-base-300 px-5 py-3.5 flex justify-end gap-2">
-                  {!options.hideCancel && (
+                <div className="bg-base-200/50 border-t border-base-300 px-5 py-3.5 flex items-center justify-between gap-2">
+                  <div>{options.leftAction}</div>
+                  <div className="flex items-center gap-2">
+                    {!options.hideCancel && (
+                      <button
+                        type="button"
+                        onClick={() => close(false)}
+                        className="btn btn-sm btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content rounded-full px-5 font-semibold"
+                      >
+                        {options.cancelText ?? "Cancel"}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => close(false)}
-                      className="btn btn-sm btn-outline border-base-300 hover:bg-base-200 hover:border-base-300 hover:text-base-content text-base-content rounded-full px-5 font-semibold"
+                      autoFocus
+                      onClick={() => close(true)}
+                      className={`btn btn-sm ${variant.button} rounded-full px-5 font-semibold`}
                     >
-                      {options.cancelText ?? "Cancel"}
+                      {options.confirmText ?? variant.confirmText}
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    autoFocus
-                    onClick={() => close(true)}
-                    className={`btn btn-sm ${variant.button} rounded-full px-5 font-semibold`}
-                  >
-                    {options.confirmText ?? variant.confirmText}
-                  </button>
+                  </div>
                 </div>
               </motion.div>
             </div>

@@ -13,8 +13,15 @@ import { toDMY } from "../../PO_Balance/utils";
 const Planning_Summary: React.FC = () => {
   const [filter, setFilter] = useState<PlanningSummaryFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
-  const { rows, kpi, filtersOptions, loading, fetchData, skipLotDueDate } =
-    usePlanningSummary();
+  const {
+    rows,
+    kpi,
+    filtersOptions,
+    loading,
+    fetchData,
+    skipLotDueDate,
+    unskipLotDueDate,
+  } = usePlanningSummary();
 
   const handleReset = useCallback(() => {
     setFilter(EMPTY_FILTER);
@@ -119,6 +126,7 @@ const Planning_Summary: React.FC = () => {
         onSortModelChange={setSortModel}
         onExport={handleExport}
         onSkipDue={skipLotDueDate}
+        onUnskipDue={unskipLotDueDate}
       />
     </div>
   );

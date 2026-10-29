@@ -16,3 +16,6 @@ export const PLANNING_SUMMARY_STREAM_API = `${API_BASE_URL}/planning_summary/str
 
 // ⏭️ กดปุ่ม Skip Due สำหรับย้าย Lot ที่ติด PENDING ไป Due Date ถัดไป
 export const PLANNING_SUMMARY_SKIP_DUE_API = `${API_BASE_URL}/planning_summary/skip_due`;
+
+// ↩️ กดปุ่ม Undo Skip สำหรับคืนค่า Lot กลับไป Due Date เดิม
+export const PLANNING_SUMMARY_UNSKIP_DUE_API = `${API_BASE_URL}/planning_summary/unskip_due`;

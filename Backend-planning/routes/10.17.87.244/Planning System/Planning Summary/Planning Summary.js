@@ -759,6 +759,65 @@ router.post("/skip_due", async (req, res) => {
 });
 
 /**
+ * ↩️ POST /unskip_due: ยกเลิกการ Skip Due (คืนค่า Lot กลับสู่คิว FIFO ปกติ)
+ */
+router.post("/unskip_due", async (req, res) => {
+  setNoCache(res);
+  const prd_name = asStr(req.body?.prd_name);
+  const lot_no = asStr(req.body?.lot_no);
+
+  if (!prd_name || !lot_no) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: null,
+      message: "Required fields: prd_name and lot_no.",
+    });
+  }
+
+  const client = await pool_smart.connect();
+  try {
+    await client.query("BEGIN");
+
+    await client.query(
+      `DELETE FROM planning.planning_lot_skip WHERE lot_no = $1`,
+      [lot_no]
+    );
+
+    const { assignedDueDateByLot } = await reallocateProductWithSkips(
+      client,
+      prd_name
+    );
+
+    const restoredDue = assignedDueDateByLot.get(lot_no) || null;
+
+    await client.query("COMMIT");
+    broadcastChange();
+
+    return res.json({
+      status: "OK",
+      data: {
+        prd_name,
+        lot_no,
+        restored_due_date: restoredDue,
+      },
+      message: restoredDue
+        ? `Restored Lot ${lot_no} to Due Date ${restoredDue}`
+        : `Restored Lot ${lot_no}`,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error in POST /planning_summary/unskip_due:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: null,
+      message: err.message || "Internal server error",
+    });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * 📊 2. GET /summary: ยอดสรุปภาพรวม KPI Cards
  */
 router.get("/summary", async (req, res) => {

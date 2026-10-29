@@ -7,6 +7,7 @@ import {
   PLANNING_SUMMARY_FILTERS_API,
   PLANNING_SUMMARY_STREAM_API,
   PLANNING_SUMMARY_SKIP_DUE_API,
+  PLANNING_SUMMARY_UNSKIP_DUE_API,
 } from "./api";
 import type {
   ApiResponse,
@@ -286,6 +287,50 @@ export const usePlanningSummary = () => {
     [fetchData]
   );
 
+  // กดปุ่ม Undo Skip เพื่อคืนค่า Lot กลับไป Due Date เดิมตามลำดับ FIFO
+  const unskipLotDueDate = useCallback(
+    async (row: PlanningSummaryRow) => {
+      const toastId = toast.loading(`Restoring Due Date for Lot ${row.lot_no}...`);
+      try {
+        const res = await axios.post<
+          ApiResponse<{
+            prd_name: string;
+            lot_no: string;
+            restored_due_date: string | null;
+          }>
+        >(
+          PLANNING_SUMMARY_UNSKIP_DUE_API,
+          {
+            prd_name: row.prd_name,
+            lot_no: row.lot_no,
+          },
+          { timeout: AJAX_TIMEOUT_MS }
+        );
+
+        if (res.data?.status === "OK") {
+          const restoredDue = res.data.data?.restored_due_date;
+          toast.success(
+            restoredDue
+              ? `Restored Lot ${row.lot_no} back to Due Date ${toDMY(restoredDue)}`
+              : `Restored Lot ${row.lot_no}`,
+            { id: toastId, duration: 4000 }
+          );
+          await fetchData(activeFilterRef.current, { silent: true });
+        } else {
+          toast.error(res.data?.message || "Failed to undo Skip Due", {
+            id: toastId,
+          });
+        }
+      } catch (err) {
+        const msg = axios.isAxiosError(err)
+          ? err.response?.data?.message
+          : undefined;
+        toast.error(msg || "Error restoring Due Date", { id: toastId });
+      }
+    },
+    [fetchData]
+  );
+
   // โหลดข้อมูลครั้งแรก
   useEffect(() => {
     fetchData(EMPTY_FILTER);
@@ -356,6 +401,7 @@ export const usePlanningSummary = () => {
     fetchData,
     fetchFilterOptions,
     skipLotDueDate,
+    unskipLotDueDate,
     dbVersion,
   };
 };
