@@ -23,6 +23,8 @@ export const EMPTY_FILTER: PlanningSummaryFilter = {
   status: "",
   priority: "",
   item_prefix: "",
+  proc_disp: "",
+  gate_name: "",
   lot_status: "",
   factory_desc: "",
   startdate: "",
@@ -103,6 +105,8 @@ export const usePlanningSummary = () => {
     lot_nos: [],
     statuses: [],
     priorities: [],
+    processes: [],
+    gate_names: [],
     lot_statuses: [],
     factories: [],
   });

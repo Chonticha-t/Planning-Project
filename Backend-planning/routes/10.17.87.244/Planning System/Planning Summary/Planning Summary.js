@@ -526,6 +526,8 @@ const buildWhereClause = (queryParams) => {
   const search = asStr(queryParams.search);
   const status = asStr(queryParams.status);
   const priority = asStr(queryParams.priority);
+  const proc_disp = asStr(queryParams.proc_disp || queryParams.process);
+  const gate_name = asStr(queryParams.gate_name);
   const lot_status = asStr(queryParams.lot_status);
   const factory_desc = asStr(queryParams.factory_desc);
   const startdate = asStr(queryParams.startdate);
@@ -568,6 +570,16 @@ const buildWhereClause = (queryParams) => {
   if (status !== "") {
     params.push(status);
     conditions.push(`status = $${params.length}`);
+  }
+
+  if (proc_disp !== "") {
+    params.push(proc_disp);
+    conditions.push(`proc_disp = $${params.length}`);
+  }
+
+  if (gate_name !== "") {
+    params.push(gate_name);
+    conditions.push(`gate_name = $${params.length}`);
   }
 
   if (lot_status !== "") {
@@ -901,12 +913,23 @@ router.get("/distinct_filters", async (req, res) => {
         ARRAY(SELECT DISTINCT lot_no FROM planning.planning_summary WHERE lot_no IS NOT NULL AND lot_no <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY lot_no) AS lot_nos,
         ARRAY(SELECT DISTINCT status FROM planning.planning_summary WHERE status IS NOT NULL AND status <> '' AND LOWER(status) != 'ready' ORDER BY status) AS statuses,
         ARRAY(SELECT DISTINCT priority FROM planning.planning_summary WHERE priority IS NOT NULL AND priority <> '' AND (status IS NULL OR LOWER(status) != 'ready') ORDER BY priority) AS priorities,
+        ARRAY(SELECT DISTINCT proc_disp FROM planning.planning_summary WHERE proc_disp IS NOT NULL AND TRIM(proc_disp) <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY proc_disp) AS processes,
+        ARRAY(SELECT DISTINCT gate_name FROM planning.planning_summary WHERE gate_name IS NOT NULL AND TRIM(gate_name) <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY gate_name) AS gate_names,
         ARRAY(SELECT DISTINCT lot_status FROM planning.planning_summary WHERE lot_status IS NOT NULL AND lot_status <> '' AND (status IS NULL OR LOWER(status) != 'ready') ORDER BY lot_status) AS lot_statuses,
         ARRAY(SELECT DISTINCT factory_desc FROM planning.planning_summary WHERE factory_desc IS NOT NULL AND factory_desc <> '' AND (status IS NULL OR LOWER(status) != 'ready') ORDER BY factory_desc) AS factories
     `;
 
     const { rows } = await query(sql, params);
-    const result = rows[0] || { products: [], lot_nos: [], statuses: [], priorities: [], lot_statuses: [], factories: [] };
+    const result = rows[0] || {
+      products: [],
+      lot_nos: [],
+      statuses: [],
+      priorities: [],
+      processes: [],
+      gate_names: [],
+      lot_statuses: [],
+      factories: [],
+    };
 
     return res.json({
       status: "OK",
@@ -917,7 +940,16 @@ router.get("/distinct_filters", async (req, res) => {
     console.error("Error in GET /planning_summary/distinct_filters:", err);
     return res.status(500).json({
       status: "ERROR",
-      data: { products: [], lot_nos: [], statuses: [], priorities: [], lot_statuses: [], factories: [] },
+      data: {
+        products: [],
+        lot_nos: [],
+        statuses: [],
+        priorities: [],
+        processes: [],
+        gate_names: [],
+        lot_statuses: [],
+        factories: [],
+      },
       message: err.message || "Internal server error",
     });
   }
