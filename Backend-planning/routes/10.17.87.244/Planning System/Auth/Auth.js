@@ -20,36 +20,40 @@ const setNoCache = (res) => {
   });
 };
 
-// ── Password Hashing Helpers (Node Built-in crypto.scrypt) ──────────
-const hashPassword = (password) => {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(String(password), salt, 64).toString("hex");
-  return `scrypt$${salt}$${hash}`;
-};
+// ── Password Helpers (Plain Text) ────────────────────────────────────
+// ปรับเป็น Plain Text (ไม่ใช้ hash) ตามความต้องการของผู้ใช้
+const hashPassword = (password) => String(password ?? "");
 
-const verifyPassword = (password, storedHash) => {
-  if (!storedHash || typeof storedHash !== "string") return false;
+const verifyPassword = (password, storedPassword) => {
+  if (!storedPassword || typeof storedPassword !== "string") return false;
   const pwd = String(password ?? "");
 
-  if (storedHash.startsWith("scrypt$")) {
-    const parts = storedHash.split("$");
-    if (parts.length !== 3) return false;
-    const [, salt, keyHex] = parts;
-    try {
-      const keyBuf = Buffer.from(keyHex, "hex");
-      const derivedKey = crypto.scryptSync(pwd, salt, 64);
-      if (keyBuf.length !== derivedKey.length) return false;
-      return crypto.timingSafeEqual(keyBuf, derivedKey);
-    } catch {
-      return false;
+  // ตรวจสอบแบบ Plain text โดยตรง
+  if (pwd === storedPassword) {
+    return true;
+  }
+
+  // Fallback: รองรับกรณีข้อมูลเดิมใน Database ยังคงเป็น scrypt hash ค้างอยู่
+  if (storedPassword.startsWith("scrypt$")) {
+    const parts = storedPassword.split("$");
+    if (parts.length === 3) {
+      const [, salt, keyHex] = parts;
+      try {
+        const keyBuf = Buffer.from(keyHex, "hex");
+        const derivedKey = crypto.scryptSync(pwd, salt, 64);
+        if (
+          keyBuf.length === derivedKey.length &&
+          crypto.timingSafeEqual(keyBuf, derivedKey)
+        ) {
+          return true;
+        }
+      } catch {
+        return false;
+      }
     }
   }
 
-  // Fallback กรณีมีการเพิ่มรหัสผ่านแบบ Plain text ลงใน DB โดยตรงผ่าน DBeaver/pgAdmin
-  const a = Buffer.from(pwd, "utf8");
-  const b = Buffer.from(storedHash, "utf8");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  return false;
 };
 
 // ── JWT Helpers (HS256) ──────────────────────────────────────────────
@@ -146,15 +150,21 @@ const initAuthDb = () => {
         ADD COLUMN IF NOT EXISTS skipped_by VARCHAR(100);
       `);
 
-      // สร้าง User เริ่มต้น: username = admin, password = admin
-      const defaultAdminHash = hashPassword("admin");
+      // อัปเดตรหัสผ่าน user admin เดิมที่เป็น scrypt hash ให้กลายเป็น plain text 'admin'
+      await query(`
+        UPDATE planning.planning_users
+        SET password_hash = 'admin'
+        WHERE username = 'admin' AND password_hash LIKE 'scrypt$%';
+      `);
+
+      // สร้าง User เริ่มต้น: username = admin, password = admin (Plain text)
       await query(
         `
           INSERT INTO planning.planning_users (username, password_hash, full_name, role, is_active)
           VALUES ($1, $2, $3, 'admin', TRUE)
           ON CONFLICT (username) DO NOTHING;
         `,
-        ["admin", defaultAdminHash, "Administrator"]
+        ["admin", "admin", "Administrator"]
       );
     } catch (err) {
       console.error("Failed to initialize planning_users table:", err.message);
@@ -230,6 +240,18 @@ router.post("/login", async (req, res) => {
         status: "ERROR",
         message: "Invalid username or password.",
       });
+    }
+
+    // หากบัญชีเดิมยังติด hash scrypt ให้อัปเดตเป็น plain text อัตโนมัติ
+    if (
+      user.password_hash &&
+      typeof user.password_hash === "string" &&
+      user.password_hash.startsWith("scrypt$")
+    ) {
+      query(
+        `UPDATE planning.planning_users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`,
+        [password, user.user_id]
+      ).catch((e) => console.error("Failed to auto-migrate password:", e));
     }
 
     if (!user.is_active) {
