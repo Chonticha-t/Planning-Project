@@ -70,6 +70,7 @@ export interface PlanningSummaryKPI {
   total_lots: number;
   total_net_required: number;
   total_net_wip: number;
+  top_count?: number;
   urgent_count?: number;
   high_count?: number;
   wip_count?: number;

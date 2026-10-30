@@ -37,6 +37,7 @@ export const INITIAL_KPI: PlanningSummaryKPI = {
   total_lots: 0,
   total_net_required: 0,
   total_net_wip: 0,
+  top_count: 0,
   urgent_count: 0,
   high_count: 0,
   wip_count: 0,
@@ -53,6 +54,7 @@ export const computeKPIFromRows = (rows: PlanningSummaryRow[]): PlanningSummaryK
   const lots = new Set<string>();
   let total_net_required = 0;
   let total_net_wip = 0;
+  let top_count = 0;
   let urgent_count = 0;
   let high_count = 0;
   let wip_count = 0;
@@ -68,7 +70,8 @@ export const computeKPIFromRows = (rows: PlanningSummaryRow[]): PlanningSummaryK
     total_net_wip += Number(r.net_wip_qty) || 0;
 
     const prio = (r.priority || "").toUpperCase().trim();
-    if (prio === "URGENT" || prio === "P1") urgent_count += 1;
+    if (prio.includes("TOP")) top_count += 1;
+    else if (prio === "URGENT" || prio === "P1") urgent_count += 1;
     else if (prio === "HIGH" || prio === "P2") high_count += 1;
 
     const lStatus = (r.lot_status || "").toUpperCase().trim();
@@ -87,6 +90,7 @@ export const computeKPIFromRows = (rows: PlanningSummaryRow[]): PlanningSummaryK
     total_lots: lots.size,
     total_net_required,
     total_net_wip,
+    top_count,
     urgent_count,
     high_count,
     wip_count,

@@ -17,9 +17,10 @@ const fmt = (n: number | null | undefined) =>
   Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 const SummaryCards = ({ kpi }: SummaryCardsProps) => {
+  const topCount = kpi.top_count ?? 0;
   const urgentCount = kpi.urgent_count ?? 0;
   const highCount = kpi.high_count ?? 0;
-  const totalPriority = urgentCount + highCount;
+  const totalPriority = topCount + urgentCount + highCount;
 
   const wipCount = kpi.wip_count ?? 0;
   const pendingCount = kpi.pending_count ?? 0;
@@ -72,13 +73,18 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       valueColor: "text-emerald-500",
     },
 
-    // 3. Priority: Urgent / High
+    // 3. Priority: Top / Urgent / High
     {
       title: "Priority Orders",
       value: fmt(totalPriority),
       unit: "lines",
       sub: (
-        <div className="flex items-center justify-between gap-2 text-base-content/70">
+        <div className="flex items-center justify-between gap-1.5 text-base-content/70 flex-wrap">
+          {topCount > 0 && (
+            <span className="shrink-0 font-medium text-blue-600 dark:text-blue-400">
+              Top: <span className="font-bold">{fmt(topCount)}</span>
+            </span>
+          )}
           <span className="shrink-0 font-medium text-rose-600">
             Urgent: <span className="font-bold">{fmt(urgentCount)}</span>
           </span>

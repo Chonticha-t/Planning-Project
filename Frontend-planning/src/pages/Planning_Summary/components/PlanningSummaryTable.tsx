@@ -113,6 +113,14 @@ const PriorityCell = ({ priority }: { priority: string | null | undefined }) => 
   const p = priority.trim();
   const upper = p.toUpperCase();
 
+  if (upper.includes("TOP")) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-[#2563eb] text-white font-bold text-[12px] tracking-wider uppercase select-all">
+        {p}
+      </div>
+    );
+  }
+
   if (upper.includes("URGENT") || upper === "P1") {
     return (
       <div className="w-full h-full flex items-center justify-center bg-[#dc2626] text-white font-bold text-[12px] tracking-wider uppercase select-all">
