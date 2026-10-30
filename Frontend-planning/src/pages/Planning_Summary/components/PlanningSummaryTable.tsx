@@ -36,6 +36,19 @@ const num = (value: number | null | undefined, decimals = 0) =>
         maximumFractionDigits: decimals,
       });
 
+// แปลง "YYYY-MM-DD HH:MI:SS" -> "DD/MM/YYYY HH:MI" สำหรับแสดงผลคอลัมน์ Scan WIP FFPC
+export const formatScanWip = (value: string | null | undefined) => {
+  if (!value) return "";
+  const str = String(value).trim();
+  if (!str) return "";
+  const datePart = toDMY(str.slice(0, 10));
+  const timePart = str.slice(11, 16); // HH:MI
+  if (timePart && timePart !== "00:00") {
+    return `${datePart} ${timePart}`;
+  }
+  return datePart;
+};
+
 const NumberCell = ({
   value,
   strong,
@@ -540,6 +553,22 @@ const PlanningSummaryTable = memo(
           },
         },
         {
+          field: "scan_in",
+          headerName: "Scan WIP FFPC",
+          headerAlign: "center",
+          align: "center",
+          minWidth: 160,
+          flex: 1,
+          renderCell: ({ value }) =>
+            value ? (
+              <span className="font-medium tabular-nums text-base-content/85 text-[13.5px] whitespace-nowrap">
+                {formatScanWip(value)}
+              </span>
+            ) : (
+              <span className="text-base-content/25">-</span>
+            ),
+        },
+        {
           field: "lot_status",
           headerName: "Lot Status",
           headerAlign: "center",
@@ -695,6 +724,14 @@ const PlanningSummaryTable = memo(
                 opacity: "1 !important",
                 willChange: "transform",
               },
+              "& .MuiDataGrid-virtualScroller--hasScrollX": {
+                flex: "0 0 calc(100% - var(--DataGrid-scrollbarSize, 17px)) !important",
+                height: "calc(100% - var(--DataGrid-scrollbarSize, 17px)) !important",
+                maxHeight: "calc(100% - var(--DataGrid-scrollbarSize, 17px)) !important",
+              },
+              "& .MuiDataGrid-virtualScrollerContent": {
+                paddingBottom: "4px !important",
+              },
               "& .MuiDataGrid-overlayWrapper": {
                 display: "none !important",
               },
@@ -703,6 +740,20 @@ const PlanningSummaryTable = memo(
               },
               "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
                 { outline: "none" },
+
+              // ── Horizontal Scrollbar: วางด้านล่างสุดเต็มขนาด ไม่หลบข้างใน และไม่ทับแถวข้อมูล ──
+              "& .MuiDataGrid-scrollbar--horizontal": {
+                position: "absolute !important",
+                bottom: "0 !important",
+                left: "0 !important",
+                right: "0 !important",
+                zIndex: 10,
+                borderTop: `1px solid ${border}`,
+                backgroundColor: "color-mix(in oklab, var(--color-base-200) 65%, var(--color-base-100))",
+              },
+              "& .MuiDataGrid-scrollbar--horizontal.MuiDataGrid-scrollbar--hidden": {
+                display: "none !important",
+              },
 
               // ── Footer / Pagination ──
               "& .MuiDataGrid-footerContainer": {

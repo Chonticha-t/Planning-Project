@@ -328,11 +328,33 @@ const POBalanceTable = ({
               opacity: "1 !important",
               willChange: "transform",
             },
+            "& .MuiDataGrid-virtualScroller--hasScrollX": {
+              flex: "0 0 calc(100% - var(--DataGrid-scrollbarSize, 17px)) !important",
+              height: "calc(100% - var(--DataGrid-scrollbarSize, 17px)) !important",
+              maxHeight: "calc(100% - var(--DataGrid-scrollbarSize, 17px)) !important",
+            },
+            "& .MuiDataGrid-virtualScrollerContent": {
+              paddingBottom: "4px !important",
+            },
             "& .MuiDataGrid-overlayWrapper": {
               display: "none !important",
             },
             "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
               { outline: "none" },
+
+            // ── Horizontal Scrollbar: วางไว้ด้านล่างข้อมูล ไม่ลอยทับแถวตาราง ──
+            "& .MuiDataGrid-scrollbar--horizontal": {
+              position: "absolute !important",
+              bottom: "0 !important",
+              left: "0 !important",
+              right: "0 !important",
+              zIndex: 10,
+              borderTop: `1px solid ${border}`,
+              backgroundColor: "color-mix(in oklab, var(--color-base-200) 65%, var(--color-base-100))",
+            },
+            "& .MuiDataGrid-scrollbar--horizontal.MuiDataGrid-scrollbar--hidden": {
+              display: "none !important",
+            },
 
             // ── Footer / Pagination ──────────────────
             "& .MuiDataGrid-footerContainer": {

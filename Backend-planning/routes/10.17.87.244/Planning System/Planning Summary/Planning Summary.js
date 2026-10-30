@@ -40,7 +40,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
         prd_name,
         item,
         to_char(due_date, 'YYYY-MM-DD') AS due_date,
+        to_char(COALESCE(due_datetime, due_date::timestamp), 'YYYY-MM-DD HH24:MI:SS') AS due_datetime,
         to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
+        to_char(ship_to_p1_datetime, 'YYYY-MM-DD HH24:MI:SS') AS ship_to_p1_datetime,
         to_char(scan_in, 'YYYY-MM-DD HH24:MI:SS') AS scan_in,
         priority,
         day_left::int4 AS day_left,
@@ -101,7 +103,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
         prd_name: r.prd_name,
         item: r.item,
         due_date: due,
+        due_datetime: r.due_datetime || `${due} 00:00:00`,
         ship_to_p1: r.ship_to_p1,
+        ship_to_p1_datetime: r.ship_to_p1_datetime || null,
         day_left: r.day_left,
         po_bal: r.po_bal,
         inventory: r.inventory,
@@ -117,6 +121,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
     const po = poMap.get(due);
     if (!po.item && r.item) po.item = r.item;
     if (!po.prd_type && r.prd_type) po.prd_type = r.prd_type;
+    if (!po.ship_to_p1_datetime && r.ship_to_p1_datetime) {
+      po.ship_to_p1_datetime = r.ship_to_p1_datetime;
+    }
 
     const st = (r.status || "").toLowerCase().trim();
     if (st === "need wip" || r.gate_name === "PRE_FFPC") {
@@ -239,7 +246,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
         prd_name: po.prd_name,
         item: lot.item || po.item,
         due_date: po.due_date,
+        due_datetime: po.due_datetime,
         ship_to_p1: po.ship_to_p1,
+        ship_to_p1_datetime: po.ship_to_p1_datetime,
         scan_in: lot.scan_in || null,
         priority: rowPriority,
         day_left: rowDayLeft,
@@ -269,7 +278,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
         prd_name: po.prd_name,
         item: po.item,
         due_date: po.due_date,
+        due_datetime: po.due_datetime,
         ship_to_p1: po.ship_to_p1,
+        ship_to_p1_datetime: po.ship_to_p1_datetime,
         scan_in: null,
         priority: po.base_priority,
         day_left: po.base_day_left,
@@ -311,7 +322,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
           prd_name,
           item,
           due_date,
+          due_datetime,
           ship_to_p1,
+          ship_to_p1_datetime,
           scan_in,
           priority,
           day_left,
@@ -334,17 +347,19 @@ const reallocateProductWithSkips = async (client, prdName) => {
           pending_reason,
           updated_at
         ) VALUES (
-          $1, $2, $3::date, $4::date, $5::timestamp, $6, $7::int4,
-          $8::numeric, $9::numeric, $10::numeric, $11::numeric,
-          $12, $13, $14, $15::int4, $16::numeric, $17::numeric,
-          $18, $19, $20, $21::numeric, $22, $23, $24, CURRENT_TIMESTAMP
+          $1, $2, $3::date, COALESCE($4::timestamp, $3::timestamp), $5::date, $6::timestamp, $7::timestamp, $8, $9::int4,
+          $10::numeric, $11::numeric, $12::numeric, $13::numeric,
+          $14, $15, $16, $17::int4, $18::numeric, $19::numeric,
+          $20, $21, $22, $23::numeric, $24, $25, $26, CURRENT_TIMESTAMP
         )
       `,
       [
         row.prd_name,
         row.item,
         row.due_date,
+        row.due_datetime,
         row.ship_to_p1,
+        row.ship_to_p1_datetime,
         row.scan_in,
         row.priority,
         row.day_left,
@@ -369,7 +384,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
     );
   }
 
-    // 5. อัปเดตคอลัมน์ due_date (Due Date ใหม่ที่ย้ายไปลง) ในตาราง planning.planning_lot_skip
+  // 5. อัปเดตคอลัมน์ due_date (Due Date ใหม่ที่ย้ายไปลง) ในตาราง planning.planning_lot_skip
   for (const [lotNo] of skipMap.entries()) {
     const newTargetDue = assignedDueDateByLot.get(lotNo) || null;
     await client.query(

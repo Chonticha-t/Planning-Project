@@ -383,7 +383,7 @@ const FilterBar = ({
               value={filter.startdate}
               max={filter.stopdate || undefined}
               placeholder="Start date"
-              className="w-full sm:w-38"
+              className="w-full sm:w-40"
               onChange={(v) => set("startdate", v)}
             />
             <span className="text-base-content/40">–</span>
@@ -391,7 +391,7 @@ const FilterBar = ({
               value={filter.stopdate}
               min={filter.startdate || undefined}
               placeholder="End date"
-              className="w-full sm:w-38"
+              className="w-full sm:w-40"
               onChange={(v) => set("stopdate", v)}
             />
             <button

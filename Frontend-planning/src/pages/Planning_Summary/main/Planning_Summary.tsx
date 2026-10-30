@@ -6,7 +6,9 @@ import type { PlanningSummaryFilter } from "../types";
 import usePlanningSummary, { EMPTY_FILTER } from "../hooks/usePlanningSummary";
 import SummaryCards from "../components/SummaryCards";
 import FilterBar from "../components/FilterBar";
-import PlanningSummaryTable from "../components/PlanningSummaryTable";
+import PlanningSummaryTable, {
+  formatScanWip,
+} from "../components/PlanningSummaryTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import { toDMY } from "../../PO_Balance/utils";
 
@@ -79,6 +81,11 @@ const Planning_Summary: React.FC = () => {
           align: "left",
         },
         {
+          header: "SCAN WIP FFPC",
+          key: "scan_in",
+          align: "center",
+        },
+        {
           header: "LOT STATUS",
           key: "lot_status",
           align: "center",
@@ -101,6 +108,7 @@ const Planning_Summary: React.FC = () => {
           : r.gate_name
           ? `(${r.gate_name})`
           : "",
+        scan_in: r.scan_in ? formatScanWip(r.scan_in) : "",
         lot_status: r.lot_status,
       })),
     });

@@ -4,6 +4,7 @@ export interface PlanningSummaryRow {
   item?: string;
   due_date: string;
   ship_to_p1?: string | null;
+  scan_in?: string | null;
   priority?: string | null;
   day_left?: number | null;
   po_bal: number;
@@ -38,6 +39,7 @@ export const SORT_OPTIONS: { field: keyof PlanningSummaryRow; label: string }[] 
   { field: "lot_no", label: "Lot No" },
   { field: "net_wip_qty", label: "Net WIP" },
   { field: "proc_disp", label: "Process (Gate Process)" },
+  { field: "scan_in", label: "Scan WIP FFPC" },
   { field: "lot_status", label: "Lot Status" },
 ];
 
