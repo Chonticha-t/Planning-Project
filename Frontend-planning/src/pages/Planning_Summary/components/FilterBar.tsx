@@ -312,9 +312,9 @@ const FilterBar = ({
         </Field>
 
         {/* Priority Filter */}
-        <Field label="Priority" className="w-full sm:w-28">
+        <Field label="Priority" className="w-full sm:w-32">
           <select
-            className={selectClass}
+            className={`${selectClass} pe-9`}
             value={filter.priority || ""}
             onChange={(e) => {
               const next = set("priority", e.target.value);
@@ -383,7 +383,7 @@ const FilterBar = ({
               value={filter.startdate}
               max={filter.stopdate || undefined}
               placeholder="Start date"
-              className="w-full sm:w-40"
+              className="w-full sm:w-36"
               onChange={(v) => set("startdate", v)}
             />
             <span className="text-base-content/40">–</span>
@@ -391,7 +391,7 @@ const FilterBar = ({
               value={filter.stopdate}
               min={filter.startdate || undefined}
               placeholder="End date"
-              className="w-full sm:w-40"
+              className="w-full sm:w-36"
               onChange={(v) => set("stopdate", v)}
             />
             <button

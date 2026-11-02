@@ -1,4 +1,5 @@
-import { memo, useMemo, useCallback } from "react";
+import { memo, useMemo, useCallback, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   DataGrid,
   GridColDef,
@@ -216,6 +217,88 @@ const PlanningSummaryTable = memo(
   }: PlanningSummaryTableProps) => {
     const confirm = useConfirm();
     const { requireAdmin } = useAuth();
+    const gridContainerRef = useRef<HTMLDivElement>(null);
+    const dockedScrollbarRef = useRef<HTMLDivElement>(null);
+    const dockedScrollContentRef = useRef<HTMLDivElement>(null);
+
+    const handleDockedScroll = useCallback(() => {
+      const scrollbar = dockedScrollbarRef.current;
+      const native = gridContainerRef.current?.querySelector<HTMLElement>(
+        ".MuiDataGrid-scrollbar--horizontal"
+      );
+      if (scrollbar && scrollbar.clientWidth > 0 && native && Math.abs(native.scrollLeft - scrollbar.scrollLeft) > 0.5) {
+        native.scrollLeft = scrollbar.scrollLeft;
+      }
+    }, []);
+
+    useLayoutEffect(() => {
+      const container = gridContainerRef.current;
+      const scrollbar = dockedScrollbarRef.current;
+      const content = dockedScrollContentRef.current;
+      if (!container || !scrollbar || !content) return;
+      let frame = 0;
+      let observedContent: Element | null = null;
+
+      const updateScrollbar = () => {
+        frame = 0;
+        const native = container.querySelector<HTMLElement>(".MuiDataGrid-scrollbar--horizontal");
+        const headers = container.querySelector<HTMLElement>(".MuiDataGrid-columnHeaders");
+        if (!native || !headers) {
+          scrollbar.style.display = "none";
+          return;
+        }
+
+        if (observedContent !== native.firstElementChild) {
+          if (observedContent) resizeObserver.unobserve(observedContent);
+          observedContent = native.firstElementChild;
+          if (observedContent) resizeObserver.observe(observedContent);
+        }
+
+        const rect = native.getBoundingClientRect();
+        const viewport = window.visualViewport;
+        const viewportBottom = (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - 1;
+        const hasOverflow = native.scrollWidth > native.clientWidth;
+        const shouldDock = hasOverflow && rect.bottom > viewportBottom &&
+          headers.getBoundingClientRect().bottom < viewportBottom - 24;
+        scrollbar.style.display = shouldDock ? "block" : "none";
+        if (!shouldDock) return;
+
+        // Match the native scrollbar's range; MUI continues to synchronize the grid.
+        scrollbar.style.left = `${rect.left}px`;
+        scrollbar.style.top = `${viewportBottom - Math.max(native.offsetHeight, 17)}px`;
+        scrollbar.style.width = `${native.clientWidth}px`;
+        scrollbar.style.height = `${Math.max(native.offsetHeight, 17)}px`;
+        content.style.width = `${native.scrollWidth}px`;
+        if (Math.abs(scrollbar.scrollLeft - native.scrollLeft) > 0.5) {
+          scrollbar.scrollLeft = native.scrollLeft;
+        }
+      };
+
+      const scheduleUpdate = (event?: Event) => {
+        if (event?.target === scrollbar) return;
+        if (!frame) frame = window.requestAnimationFrame(updateScrollbar);
+      };
+      const resizeObserver = new ResizeObserver(() => scheduleUpdate());
+      const mutationObserver = new MutationObserver(() => scheduleUpdate());
+      resizeObserver.observe(container);
+      if (container.parentElement) resizeObserver.observe(container.parentElement);
+      mutationObserver.observe(container, { childList: true, subtree: true });
+      window.addEventListener("resize", scheduleUpdate);
+      window.addEventListener("scroll", scheduleUpdate, true);
+      window.visualViewport?.addEventListener("resize", scheduleUpdate);
+      window.visualViewport?.addEventListener("scroll", scheduleUpdate);
+      updateScrollbar();
+
+      return () => {
+        resizeObserver.disconnect();
+        mutationObserver.disconnect();
+        window.removeEventListener("resize", scheduleUpdate);
+        window.removeEventListener("scroll", scheduleUpdate, true);
+        window.visualViewport?.removeEventListener("resize", scheduleUpdate);
+        window.visualViewport?.removeEventListener("scroll", scheduleUpdate);
+        if (frame) window.cancelAnimationFrame(frame);
+      };
+    }, []);
 
     const handleOpenPendingModal = useCallback(
       async (row: PlanningSummaryRow) => {
@@ -624,8 +707,33 @@ const PlanningSummaryTable = memo(
           </div>
         </div>
 
+        {/* Escape DataGrid's transformed clipping container for viewport docking. */}
+        {createPortal(
+          <div
+            ref={dockedScrollbarRef}
+            role="region"
+            aria-label="Planning Summary horizontal scroll"
+            tabIndex={0}
+            onScroll={handleDockedScroll}
+            style={{
+              display: "none",
+              position: "fixed",
+              overflowX: "scroll",
+              overflowY: "hidden",
+              boxSizing: "content-box",
+              zIndex: 40,
+              borderTop: `1px solid ${border}`,
+              backgroundColor: "var(--color-base-100)",
+            }}
+          >
+            <div ref={dockedScrollContentRef} style={{ height: 1 }} />
+          </div>,
+          document.body
+        )}
+
         {/* DataGrid Container */}
         <div
+          ref={gridContainerRef}
           className="datagrid-outer"
           style={{
             height: "calc(100vh - 260px)",
@@ -749,7 +857,7 @@ const PlanningSummaryTable = memo(
               "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within":
                 { outline: "none" },
 
-              // ── Horizontal Scrollbar: วางด้านล่างสุดเต็มขนาด ไม่หลบข้างใน และไม่ทับแถวข้อมูล ──
+              // Keep the original scrollbar and pagination at the bottom of the grid.
               "& .MuiDataGrid-scrollbar--horizontal": {
                 position: "absolute !important",
                 bottom: "0 !important",
