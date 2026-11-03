@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback, useLayoutEffect, useRef } from "react";
+import { memo, useMemo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   DataGrid,
@@ -13,10 +13,13 @@ import {
   AlertTriangle,
   FastForward,
   RotateCcw,
+  Calendar,
+  Pin,
 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { type PlanningSummaryRow } from "../types";
+import { WipAssignModal } from "./WipAssignModal";
 import { toDMY } from "../../PO_Balance/utils";
 
 interface PlanningSummaryTableProps {
@@ -27,6 +30,8 @@ interface PlanningSummaryTableProps {
   onExport?: () => void;
   onSkipDue?: (row: PlanningSummaryRow) => Promise<void> | void;
   onUnskipDue?: (row: PlanningSummaryRow) => Promise<void> | void;
+  onAssignWipDue?: (row: PlanningSummaryRow, targetDueDate: string) => Promise<void> | void;
+  onUnassignWipDue?: (row: PlanningSummaryRow) => Promise<void> | void;
 }
 
 const num = (value: number | null | undefined, decimals = 0) =>
@@ -162,10 +167,12 @@ const LotStatusBadge = ({
   status,
   row,
   onOpenPendingModal,
+  onOpenWipModal,
 }: {
   status: string;
   row?: PlanningSummaryRow;
   onOpenPendingModal?: (row: PlanningSummaryRow) => void;
+  onOpenWipModal?: (row: PlanningSummaryRow) => void;
 }) => {
   if (!status || status.trim() === "") return <span className="text-base-content/25">-</span>;
   const upper = status.toUpperCase().trim();
@@ -182,6 +189,35 @@ const LotStatusBadge = ({
         title="Click to view Pending Details"
       >
         <span>{upper}</span>
+        <Info size={11} className="opacity-70 shrink-0" />
+      </button>
+    );
+  }
+
+  if (upper === "WIP" && onOpenWipModal && row) {
+    const isAssigned = Boolean(row.assigned_due_date);
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenWipModal(row);
+        }}
+        className={`inline-flex items-center justify-center gap-1 h-[22px] px-2.5 rounded-md text-[11px] tracking-wider uppercase font-bold leading-none whitespace-nowrap shrink-0 shadow-xs hover:ring-2 hover:ring-emerald-500/40 active:scale-95 transition-all cursor-pointer ${
+          isAssigned
+            ? "!bg-emerald-500/15 !text-emerald-700 dark:!text-emerald-300 !border-emerald-500/50"
+            : "lot-badge-wip font-semibold"
+        }`}
+        title={
+          isAssigned
+            ? `Inserted into Due Date: ${toDMY(row.assigned_due_date)} (Click to edit or undo)`
+            : "Click to assign Due Date"
+        }
+      >
+        {isAssigned && (
+          <Pin size={10} className="rotate-45 text-emerald-600 dark:text-emerald-400 shrink-0" />
+        )}
+        <span>{isAssigned ? `WIP • ${toDMY(row.assigned_due_date)}` : upper}</span>
         <Info size={11} className="opacity-70 shrink-0" />
       </button>
     );
@@ -214,9 +250,43 @@ const PlanningSummaryTable = memo(
     onExport,
     onSkipDue,
     onUnskipDue,
+    onAssignWipDue,
+    onUnassignWipDue,
   }: PlanningSummaryTableProps) => {
     const confirm = useConfirm();
     const { requireAdmin } = useAuth();
+    const [selectedWipRow, setSelectedWipRow] = useState<PlanningSummaryRow | null>(null);
+
+    const handleOpenWipModal = useCallback((row: PlanningSummaryRow) => {
+      setSelectedWipRow(row);
+    }, []);
+
+    const handleCloseWipModal = useCallback(() => {
+      setSelectedWipRow(null);
+    }, []);
+
+    const handleAssignWip = useCallback(
+      async (row: PlanningSummaryRow, targetDueDate: string) => {
+        const isAuthorized = await requireAdmin();
+        if (!isAuthorized) return;
+        if (onAssignWipDue) {
+          await onAssignWipDue(row, targetDueDate);
+        }
+      },
+      [requireAdmin, onAssignWipDue]
+    );
+
+    const handleUnassignWip = useCallback(
+      async (row: PlanningSummaryRow) => {
+        const isAuthorized = await requireAdmin();
+        if (!isAuthorized) return;
+        if (onUnassignWipDue) {
+          await onUnassignWipDue(row);
+        }
+      },
+      [requireAdmin, onUnassignWipDue]
+    );
+
     const gridContainerRef = useRef<HTMLDivElement>(null);
     const dockedScrollbarRef = useRef<HTMLDivElement>(null);
     const dockedScrollContentRef = useRef<HTMLDivElement>(null);
@@ -671,11 +741,12 @@ const PlanningSummaryTable = memo(
               status={value}
               row={row}
               onOpenPendingModal={handleOpenPendingModal}
+              onOpenWipModal={handleOpenWipModal}
             />
           ),
         },
       ],
-      [handleOpenPendingModal]
+      [handleOpenPendingModal, handleOpenWipModal]
     );
 
     return (
@@ -885,6 +956,14 @@ const PlanningSummaryTable = memo(
             }}
           />
         </div>
+        <WipAssignModal
+          isOpen={Boolean(selectedWipRow)}
+          row={selectedWipRow}
+          allRows={rows}
+          onClose={handleCloseWipModal}
+          onAssign={handleAssignWip}
+          onUnassign={handleUnassignWip}
+        />
       </div>
     );
   }

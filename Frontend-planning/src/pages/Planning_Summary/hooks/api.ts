@@ -19,3 +19,9 @@ export const PLANNING_SUMMARY_SKIP_DUE_API = `${API_BASE_URL}/planning_summary/s
 
 // ↩️ กดปุ่ม Undo Skip สำหรับคืนค่า Lot กลับไป Due Date เดิม
 export const PLANNING_SUMMARY_UNSKIP_DUE_API = `${API_BASE_URL}/planning_summary/unskip_due`;
+
+// 📌 กดปุ่มเพื่อแทรก WIP เข้า Due Date ที่เลือก
+export const PLANNING_SUMMARY_ASSIGN_WIP_DUE_API = `${API_BASE_URL}/planning_summary/assign_wip_due`;
+
+// ↩️ ยกเลิกการแทรก WIP คืนค่าสู่คิว FIFO ปกติ
+export const PLANNING_SUMMARY_UNASSIGN_WIP_DUE_API = `${API_BASE_URL}/planning_summary/unassign_wip_due`;

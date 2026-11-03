@@ -8,6 +8,8 @@ import {
   PLANNING_SUMMARY_STREAM_API,
   PLANNING_SUMMARY_SKIP_DUE_API,
   PLANNING_SUMMARY_UNSKIP_DUE_API,
+  PLANNING_SUMMARY_ASSIGN_WIP_DUE_API,
+  PLANNING_SUMMARY_UNASSIGN_WIP_DUE_API,
 } from "./api";
 import type {
   ApiResponse,
@@ -338,6 +340,95 @@ export const usePlanningSummary = () => {
     },
     [fetchData]
   );
+  // 📌 กดปุ่มเพื่อแทรก WIP Lot เข้า Due Date ที่เลือก
+  const assignWipDueDate = useCallback(
+    async (row: PlanningSummaryRow, targetDueDate: string) => {
+      const toastId = toast.loading(
+        `Inserting Lot ${row.lot_no} to Due Date ${toDMY(targetDueDate)}...`
+      );
+      try {
+        const res = await axios.post<
+          ApiResponse<{
+            prd_name: string;
+            lot_no: string;
+            target_due_date: string;
+          }>
+        >(
+          PLANNING_SUMMARY_ASSIGN_WIP_DUE_API,
+          {
+            prd_name: row.prd_name,
+            lot_no: row.lot_no,
+            target_due_date: targetDueDate,
+            original_due_date: row.due_date,
+          },
+          { timeout: AJAX_TIMEOUT_MS }
+        );
+
+        if (res.data?.status === "OK") {
+          toast.success(
+            `Assigned Lot ${row.lot_no} to Due Date ${toDMY(res.data.data?.target_due_date || targetDueDate)}`,
+            { id: toastId, duration: 4000 }
+          );
+          await fetchData(activeFilterRef.current, { silent: true });
+        } else {
+          toast.error(res.data?.message || "Failed to assign WIP to Due Date", {
+            id: toastId,
+          });
+        }
+      } catch (err) {
+        const msg = axios.isAxiosError(err)
+          ? err.response?.data?.message
+          : undefined;
+        toast.error(msg || "Error assigning WIP to Due Date", { id: toastId });
+      }
+    },
+    [fetchData]
+  );
+
+  // ↩️ ยกเลิกการแทรก WIP คืนค่าสู่คิว FIFO ปกติ
+  const unassignWipDueDate = useCallback(
+    async (row: PlanningSummaryRow) => {
+      const toastId = toast.loading(`Resetting assignment for Lot ${row.lot_no}...`);
+      try {
+        const res = await axios.post<
+          ApiResponse<{
+            prd_name: string;
+            lot_no: string;
+            restored_due_date: string | null;
+          }>
+        >(
+          PLANNING_SUMMARY_UNASSIGN_WIP_DUE_API,
+          {
+            prd_name: row.prd_name,
+            lot_no: row.lot_no,
+          },
+          { timeout: AJAX_TIMEOUT_MS }
+        );
+
+        if (res.data?.status === "OK") {
+          const restoredDue = res.data.data?.restored_due_date;
+          toast.success(
+            restoredDue
+              ? `Restored Lot ${row.lot_no} back to Due Date ${toDMY(restoredDue)}`
+              : `Restored Lot ${row.lot_no} to FIFO queue`,
+            { id: toastId, duration: 4000 }
+          );
+          await fetchData(activeFilterRef.current, { silent: true });
+        } else {
+          toast.error(res.data?.message || "Failed to reset WIP assignment", {
+            id: toastId,
+          });
+        }
+      } catch (err) {
+        const msg = axios.isAxiosError(err)
+          ? err.response?.data?.message
+          : undefined;
+        toast.error(msg || "Error resetting WIP assignment", { id: toastId });
+      }
+    },
+    [fetchData]
+  );
+
 
   // โหลดข้อมูลครั้งแรก
   useEffect(() => {
@@ -410,6 +501,8 @@ export const usePlanningSummary = () => {
     fetchFilterOptions,
     skipLotDueDate,
     unskipLotDueDate,
+    assignWipDueDate,
+    unassignWipDueDate,
     dbVersion,
   };
 };

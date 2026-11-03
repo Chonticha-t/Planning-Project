@@ -33,6 +33,27 @@ const broadcastChange = () => {
  * 🔄 ฟังก์ชันจัดสรรคิว PO และ WIP ใหม่ตามลำดับ FIFO (seq DESC, lot_no ASC)
  * โดยห้ามนำ Lot ที่อยู่ใน planning.planning_lot_skip ไปลงใน Due Date ที่ <= skipped_due_date
  */
+let isAssignTableReady = false;
+const ensureAssignTable = async (clientOrQuery) => {
+  if (isAssignTableReady) return;
+  const runner =
+    typeof clientOrQuery.query === "function"
+      ? clientOrQuery.query.bind(clientOrQuery)
+      : clientOrQuery;
+  await runner(`
+    CREATE TABLE IF NOT EXISTS planning.planning_lot_assign (
+      lot_no VARCHAR(100) PRIMARY KEY,
+      prd_name VARCHAR(100) NOT NULL,
+      target_due_date DATE NOT NULL,
+      original_due_date DATE,
+      assigned_by VARCHAR(100),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  isAssignTableReady = true;
+};
+
 const reallocateProductWithSkips = async (client, prdName) => {
   const summaryRes = await client.query(
     `
@@ -91,6 +112,30 @@ const reallocateProductWithSkips = async (client, prdName) => {
   for (const s of skipRes.rows) {
     if (s.lot_no && s.skipped_due_date) {
       skipMap.set(String(s.lot_no).trim(), s.skipped_due_date);
+    }
+  }
+
+  await ensureAssignTable(client);
+
+  const assignRes = await client.query(
+    `
+      SELECT
+        lot_no,
+        to_char(target_due_date, 'YYYY-MM-DD') AS target_due_date,
+        to_char(original_due_date, 'YYYY-MM-DD') AS original_due_date
+      FROM planning.planning_lot_assign
+      WHERE prd_name = $1
+    `,
+    [prdName]
+  );
+
+  const assignMap = new Map();
+  for (const a of assignRes.rows) {
+    if (a.lot_no && a.target_due_date) {
+      assignMap.set(String(a.lot_no).trim(), {
+        target_due_date: a.target_due_date,
+        original_due_date: a.original_due_date,
+      });
     }
   }
 
@@ -211,9 +256,76 @@ const reallocateProductWithSkips = async (client, prdName) => {
   for (const po of poList) {
     let poRemaining = po.total_needed;
 
+    // 3.1. จัดสรร WIP Lot ที่ถูกกำหนด (Assign / Insert) มาที่ Due Date นี้โดยตรงก่อนเป็นอันดับแรก
     for (const lot of lotList) {
       if (poRemaining <= 0) break;
       if (lot.remaining_wip <= 0) continue;
+
+      const assignment = assignMap.get(lot.lot_no);
+      if (!assignment || assignment.target_due_date !== po.due_date) {
+        continue;
+      }
+
+      const calNetRequiredBeforeLot = -poRemaining;
+      const allocated = Math.min(poRemaining, lot.remaining_wip);
+      lot.remaining_wip -= allocated;
+      poRemaining -= allocated;
+      const remWipQty = lot.remaining_wip - poRemaining;
+
+      const rowPriority =
+        lot.gate_name && lot.gate_name !== "PRE_FFPC"
+          ? "Normal"
+          : po.base_priority;
+
+      const rowDayLeft =
+        lot.gate_name && lot.gate_name !== "PRE_FFPC"
+          ? null
+          : po.base_day_left;
+
+      if (!assignedDueDateByLot.has(lot.lot_no)) {
+        assignedDueDateByLot.set(lot.lot_no, po.due_date);
+      }
+
+      newSummaryRows.push({
+        prd_name: po.prd_name,
+        item: lot.item || po.item,
+        due_date: po.due_date,
+        due_datetime: po.due_datetime,
+        ship_to_p1: po.ship_to_p1,
+        ship_to_p1_datetime: po.ship_to_p1_datetime,
+        scan_in: lot.scan_in || null,
+        priority: rowPriority,
+        day_left: rowDayLeft,
+        po_bal: po.po_bal,
+        inventory: po.inventory,
+        net_required_pcs: -po.total_needed,
+        cal_net_required: calNetRequiredBeforeLot,
+        status: "production plan",
+        lot_no: lot.lot_no,
+        proc_disp: lot.proc_disp,
+        seq: lot.seq,
+        net_wip_qty: lot.net_wip_qty,
+        rem_wip_qty: remWipQty,
+        factory_desc: lot.factory_desc,
+        prd_type: lot.prd_type || po.prd_type,
+        gate_name: lot.gate_name,
+        yield: lot.yield,
+        lot_status: lot.lot_status,
+        lot_problem: lot.lot_problem,
+        pending_reason: lot.pending_reason,
+      });
+    }
+
+    // 3.2. จัดสรร Lot ปกติที่เหลือตามลำดับ FIFO (โดยข้าม Lot ที่มี target_due_date อื่น หรือติด skip_due)
+    for (const lot of lotList) {
+      if (poRemaining <= 0) break;
+      if (lot.remaining_wip <= 0) continue;
+
+      // ถ้า Lot นี้ถูก assign ไปยัง Due Date อื่น ห้ามนำมาใช้กับ Due Date นี้
+      const assignment = assignMap.get(lot.lot_no);
+      if (assignment && assignment.target_due_date !== po.due_date) {
+        continue;
+      }
 
       // กฎ Skip Due: ห้ามนำ Lot ที่ถูก Skip ไปใส่ใน Due Date ที่ <= skipped_due_date
       const skippedDue = skipMap.get(lot.lot_no);
@@ -411,12 +523,19 @@ setInterval(async () => {
 
   try {
     // ตรวจสอบว่ามี Lot ที่เคยกด Skip ไว้ถูก Script รายชั่วโมงรีเซ็ตกลับมาที่ <= skipped_due_date หรือไม่
+    await ensureAssignTable(query);
     const conflictCheck = await query(`
       SELECT DISTINCT ps.prd_name
       FROM planning.planning_summary ps
       INNER JOIN planning.planning_lot_skip ls ON ls.lot_no = ps.lot_no
       WHERE ps.due_date <= ls.skipped_due_date
         AND UPPER(COALESCE(ps.lot_status, '')) = 'PENDING'
+        AND (ps.status IS NULL OR LOWER(ps.status) != 'ready')
+      UNION
+      SELECT DISTINCT ps.prd_name
+      FROM planning.planning_summary ps
+      INNER JOIN planning.planning_lot_assign la ON la.lot_no = ps.lot_no
+      WHERE ps.due_date != la.target_due_date
         AND (ps.status IS NULL OR LOWER(ps.status) != 'ready')
     `);
 
@@ -680,6 +799,18 @@ router.get("/table", async (req, res) => {
           WHERE ls.lot_no = planning.planning_summary.lot_no
           LIMIT 1
         ) AS skipped_due_date,
+        (
+          SELECT to_char(la.target_due_date, 'YYYY-MM-DD')
+          FROM planning.planning_lot_assign la
+          WHERE la.lot_no = planning.planning_summary.lot_no
+          LIMIT 1
+        ) AS assigned_due_date,
+        (
+          SELECT to_char(la.original_due_date, 'YYYY-MM-DD')
+          FROM planning.planning_lot_assign la
+          WHERE la.lot_no = planning.planning_summary.lot_no
+          LIMIT 1
+        ) AS original_due_date,
         to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
       FROM planning.planning_summary
       ${whereSql}
@@ -876,6 +1007,156 @@ router.post("/unskip_due", verifyAdmin, async (req, res) => {
 /**
  * 📊 2. GET /summary: ยอดสรุปภาพรวม KPI Cards
  */
+
+/**
+ * 📌 POST /assign_wip_due: เจาะจงเลือก Due Date ที่จะนำ WIP Lot ไปแทรก
+ */
+router.post("/assign_wip_due", verifyAdmin, async (req, res) => {
+  setNoCache(res);
+  const prd_name = asStr(req.body?.prd_name);
+  const lot_no = asStr(req.body?.lot_no);
+  const target_due_date = asStr(req.body?.target_due_date);
+  const original_due_date = asStr(req.body?.original_due_date);
+
+  if (!prd_name || !lot_no || !target_due_date || !isValidDateParam(target_due_date)) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: null,
+      message: "Required fields: prd_name, lot_no, and valid target_due_date (YYYY-MM-DD).",
+    });
+  }
+
+  const client = await pool_smart.connect();
+  try {
+    await client.query("BEGIN");
+    await ensureAssignTable(client);
+
+    const assignedBy = req.user?.username || "admin";
+    await client.query(
+      `
+        INSERT INTO planning.planning_lot_assign (
+          prd_name,
+          lot_no,
+          target_due_date,
+          original_due_date,
+          assigned_by,
+          updated_at
+        )
+        VALUES ($1, $2, $3::date, $4::date, $5, CURRENT_TIMESTAMP)
+        ON CONFLICT (lot_no) DO UPDATE SET
+          prd_name = EXCLUDED.prd_name,
+          target_due_date = EXCLUDED.target_due_date,
+          original_due_date = COALESCE(EXCLUDED.original_due_date, planning.planning_lot_assign.original_due_date),
+          assigned_by = EXCLUDED.assigned_by,
+          updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        prd_name,
+        lot_no,
+        target_due_date,
+        original_due_date && isValidDateParam(original_due_date) ? original_due_date : null,
+        assignedBy,
+      ]
+    );
+
+    // หากเคยติด Skip Due ไว้ ให้ลบออกจาก skip ด้วย เพื่อให้การแทรกวันทำงานได้อย่างถูกต้อง
+    await client.query(
+      `DELETE FROM planning.planning_lot_skip WHERE lot_no = $1`,
+      [lot_no]
+    );
+
+    const { assignedDueDateByLot } = await reallocateProductWithSkips(
+      client,
+      prd_name
+    );
+
+    const assignedDue = assignedDueDateByLot.get(lot_no) || target_due_date;
+
+    await client.query("COMMIT");
+    broadcastChange();
+
+    return res.json({
+      status: "OK",
+      data: {
+        prd_name,
+        lot_no,
+        target_due_date: assignedDue,
+      },
+      message: `Successfully inserted Lot ${lot_no} to Due Date ${assignedDue}`,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error in POST /planning_summary/assign_wip_due:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: null,
+      message: err.message || "Internal server error",
+    });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * ↩️ POST /unassign_wip_due: ยกเลิกการแทรก WIP Lot (คืนค่าสู่คิว FIFO ปกติ)
+ */
+router.post("/unassign_wip_due", verifyAdmin, async (req, res) => {
+  setNoCache(res);
+  const prd_name = asStr(req.body?.prd_name);
+  const lot_no = asStr(req.body?.lot_no);
+
+  if (!prd_name || !lot_no) {
+    return res.status(400).json({
+      status: "ERROR",
+      data: null,
+      message: "Required fields: prd_name, lot_no.",
+    });
+  }
+
+  const client = await pool_smart.connect();
+  try {
+    await client.query("BEGIN");
+    await ensureAssignTable(client);
+
+    await client.query(
+      `DELETE FROM planning.planning_lot_assign WHERE lot_no = $1`,
+      [lot_no]
+    );
+
+    const { assignedDueDateByLot } = await reallocateProductWithSkips(
+      client,
+      prd_name
+    );
+
+    const restoredDue = assignedDueDateByLot.get(lot_no) || null;
+
+    await client.query("COMMIT");
+    broadcastChange();
+
+    return res.json({
+      status: "OK",
+      data: {
+        prd_name,
+        lot_no,
+        restored_due_date: restoredDue,
+      },
+      message: restoredDue
+        ? `Restored Lot ${lot_no} to Due Date ${restoredDue}`
+        : `Restored Lot ${lot_no} to normal FIFO`,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error in POST /planning_summary/unassign_wip_due:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: null,
+      message: err.message || "Internal server error",
+    });
+  } finally {
+    client.release();
+  }
+});
+
 router.get("/summary", async (req, res) => {
   setNoCache(res);
   const { whereSql, params, error } = buildWhereClause(req.query);

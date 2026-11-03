@@ -23,6 +23,8 @@ const Planning_Summary: React.FC = () => {
     fetchData,
     skipLotDueDate,
     unskipLotDueDate,
+    assignWipDueDate,
+    unassignWipDueDate,
   } = usePlanningSummary();
 
   const handleReset = useCallback(() => {
@@ -141,6 +143,8 @@ const Planning_Summary: React.FC = () => {
         onExport={handleExport}
         onSkipDue={skipLotDueDate}
         onUnskipDue={unskipLotDueDate}
+        onAssignWipDue={assignWipDueDate}
+        onUnassignWipDue={unassignWipDueDate}
       />
     </div>
   );

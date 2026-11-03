@@ -25,6 +25,8 @@ export interface PlanningSummaryRow {
   lot_problem: string;
   pending_reason: string;
   skipped_due_date?: string | null;
+  assigned_due_date?: string | null;
+  original_due_date?: string | null;
   updated_at: string;
 }
 
