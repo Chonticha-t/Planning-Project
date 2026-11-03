@@ -41,7 +41,7 @@ export const routes_planning: AppRoute[] = [
     Title: "PO BALANCE",
     isDefault: true,
     icon: ClipboardList,
-  },
+  },     
   {
     path: `${BASE}/planning_summary`,
     element: <Planning_Summary />,
