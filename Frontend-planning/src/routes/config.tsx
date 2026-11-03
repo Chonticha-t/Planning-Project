@@ -1,5 +1,5 @@
 import React from "react";
-import { ClipboardList, Cog, LayoutDashboard } from "lucide-react";
+import { ClipboardList, Cog, LayoutDashboard, DoorOpen } from "lucide-react";
 
 // 🟧 Internal ICONS
 import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
@@ -13,6 +13,9 @@ const Planning_In_Gate = React.lazy(
 );
 const Planning_Summary = React.lazy(
   () => import("@/pages/Planning_Summary/main/Planning_Summary")
+);
+const Planning_Summary_Gate = React.lazy(
+  () => import("@/pages/Planning_Summary_Gate/main/Planning_Summary_Gate")
 );
 
 // =========================================
@@ -50,13 +53,19 @@ export const routes_planning: AppRoute[] = [
     icon: LayoutDashboard,
   },
   {
+    path: `${BASE}/planning_summary_gate`,
+    element: <Planning_Summary_Gate />,
+    label: "PLANNING SUMMARY GATE",
+    Title: "PLANNING SUMMARY GATE",
+    icon: DoorOpen,
+  },
+  {
     path: `${BASE}/planning_in_gate`,
     element: <Planning_In_Gate />,
     label: "PLANNING IN GATE",
     Title: "PLANNING IN GATE",
     icon: Cog,
   },
-
 ];
 
 export const routes_External: AppRoute[] = [

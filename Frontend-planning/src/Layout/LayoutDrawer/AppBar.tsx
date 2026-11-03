@@ -20,9 +20,12 @@ const AppBar = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  const currentRoute = allRoutes.find((r) =>
-    location.pathname.startsWith(r.path)
-  );
+  const currentRoute =
+    allRoutes.find((r) => location.pathname === r.path) ||
+    allRoutes.find((r) => location.pathname.startsWith(r.path + "/")) ||
+    allRoutes
+      .filter((r) => location.pathname.startsWith(r.path))
+      .sort((a, b) => b.path.length - a.path.length)[0];
 
   const title = currentRoute?.Title || "Smart Factory Dashboard";
 
