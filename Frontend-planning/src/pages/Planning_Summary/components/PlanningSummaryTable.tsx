@@ -203,10 +203,10 @@ const LotStatusBadge = ({
           e.stopPropagation();
           onOpenWipModal(row);
         }}
-        className={`inline-flex items-center justify-center gap-1 h-[22px] px-2.5 rounded-md text-[11px] tracking-wider uppercase font-bold leading-none whitespace-nowrap shrink-0 shadow-xs hover:ring-2 hover:ring-emerald-500/40 active:scale-95 transition-all cursor-pointer ${
+        className={`inline-flex items-center justify-center h-[22px] text-[11px] leading-none whitespace-nowrap shrink-0 cursor-pointer ${
           isAssigned
-            ? "!bg-emerald-500/15 !text-emerald-700 dark:!text-emerald-300 !border-emerald-500/50"
-            : "lot-badge-wip font-semibold"
+            ? "gap-1.5 rounded-full border border-emerald-500/15 bg-emerald-500/5 px-2 font-medium text-base-content/80 transition-colors hover:bg-emerald-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+            : "lot-badge-wip gap-1 px-2.5 rounded-md tracking-wider uppercase font-semibold shadow-xs hover:ring-2 hover:ring-emerald-500/40 active:scale-95 transition-all"
         }`}
         title={
           isAssigned
@@ -215,10 +215,12 @@ const LotStatusBadge = ({
         }
       >
         {isAssigned && (
-          <Pin size={10} className="rotate-45 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <Pin size={10} aria-hidden="true" className="rotate-45 text-emerald-600 dark:text-emerald-400 shrink-0" />
         )}
-        <span>{isAssigned ? `WIP • ${toDMY(row.assigned_due_date)}` : upper}</span>
-        <Info size={11} className="opacity-70 shrink-0" />
+        <span className={isAssigned ? "text-emerald-600 dark:text-emerald-400" : undefined}>WIP</span>
+        {!isAssigned && (
+          <Info size={11} className="opacity-70 shrink-0" />
+        )}
       </button>
     );
   }
