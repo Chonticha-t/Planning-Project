@@ -3,6 +3,7 @@ const router = express.Router();
 
 const { pool_smart } = require("../../config");
 const { verifyAdmin } = require("../Auth/Auth");
+const { refreshPoCalendarFields } = require("../../../../utils/workingCalendar");
 const query = (text, params) => pool_smart.query(text, params);
 
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
@@ -51,7 +52,9 @@ const ensureAssignTable = async (clientOrQuery) => {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
-  isAssignTableReady = true;
+  // Transactional CREATE may roll back when calendar validation fails.
+  // Cache only calls made through the autocommit pool query function.
+  if (typeof clientOrQuery === "function") isAssignTableReady = true;
 };
 
 const reallocateProductWithSkips = async (client, prdName) => {
@@ -183,28 +186,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
     String(a.due_date).localeCompare(String(b.due_date))
   );
 
-  for (const po of poList) {
-    if (po.base_day_left === null || po.base_day_left === undefined) {
-      po.base_day_left = po.first_day_left;
-    }
-    if (!po.base_priority) {
-      if (po.base_day_left !== null && po.base_day_left !== undefined) {
-        let leadDays = 2;
-        if (po.due_date && po.ship_to_p1) {
-          const diffMs =
-            new Date(`${po.due_date}T00:00:00Z`).getTime() -
-            new Date(`${po.ship_to_p1}T00:00:00Z`).getTime();
-          const diffDays = Math.round(diffMs / 86400000);
-          if (diffDays > 0) leadDays = diffDays;
-        }
-        if (po.base_day_left <= leadDays) po.base_priority = "Urgent";
-        else if (po.base_day_left <= leadDays + 3) po.base_priority = "High";
-        else po.base_priority = "Normal";
-      } else {
-        po.base_priority = po.first_priority || "Normal";
-      }
-    }
-  }
+  await refreshPoCalendarFields(client, poList);
 
   // 2. รวบรวม WIP Lots ทั้งหมดของ prd_name นี้ แล้วเรียงตาม FIFO (seq DESC NULLS LAST, lot_no ASC)
   const lotMap = new Map();
