@@ -42,7 +42,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
-            Gate Must-Out Schedule
+            Gate Arrival Schedule
           </h3>
         </div>
 

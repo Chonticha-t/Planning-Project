@@ -87,7 +87,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
               }`}
             >
-              This day
+              Arriving today
             </button>
             <button
               type="button"
@@ -138,26 +138,37 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
       {/* Main Table */}
       <div className="overflow-x-auto rounded-xl border border-base-300">
-        <table className="table table-sm w-full text-left border-collapse">
+        <table className="table table-sm table-fixed w-full min-w-[1440px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
+          <colgroup>
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "9%" }} />
+          </colgroup>
           <thead>
-            <tr className="bg-base-200/70 border-b border-base-300 text-xs font-bold text-base-content">
+            <tr className="bg-base-200/70 border-b border-base-300 text-[12.5px] font-bold tracking-[0.04em] text-base-content">
               <th className="px-2 py-2">PRODUCT NAME</th>
               <th className="px-2 py-2">PO DUE DATE</th>
               <th className="px-2 py-2">LOT NO</th>
-              <th className="px-2 py-2">CURRENT PROCESS</th>
-              <th className="px-2 py-2">NEXT GATE</th>
-              <th className="text-right px-2 py-2">LOT QTY</th>
+              <th className="px-2 py-2 whitespace-nowrap">CURRENT PROCESS</th>
+              <th className="px-2 py-2">NET REQUIRED</th>
               <th className="px-2 py-2">SCAN-IN TIME</th>
-              <th className="px-2 py-2">TARGET IN</th>
-              <th className="px-2 py-2">TARGET OUT</th>
-              <th className="px-2 py-2">ACTION PLAN</th>
+              <th className="px-2 py-2">FIRST GATE IN</th>
+              <th className="px-2 py-2">TO NEXT GATE</th>
+              <th className="px-2 py-2">NEXT GATE</th>
               <th className="text-center px-2 py-2">SCHEDULE STATUS</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center py-10 text-base-content/50 text-sm">
+                <td colSpan={10} className="text-center py-10 text-base-content/50 text-sm">
                   No lots found for the selected gate and criteria.
                 </td>
               </tr>
@@ -165,6 +176,12 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
               visibleRows.map((row, rIdx) => {
                 const isNeedWip =
                   row.lot_no === "NEED WIP" || row.gate_state === "need_wip" || row.status === "need wip";
+                const currentProcess = row.proc_disp?.trim() ?? "";
+                const currentGate = row.current_gate?.trim() ?? "";
+                const nextGate = row.next_gate?.trim() ?? "";
+                const netRequired = row.cal_net_required == null
+                  ? null
+                  : Number(row.cal_net_required);
                 const isLateStart = row.start_by && row.start_by < todayStr;
                 const diffDays = row.must_out
                   ? Math.round((new Date(`${row.must_out.slice(0, 10)}T00:00:00`).getTime() - todayMs) / 86400000)
@@ -173,15 +190,15 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                 return (
                   <tr
                     key={`${row.pri}-${row.lot_no}-${row.gate_name}-${rIdx}`}
-                    className="border-b border-base-300/50 hover:bg-base-200/40 text-[13px] transition-colors"
+                    className="border-b border-base-300/50 hover:bg-base-200/40 text-[14px] leading-5 transition-colors"
                   >
                     {/* PRODUCT NAME */}
                     <td className="px-2 py-2">
-                      <span className="font-bold text-base-content text-[13px]">{row.prd_name}</span>
+                      <span className="font-semibold text-base-content">{row.prd_name}</span>
                     </td>
 
                     {/* PO DUE DATE */}
-                    <td className="font-semibold text-base-content tabular-nums px-2 py-2 text-xs">
+                    <td className="font-medium text-base-content tabular-nums px-2 py-2">
                       {formatDateShort(row.due_date)}
                     </td>
 
@@ -192,57 +209,54 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                           NEED WIP
                         </span>
                       ) : (
-                        <span className="font-mono font-bold text-base-content select-all">
+                        <span className="font-mono font-bold text-[15px] tracking-wide tabular-nums text-base-content select-all">
                           {row.lot_no}
                         </span>
                       )}
                     </td>
 
-                    {/* CURRENT PROCESS */}
+                    {/* Current lot location is independent of this row's planned transition. */}
                     <td className="px-2 py-2">
-                      {!isNeedWip && (row.proc_disp || row.current_gate) ? (
-                        <div className="inline-flex items-center gap-1.5">
-                          {row.proc_disp && (
-                            <span className="font-bold text-slate-800 text-[13px]">
-                              {row.proc_disp}
+                      {isNeedWip ? (
+                        <span className="text-base-content/25">-</span>
+                      ) : currentProcess || currentGate ? (
+                        <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                          {currentProcess && (
+                            <span className="font-semibold text-[13.5px] text-base-content">
+                              {currentProcess}
                             </span>
                           )}
-                          {row.current_gate && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-slate-600 text-[11px] font-semibold leading-tight">
-                              {row.current_gate}
+                          {currentGate && (
+                            <span className="inline-flex items-center shrink-0 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-slate-600 text-[10.5px] font-semibold tracking-wide uppercase leading-none">
+                              {currentGate}
                             </span>
                           )}
                         </div>
                       ) : (
-                        <span className="text-base-content/30">-</span>
+                        <span className="text-base-content/25">-</span>
                       )}
                     </td>
 
-                    {/* NEXT GATE */}
-                    <td className="px-2 py-2">
-                      {row.next_gate ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#eef2ff] border border-indigo-200/70 text-[#4f46e5] text-[11.5px] font-bold leading-tight">
-                          <span>➔</span>
-                          <span>{row.next_gate}</span>
-                        </span>
-                      ) : (
-                        <span className="text-base-content/30">-</span>
-                      )}
-                    </td>
-
-                    {/* LOT QTY */}
-                    <td className="text-right font-black tabular-nums text-base-content px-2 py-2 text-[13px]">
-                      {row.qty ? Number(row.qty).toLocaleString() : "-"}
+                    {/* Use the same Net Required field as Planning Summary. */}
+                    <td className="text-right font-normal tabular-nums px-2 py-2 text-[13px]">
+                      <span className={`tabular-nums text-[14px] ${netRequired !== null && Number.isFinite(netRequired) ? "font-bold text-error" : "text-base-content/25"}`}>
+                        {netRequired !== null && Number.isFinite(netRequired)
+                          ? netRequired.toLocaleString("en-US", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 0,
+                            })
+                          : "-"}
+                      </span>
                     </td>
 
                     {/* SCAN-IN TIME */}
-                    <td className="text-base-content/80 tabular-nums text-xs px-2 py-2">
+                    <td className="font-medium text-[13.5px] text-base-content/85 tabular-nums px-2 py-2">
                       {formatScanTime(row.scan_in)}
                     </td>
 
                     {/* TARGET IN */}
                     <td
-                      className={`tabular-nums font-semibold px-2 py-2 text-xs ${
+                      className={`tabular-nums font-medium px-2 py-2 ${
                         isLateStart ? "text-rose-600 font-bold" : "text-base-content/80"
                       }`}
                     >
@@ -250,21 +264,15 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                     </td>
 
                     {/* TARGET OUT */}
-                    <td className="font-bold text-base-content tabular-nums px-2 py-2 text-xs">
+                    <td className="font-medium text-base-content tabular-nums px-2 py-2">
                       {formatDateShort(row.must_out)}
                     </td>
 
-                    {/* ACTION PLAN */}
+                    {/* Next gate in this row's planned route. */}
                     <td className="px-2 py-2">
-                      {row.today_action ? (
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold text-white shadow-2xs ${
-                            row.today_action.toLowerCase().includes("finish")
-                              ? "bg-sky-600"
-                              : "bg-amber-600"
-                          }`}
-                        >
-                          {row.today_action}
+                      {nextGate ? (
+                        <span className="font-semibold text-base-content">
+                          {nextGate}
                         </span>
                       ) : (
                         <span className="text-base-content/30">-</span>
@@ -274,11 +282,11 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                     {/* SCHEDULE STATUS */}
                     <td className="text-center px-2 py-2">
                       {row.on_time ? (
-                        <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-xs font-bold bg-emerald-600 text-white shadow-2xs">
+                        <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-[12px] leading-4 font-semibold bg-emerald-600 text-white shadow-2xs">
                           {row.must_out === todayStr || diffDays <= 0 ? "Today" : `OK +${diffDays}d`}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-xs font-bold bg-rose-600 text-white shadow-2xs">
+                        <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-[12px] leading-4 font-semibold bg-rose-600 text-white shadow-2xs">
                           Late
                         </span>
                       )}

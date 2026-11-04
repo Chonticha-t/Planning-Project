@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } f
 import axios from "axios";
 import dayjs from "dayjs";
 import { useGateToday } from "./useGateToday";
+import { formatGateName, formatGateTransition } from "../gatePresentation";
 import {
   PLANNING_SUMMARY_GATE_TABLE_API,
   PLANNING_SUMMARY_GATE_SUMMARY_API,
@@ -284,7 +285,7 @@ export const usePlanningSummaryGate = () => {
     });
   }, [availableGates, kpis, rowsByGate, todayStr]);
 
-  // Section 2: Gate Matrix rows (Heatmap by Gate and Date) - Single O(N) pass per gate
+  // Section 2: Gate Matrix rows (Heatmap by Gate and Arrival Date) - Single O(N) pass per gate
   const matrixRows = useMemo<MatrixGateRow[]>(() => {
     return availableGates.map((gName, idx) => {
       const gateRows = rowsByGate.get(gName) || [];
@@ -306,18 +307,18 @@ export const usePlanningSummaryGate = () => {
         const isInGate = r.gate_state === "in_gate";
         const isComing = r.gate_state === "coming";
 
-        if (r.must_out === todayStr) {
+        if (r.arrive_by === todayStr) {
           todayLotsCount++;
           if (isNeed) todayNeedCount++;
           if (isInGate) todayInGateCount++;
           if (isComing) todayComingCount++;
         }
 
-        if (r.must_out) {
-          let b = dateBuckets.get(r.must_out);
+        if (r.arrive_by) {
+          let b = dateBuckets.get(r.arrive_by);
           if (!b) {
             b = { lotsCount: 0, needCount: 0, inGateCount: 0, comingCount: 0 };
-            dateBuckets.set(r.must_out, b);
+            dateBuckets.set(r.arrive_by, b);
           }
           b.lotsCount++;
           if (isNeed) b.needCount++;
@@ -411,17 +412,17 @@ export const usePlanningSummaryGate = () => {
     return list;
   }, [matrixRows, filters.selectedGate, todayStr]);
 
-  // Section 3: Filtered Action Table Rows (From Today onwards)
+  // Section 3: Filtered Action Table Rows (Arrivals from Today onwards)
   const filteredTableRows = useMemo(() => {
     let list = (rowsByGate.get(filters.selectedGate) || []).filter(
-      (r) => !r.must_out || r.must_out >= todayStr
+      (r) => !r.arrive_by || r.arrive_by >= todayStr
     );
 
     // If a specific date is selected from matrix/chart
     if (filters.selectedDate) {
-      list = list.filter((r) => r.must_out === filters.selectedDate);
+      list = list.filter((r) => r.arrive_by === filters.selectedDate);
     } else if (filters.actionTab === "today") {
-      list = list.filter((r) => r.must_out === todayStr);
+      list = list.filter((r) => r.arrive_by === todayStr);
     } else if (filters.actionTab === "in_gate") {
       list = list.filter((r) => r.gate_state === "in_gate");
     } else if (filters.actionTab === "need_wip") {
@@ -437,7 +438,10 @@ export const usePlanningSummaryGate = () => {
           (r.lot_no && r.lot_no.toLowerCase().includes(q)) ||
           (r.item && r.item.toLowerCase().includes(q)) ||
           (r.po_no && r.po_no.toLowerCase().includes(q)) ||
-          (r.status && r.status.toLowerCase().includes(q))
+          (r.status && r.status.toLowerCase().includes(q)) ||
+          [r.current_gate, r.gate_name, r.next_gate, formatGateName(r.current_gate),
+            formatGateTransition(r.gate_name, r.next_gate)]
+            .some((value) => value?.toLowerCase().includes(q.replace(/\s*(?:->|\u2192)\s*/g, " \u2192 ")))
       );
     }
 

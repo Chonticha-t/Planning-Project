@@ -39,7 +39,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <h4 className="font-bold text-sm tracking-wide text-base-content uppercase">
-            Daily Must-Out Trend • <span className="text-primary">{gateName}</span>
+            Daily Arrival Trend • <span className="text-primary">{gateName}</span>
           </h4>
           {selectedDate && (
             <button

@@ -101,7 +101,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
           <input
             type="text"
-            placeholder="Search PO / Lot / Product"
+            placeholder="Search PO / Lot / Product / Gate"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="input input-xs input-bordered w-full pl-8 rounded-xl h-7 text-xs bg-base-200/40 focus:bg-base-100"
