@@ -572,3 +572,16 @@ html[data-sidebar-animating] .datagrid-outer * {
   color: #a78bfa !important;
   border-color: rgba(139, 92, 246, 0.3) !important;
 }
+
+
+/* Remove browser focus outline / black box from recharts */
+.recharts-wrapper,
+.recharts-surface,
+.recharts-responsive-container,
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-wrapper *:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
