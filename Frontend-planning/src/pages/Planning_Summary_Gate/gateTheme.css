@@ -1,0 +1,133 @@
+/* Keep the original Light palette intact. Overrides apply only inside this page. */
+@layer utilities {
+  :where(html[data-theme]:not([data-theme="light"]):not([data-theme=""])) .planning-summary-gate {
+    & [class~="text-[#4f46e5]"],
+    & [class~="hover:text-[#4f46e5]"]:hover,
+    & .text-blue-600 {
+      color: var(--color-primary);
+    }
+
+    & [class~="bg-[#eef2ff]"] {
+      background-color: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
+    }
+
+    & [class~="bg-[#eef2ff]/60"] {
+      background-color: color-mix(in oklab, var(--color-primary) 6%, var(--color-base-100));
+    }
+
+    & .border-indigo-300,
+    & .border-blue-300 {
+      border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-base-300));
+    }
+
+    & [class~="ring-[#4f46e5]"] {
+      --tw-ring-color: var(--color-primary);
+    }
+
+    & .bg-blue-600,
+    & [class~="bg-[#2563eb]"] {
+      background-color: var(--color-primary);
+    }
+
+    & .text-cyan-600,
+    & .text-sky-700 {
+      color: var(--color-info);
+    }
+
+    & .bg-cyan-600,
+    & [class~="bg-[#06b6d4]"] {
+      background-color: var(--color-info);
+    }
+
+    & .text-amber-600,
+    & .text-orange-600 {
+      color: color-mix(in oklab, var(--color-warning) 70%, var(--color-base-content));
+    }
+
+    & .bg-amber-600,
+    & [class~="bg-[#f97316]"] {
+      background-color: var(--color-warning);
+    }
+
+    & .bg-amber-600.text-white {
+      color: var(--color-warning-content);
+    }
+
+    & .text-emerald-600 {
+      color: color-mix(in oklab, var(--color-success) 70%, var(--color-base-content));
+    }
+
+    & .text-rose-500 {
+      color: var(--color-error);
+    }
+
+    & .text-slate-800 {
+      color: var(--color-base-content);
+    }
+
+    & .text-slate-600 {
+      color: color-mix(in oklab, var(--color-base-content) 75%, transparent);
+    }
+
+    & .text-slate-400 {
+      color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+    }
+
+    & .text-slate-300 {
+      color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+    }
+
+    & .bg-slate-100,
+    & [class~="bg-slate-50/80"] {
+      background-color: var(--color-base-200);
+    }
+
+    & [class~="border-slate-200/80"] {
+      border-color: var(--color-base-300);
+    }
+
+    /* Keep lot-volume levels legible on both light and dark theme surfaces. */
+    & [class~="bg-[#e6f0fd]"] {
+      background-color: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
+      color: var(--color-base-content);
+    }
+
+    & [class~="bg-[#cfe3fc]"],
+    & [class~="bg-[#c8e0fc]"] {
+      background-color: color-mix(in oklab, var(--color-primary) 20%, var(--color-base-100));
+      color: var(--color-base-content);
+    }
+
+    & [class~="bg-[#a3caf9]"] {
+      background-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-base-100));
+      color: var(--color-base-content);
+    }
+
+    & [class~="bg-[#76aef4]"] {
+      background-color: var(--color-primary);
+      color: var(--color-primary-content);
+    }
+
+    /* Match SVG series to the legend without changing the Light chart colors. */
+    & .recharts-bar-rectangle [fill="#2563eb"] {
+      fill: var(--color-primary);
+    }
+
+    & .recharts-bar-rectangle [fill="#06b6d4"] {
+      fill: var(--color-info);
+    }
+
+    & .recharts-bar-rectangle [fill="#f97316"] {
+      fill: var(--color-warning);
+    }
+
+    & .recharts-cartesian-grid line,
+    & .recharts-xAxis .recharts-cartesian-axis-line {
+      stroke: var(--color-base-content);
+    }
+
+    & .recharts-tooltip-cursor {
+      fill: var(--color-base-200);
+    }
+  }
+}

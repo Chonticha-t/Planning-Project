@@ -5,6 +5,7 @@ import { GateFlowCards } from "../components/GateFlowCards";
 import { GateMatrixTable } from "../components/GateMatrixTable";
 import { GateMustOutChart } from "../components/GateMustOutChart";
 import { GateActionTable } from "../components/GateActionTable";
+import "../gateTheme.css";
 
 const Planning_Summary_Gate: React.FC = () => {
   const {
@@ -39,7 +40,7 @@ const Planning_Summary_Gate: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col gap-3 w-full">
+    <div className="planning-summary-gate flex flex-col gap-3 w-full">
       {/* 1. Global Filter & Control Bar */}
       <GateFilterBar
         todayStr={todayStr}
