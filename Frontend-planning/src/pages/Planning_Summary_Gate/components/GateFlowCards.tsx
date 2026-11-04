@@ -46,7 +46,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
               >
                 {/* Top: Gate Title & Hold Badge */}
                 <div className="flex items-center justify-between gap-1 mb-2">
-                  <h4 className="font-black text-base text-base-content tracking-tight">
+                  <h4 className="font-semibold text-[15px] text-base-content tracking-normal">
                     {g.gate_name}
                   </h4>
                   {hasHold && (

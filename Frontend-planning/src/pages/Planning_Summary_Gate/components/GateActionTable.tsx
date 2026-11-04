@@ -34,7 +34,6 @@ const formatScanTime = (dtStr?: string | null) => {
 const PAGE_SIZE = 50;
 
 export const GateActionTable: React.FC<GateActionTableProps> = memo(({
-  todayStr,
   gateName,
   rows,
   actionTab,
@@ -181,7 +180,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   ? null
                   : Number(row.cal_net_required);
                 const netWip = row.net_wip_qty == null ? null : Number(row.net_wip_qty);
-                const isLateStart = row.start_by && row.start_by < todayStr;
 
                 return (
                   <tr
@@ -194,7 +192,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                     </td>
 
                     {/* PO DUE DATE */}
-                    <td className="font-medium text-base-content tabular-nums px-2 py-2">
+                    <td className="font-medium text-[13.5px] text-base-content tabular-nums px-2 py-2">
                       {formatDateShort(row.due_date)}
                     </td>
 
@@ -222,7 +220,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
                     {/* Net WIP from the gate API, including zero quantities. */}
                     <td className="tabular-nums px-2 py-2">
-                      <span className={`text-[14px] ${netWip !== null && Number.isFinite(netWip) ? "font-semibold text-emerald-600 dark:text-emerald-400" : "text-base-content/25"}`}>
+                      <span className={`text-[14px] ${netWip !== null && Number.isFinite(netWip) ? "font-semibold text-emerald-600" : "text-base-content/25"}`}>
                         {netWip !== null && Number.isFinite(netWip)
                           ? netWip.toLocaleString("en-US", { maximumFractionDigits: 0 })
                           : "-"}
@@ -256,17 +254,13 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       {formatScanTime(row.scan_in)}
                     </td>
 
-                    {/* TARGET IN */}
-                    <td
-                      className={`tabular-nums font-medium px-2 py-2 ${
-                        isLateStart ? "text-rose-600 font-bold" : "text-base-content/80"
-                      }`}
-                    >
+                    {/* FIRST GATE IN */}
+                    <td className="tabular-nums font-semibold text-[13.5px] text-sky-700 px-2 py-2">
                       {formatDateShort(row.start_by)}
                     </td>
 
-                    {/* TARGET OUT */}
-                    <td className="font-medium text-base-content tabular-nums px-2 py-2">
+                    {/* TO NEXT GATE */}
+                    <td className="tabular-nums font-bold text-[13.5px] text-[#4f46e5] px-2 py-2">
                       {formatDateShort(row.must_out)}
                     </td>
 

@@ -104,7 +104,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
                   {/* Gate Name Header Cell */}
                   <td
                     onClick={() => onSelectCell(row.gate_name, null)}
-                    className={`px-2 py-1 text-left font-extrabold text-xs cursor-pointer sticky left-0 z-10 bg-base-100 transition-colors ${
+                    className={`px-2 py-1 text-left font-semibold text-xs cursor-pointer sticky left-0 z-10 bg-base-100 transition-colors ${
                       isGateActive ? "text-[#4f46e5]" : "text-slate-800 hover:text-[#4f46e5]"
                     }`}
                   >
