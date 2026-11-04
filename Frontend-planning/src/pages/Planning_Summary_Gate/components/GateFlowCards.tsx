@@ -15,13 +15,6 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5">
-      {/* Section Header */}
-      <div className="flex items-center gap-2">
-        <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
-          Gate WIP Overview
-        </h3>
-      </div>
-
       {/* Connected Gate Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {gateFlowList.map((g, idx) => {

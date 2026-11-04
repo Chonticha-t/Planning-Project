@@ -73,13 +73,13 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
       {/* Left controls: Category, Plan window, Date range, Product Dropdown, Search */}
       <div className="flex flex-wrap items-center gap-2.5">
         {/* Category Pill Switcher */}
-        <div className="join bg-base-200/80 p-0.5 rounded-xl border border-base-300">
+        <div className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
           {(["ALL", "FPC", "SMT"] as PrdCategory[]).map((cat) => (
             <button
               key={cat}
               type="button"
               onClick={() => onCategoryChange(cat)}
-              className={`btn btn-xs rounded-lg px-3 font-bold transition-all ${
+              className={`btn btn-xs h-full min-h-0 rounded-md px-3 font-bold transition-all ${
                 category === cat
                   ? "btn-primary shadow-xs"
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
@@ -93,11 +93,11 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
         {/* Plan Ahead (2 weeks / 1 month) */}
         <div className="flex items-center gap-1.5 text-xs text-base-content/70 pl-1">
           <span className="font-semibold">Plan ahead</span>
-          <div className="join bg-base-200/80 p-0.5 rounded-xl border border-base-300">
+          <div className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
             <button
               type="button"
               onClick={() => onPlanWindowChange("2w")}
-              className={`btn btn-xs rounded-lg px-2.5 font-semibold transition-all ${
+              className={`btn btn-xs h-full min-h-0 rounded-md px-2.5 font-semibold transition-all ${
                 planWindow === "2w"
                   ? "bg-primary text-primary-content shadow-xs"
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
@@ -108,7 +108,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
             <button
               type="button"
               onClick={() => onPlanWindowChange("1m")}
-              className={`btn btn-xs rounded-lg px-2.5 font-semibold transition-all ${
+              className={`btn btn-xs h-full min-h-0 rounded-md px-2.5 font-semibold transition-all ${
                 planWindow === "1m"
                   ? "bg-primary text-primary-content shadow-xs"
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
@@ -120,7 +120,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
         </div>
 
         {/* Date Window Display */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-base-200/60 border border-base-300 text-xs font-semibold text-base-content/80 tabular-nums">
+        <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/60 border border-base-300 text-xs font-semibold text-base-content/80 tabular-nums">
           <Calendar size={13} className="text-primary opacity-80" />
           <span>{dateRangeDisplay}</span>
         </div>
@@ -135,7 +135,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
                   setDropdownOpen((prev) => !prev);
                   setDropdownQuery("");
                 }}
-                className={`inline-flex items-center justify-between gap-2 h-7 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer min-w-[170px] max-w-[240px] ${
+                className={`inline-flex items-center justify-between gap-2 h-8 px-3 rounded-lg border text-xs font-semibold transition-all cursor-pointer min-w-[170px] max-w-[240px] ${
                   selectedProduct
                     ? "bg-[#eef2ff] border-indigo-300 text-[#4f46e5]"
                     : "bg-base-200/40 border-base-300 text-base-content/80 hover:bg-base-200/70"
@@ -232,7 +232,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
             placeholder="Search Product / Lot No / PO"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input input-xs input-bordered w-full pl-8 pr-7 rounded-xl h-7 text-xs bg-base-200/40 focus:bg-base-100"
+            className="input input-xs input-bordered w-full pl-8 pr-7 rounded-lg h-8 text-xs bg-base-200/40 focus:bg-base-100"
           />
           {search && (
             <button
