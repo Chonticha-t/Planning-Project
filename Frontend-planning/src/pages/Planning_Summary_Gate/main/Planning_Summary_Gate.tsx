@@ -9,8 +9,11 @@ import { GateActionTable } from "../components/GateActionTable";
 const Planning_Summary_Gate: React.FC = () => {
   const {
     loading,
+    error,
+    rows,
     lastUpdated,
     filters,
+    todayStr,
     gateFlowList,
     matrixRows,
     chartData,
@@ -18,7 +21,6 @@ const Planning_Summary_Gate: React.FC = () => {
     tableStats,
     setCategory,
     setPlanWindow,
-    toggleSkipHolidays,
     setSearch,
     selectGate,
     selectDate,
@@ -38,12 +40,11 @@ const Planning_Summary_Gate: React.FC = () => {
     <div className="flex flex-col gap-3 w-full">
       {/* 1. Global Filter & Control Bar */}
       <GateFilterBar
+        todayStr={todayStr}
         category={filters.category}
         onCategoryChange={setCategory}
         planWindow={filters.planWindow}
         onPlanWindowChange={setPlanWindow}
-        skipHolidays={filters.skipHolidays}
-        onToggleSkipHolidays={toggleSkipHolidays}
         search={filters.search}
         onSearchChange={setSearch}
         lastUpdated={lastUpdated}
@@ -51,37 +52,48 @@ const Planning_Summary_Gate: React.FC = () => {
         onRefresh={refreshData}
       />
 
-      {/* 2. Section 1: Gate WIP Overview */}
-      <GateFlowCards
-        gateFlowList={gateFlowList}
-        selectedGate={filters.selectedGate}
-        onSelectGate={selectGate}
-      />
+      {loading ? (
+        <div role="status" className="p-4 text-sm text-base-content/70">Loading planning gate data...</div>
+      ) : error ? (
+        <div role="alert" className="alert alert-error text-sm">{error}</div>
+      ) : rows.length === 0 ? (
+        <div role="status" className="p-4 text-sm text-base-content/70">No planning gate data found for the selected category.</div>
+      ) : (
+        <>
+          {/* 2. Section 1: Gate WIP Overview */}
+          <GateFlowCards
+            gateFlowList={gateFlowList}
+            selectedGate={filters.selectedGate}
+            onSelectGate={selectGate}
+          />
 
-      {/* 3. Section 2: Gate Must-Out Schedule */}
-      <GateMatrixTable
-        matrixRows={matrixRows}
-        selectedGate={filters.selectedGate}
-        selectedDate={filters.selectedDate}
-        onSelectCell={handleSelectCell}
-      />
+          {/* 3. Section 2: Gate Must-Out Schedule */}
+          <GateMatrixTable
+            matrixRows={matrixRows}
+            selectedGate={filters.selectedGate}
+            selectedDate={filters.selectedDate}
+            onSelectCell={handleSelectCell}
+          />
 
-      {/* 4. Section 2 (Bottom): Stacked Bar Chart for Selected Gate */}
-      <GateMustOutChart
-        gateName={filters.selectedGate}
-        chartData={chartData}
-        selectedDate={filters.selectedDate}
-        onSelectDate={selectDate}
-      />
+          {/* 4. Section 2 (Bottom): Stacked Bar Chart for Selected Gate */}
+          <GateMustOutChart
+            gateName={filters.selectedGate}
+            chartData={chartData}
+            selectedDate={filters.selectedDate}
+            onSelectDate={selectDate}
+          />
 
-      {/* 5. Section 3: Action & Task Table */}
-      <GateActionTable
-        gateName={filters.selectedGate}
-        rows={filteredTableRows}
-        actionTab={filters.actionTab}
-        onTabChange={setActionTab}
-        stats={tableStats}
-      />
+          {/* 5. Section 3: Action & Task Table */}
+          <GateActionTable
+            todayStr={todayStr}
+            gateName={filters.selectedGate}
+            rows={filteredTableRows}
+            actionTab={filters.actionTab}
+            onTabChange={setActionTab}
+            stats={tableStats}
+          />
+        </>
+      )}
     </div>
   );
 };

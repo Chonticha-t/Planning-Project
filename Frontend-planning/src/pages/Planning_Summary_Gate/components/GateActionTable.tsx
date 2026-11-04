@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { PlanningSummaryGateRow } from "../types";
 
 interface GateActionTableProps {
+  todayStr: string;
   gateName: string;
   rows: PlanningSummaryGateRow[];
   actionTab: "all" | "today" | "in_gate" | "need_wip";
@@ -37,6 +38,7 @@ const formatScanTime = (dtStr?: string | null) => {
 const PAGE_SIZE = 50;
 
 export const GateActionTable: React.FC<GateActionTableProps> = memo(({
+  todayStr,
   gateName,
   rows,
   actionTab,
@@ -44,11 +46,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   stats,
 }) => {
   const [page, setPage] = useState(1);
-
-  const todayStr = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, []);
 
   const todayMs = useMemo(() => new Date(`${todayStr}T00:00:00`).getTime(), [todayStr]);
 
@@ -151,7 +148,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
               <th className="w-10 text-center px-2 py-2">PRI</th>
               <th className="px-2 py-2">LOT NO</th>
               <th className="px-2 py-2">PRODUCT</th>
-              <th className="px-2 py-2">PO</th>
               <th className="px-2 py-2">SHIP (PO DUE)</th>
               <th className="px-2 py-2">NOW AT</th>
               <th className="text-right px-2 py-2">QTY</th>
@@ -165,7 +161,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
           <tbody>
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={12} className="text-center py-10 text-base-content/50 text-sm">
+                <td colSpan={11} className="text-center py-10 text-base-content/50 text-sm">
                   No lots found for the selected gate and criteria.
                 </td>
               </tr>
@@ -204,11 +200,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                     {/* PRODUCT (without routing case) */}
                     <td className="px-2 py-2">
                       <span className="font-bold text-base-content text-[13px]">{row.prd_name}</span>
-                    </td>
-
-                    {/* PO */}
-                    <td className="font-mono text-base-content/85 px-2 py-2 text-xs">
-                      {row.item || `PO-${String(row.pri).padStart(4, "0")}`}
                     </td>
 
                     {/* SHIP (PO DUE) */}

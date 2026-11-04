@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronRight, Layers, AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { GateKpiSummary } from "../types";
 
 interface GateFlowCardsProps {
@@ -28,6 +28,10 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
           const isSelected = selectedGate === g.gate_name;
           const hasMustOutToday = g.must_out_today_count > 0;
           const hasHold = g.hold_count > 0;
+          const onScheduleCount = Math.min(g.must_out_today_count, Math.max(0, g.on_schedule_today_count ?? 0));
+          const onSchedulePercent = hasMustOutToday
+            ? Math.round(onScheduleCount / g.must_out_today_count * 100)
+            : 0;
 
           return (
             <div key={g.gate_name} className="relative flex items-center">
@@ -94,11 +98,17 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                   </div>
 
                   {hasMustOutToday ? (
-                    <div className="flex items-center gap-1.5 text-emerald-600 font-semibold text-[10.5px]">
+                    <div className={`flex items-center gap-1.5 font-semibold text-[10.5px] ${onSchedulePercent === 100 ? "text-emerald-600" : "text-amber-600"}`}>
+                      {/* Share of today's lots explicitly on time, excluding late/hold lots. */}
                       <div className="w-full bg-base-300 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-600 h-full w-full rounded-full" />
+                        <div
+                          className={`h-full rounded-full ${onSchedulePercent === 100 ? "bg-emerald-600" : "bg-amber-600"}`}
+                          style={{ width: `${onSchedulePercent}%` }}
+                        />
                       </div>
-                      <span className="shrink-0 text-[10px]">100% on schedule</span>
+                      <span className="shrink-0 text-[10px]" title={`${onScheduleCount} of ${g.must_out_today_count} lots on time and not late or on hold`}>
+                        {onSchedulePercent}% on schedule ({onScheduleCount}/{g.must_out_today_count})
+                      </span>
                     </div>
                   ) : (
                     <p className="text-[10.5px] text-base-content/40 italic">

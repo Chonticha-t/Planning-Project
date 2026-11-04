@@ -8,12 +8,11 @@ import {
 import type { PrdCategory, PlanWindow } from "../types";
 
 interface GateFilterBarProps {
+  todayStr: string;
   category: PrdCategory;
   onCategoryChange: (cat: PrdCategory) => void;
   planWindow: PlanWindow;
   onPlanWindowChange: (pw: PlanWindow) => void;
-  skipHolidays: boolean;
-  onToggleSkipHolidays: () => void;
   search: string;
   onSearchChange: (val: string) => void;
   lastUpdated?: string;
@@ -22,12 +21,11 @@ interface GateFilterBarProps {
 }
 
 export const GateFilterBar: React.FC<GateFilterBarProps> = ({
+  todayStr,
   category,
   onCategoryChange,
   planWindow,
   onPlanWindowChange,
-  skipHolidays,
-  onToggleSkipHolidays,
   search,
   onSearchChange,
   lastUpdated,
@@ -35,15 +33,15 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
   onRefresh,
 }) => {
   const dateRangeDisplay = useMemo(() => {
-    const start = dayjs();
+    const start = dayjs(todayStr);
     const days = planWindow === "2w" ? 14 : 28;
     const end = start.add(days, "day");
     return `${start.format("DD/MM")} - ${end.format("DD/MM/YYYY")}`;
-  }, [planWindow]);
+  }, [planWindow, todayStr]);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
-      {/* Left controls: Category, Plan window, Date range, Skip holidays */}
+      {/* Left controls: Category, Plan window, Date range, Search */}
       <div className="flex flex-wrap items-center gap-2.5">
         {/* Category Pill Switcher */}
         <div className="join bg-base-200/80 p-0.5 rounded-xl border border-base-300">
@@ -97,24 +95,6 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
           <Calendar size={13} className="text-primary opacity-80" />
           <span>{dateRangeDisplay}</span>
         </div>
-
-        {/* Skip Holidays Toggle */}
-        <button
-          type="button"
-          onClick={onToggleSkipHolidays}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-            skipHolidays
-              ? "bg-primary text-primary-content border-primary shadow-xs"
-              : "bg-base-100 border-base-300 text-base-content/70 hover:bg-base-200"
-          }`}
-        >
-          <span
-            className={`w-2 h-2 rounded-full transition-colors ${
-              skipHolidays ? "bg-primary-content" : "bg-base-content/30"
-            }`}
-          />
-          <span>Skip holidays (8)</span>
-        </button>
 
         {/* Search Input */}
         <div className="relative min-w-[200px] sm:min-w-[240px]">

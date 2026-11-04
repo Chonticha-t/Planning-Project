@@ -1,5 +1,5 @@
-import React, { useState, memo } from "react";
-import type { MatrixGateRow, MatrixViewMode } from "../types";
+import React, { memo } from "react";
+import type { MatrixGateRow } from "../types";
 
 interface GateMatrixTableProps {
   matrixRows: MatrixGateRow[];
@@ -14,8 +14,6 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
   selectedDate,
   onSelectCell,
 }) => {
-  const [viewMode, setViewMode] = useState<MatrixViewMode>("daily");
-
   // Compute max lot count across all cells so the 4 soft-blue levels scale naturally
   const maxLotCount = React.useMemo(() => {
     let max = 10;
@@ -48,23 +46,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
           </h3>
         </div>
 
-        {/* View Mode Switcher */}
-        <div className="join bg-base-200/80 p-0.5 rounded-xl border border-base-300">
-          {(["daily", "weekly", "monthly"] as MatrixViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setViewMode(mode)}
-              className={`btn btn-xs rounded-lg px-2.5 capitalize font-semibold transition-all ${
-                viewMode === mode
-                  ? "btn-primary shadow-xs"
-                  : "btn-ghost text-base-content/70 hover:bg-base-300/50"
-              }`}
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
+
       </div>
 
       {/* Heatmap Matrix Table */}

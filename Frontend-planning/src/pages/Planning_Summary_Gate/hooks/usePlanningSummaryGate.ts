@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from "react";
 import axios from "axios";
 import dayjs from "dayjs";
+import { useGateToday } from "./useGateToday";
 import {
   PLANNING_SUMMARY_GATE_TABLE_API,
   PLANNING_SUMMARY_GATE_SUMMARY_API,
+  PLANNING_SUMMARY_GATE_CALENDAR_API,
 } from "./api";
 import type {
   PlanningSummaryGateRow,
@@ -21,9 +23,12 @@ const DEFAULT_GATES_SMT = ["SMT", "FADL", "FIN", "W/H"];
 
 export const usePlanningSummaryGate = () => {
   const [loading, setLoading] = useState<boolean>(true);
-  const [rows, setRows] = useState<PlanningSummaryGateRow[]>([]);
+  const [sourceRows, setRows] = useState<PlanningSummaryGateRow[]>([]);
+  const [holidaySet, setHolidaySet] = useState<Set<string>>(() => new Set());
+  const todayStr = useGateToday();
   const [kpis, setKpis] = useState<GateKpiSummary[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<string>(() => dayjs().format("DD/MM/YYYY HH:mm"));
+  const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<GateFilterState>({
     category: "FPC",
@@ -39,19 +44,26 @@ export const usePlanningSummaryGate = () => {
 
   // Fetch data
   const fetchData = useCallback(async () => {
-    setLoading(true);
     abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setLoading(true);
+    setError(null);
+    setRows([]);
+    setKpis([]);
+    setHolidaySet(new Set());
+    setLastUpdated("");
 
     try {
-      const [tableRes, summaryRes] = await Promise.all([
+      const [tableRes, summaryRes, calendarRes] = await Promise.all([
         axios.get<{ status: string; data: PlanningSummaryGateRow[] }>(
           PLANNING_SUMMARY_GATE_TABLE_API,
           {
             params: {
               prd_category: filters.category === "ALL" ? undefined : filters.category,
+              skip_holidays: filters.skipHolidays,
             },
-            signal: abortControllerRef.current.signal,
+            signal: controller.signal,
             timeout: 6000,
           }
         ),
@@ -60,30 +72,56 @@ export const usePlanningSummaryGate = () => {
           {
             params: {
               prd_category: filters.category === "ALL" ? undefined : filters.category,
+              skip_holidays: filters.skipHolidays,
             },
-            signal: abortControllerRef.current.signal,
+            signal: controller.signal,
             timeout: 6000,
+          }
+        ),
+        axios.get<{ status: string; data: { date: string; is_working: boolean }[] }>(
+          PLANNING_SUMMARY_GATE_CALENDAR_API,
+          {
+            params: { startdate: todayStr, stopdate: dayjs(todayStr).add(28, "day").format("YYYY-MM-DD") },
+            signal: controller.signal,
+            timeout: 15000,
           }
         ),
       ]);
 
-      if (tableRes.data?.data) {
-        setRows(tableRes.data.data);
+      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
+      if (
+        tableRes.data?.status !== "OK" || !Array.isArray(tableRes.data.data) ||
+        summaryRes.data?.status !== "OK" || !Array.isArray(summaryRes.data.data) ||
+        calendarRes.data?.status !== "OK" || !Array.isArray(calendarRes.data.data)
+      ) {
+        throw new Error("Invalid planning gate response");
       }
-      if (summaryRes.data?.data) {
-        setKpis(summaryRes.data.data);
+      const calendar = new Map(calendarRes.data.data.map((day) => [day.date, day.is_working]));
+      if (calendar.size !== 29 || Array.from({ length: 29 }, (_, i) =>
+        dayjs(todayStr).add(i, "day").format("YYYY-MM-DD")
+      ).some((date) => typeof calendar.get(date) !== "boolean")) {
+        throw new Error("Incomplete working-day calendar response");
       }
+      setHolidaySet(new Set([...calendar].filter(([, working]) => !working).map(([date]) => date)));
+      setRows(tableRes.data.data);
+      setKpis(summaryRes.data.data);
       setLastUpdated(dayjs().format("DD/MM/YYYY HH:mm"));
-    } catch (err: any) {
-      if (axios.isCancel(err)) return;
-      console.warn("Could not fetch planning_summary_gate:", err.message);
+    } catch {
+      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
+      setRows([]);
+      setKpis([]);
+      setHolidaySet(new Set());
+      setError("Unable to load planning gate data. Please refresh to try again.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
-  }, [filters.category]);
+  }, [filters.category, filters.skipHolidays, todayStr]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
+    return () => abortControllerRef.current?.abort();
   }, [fetchData]);
 
   // Distinct gates based on category and data (deduplicated & canonical ordered)
@@ -119,23 +157,19 @@ export const usePlanningSummaryGate = () => {
     }
   }, [availableGates, filters.selectedGate]);
 
-  // Base Anchor Date for calendar columns = Real Current Date
-  const todayStr = useMemo(() => dayjs().format("YYYY-MM-DD"), []);
-  const todayDisplay = useMemo(() => dayjs().format("DD/MM"), []);
+  const todayDisplay = dayjs(todayStr).format("DD/MM");
 
-  // Collect any skipped_holidays from backend rows
-  const holidaySet = useMemo(() => {
-    const set = new Set<string>();
-    for (let i = 0; i < rows.length; i++) {
-      const sh = rows[i].skipped_holidays;
-      if (Array.isArray(sh)) {
-        for (let j = 0; j < sh.length; j++) {
-          if (sh[j]) set.add(String(sh[j]).slice(0, 10));
-        }
-      }
-    }
-    return set;
-  }, [rows]);
+  // Select the source schedule without inventing dates when one variant is missing.
+  const rows = useMemo(() => sourceRows.map((row) => filters.skipHolidays ? row : ({
+    ...row,
+    start_by: row.start_by_no_skip ?? row.start_by,
+    arrive_by: row.arrive_by_no_skip ?? row.arrive_by,
+    must_out: row.must_out_no_skip ?? row.must_out,
+  })), [sourceRows, filters.skipHolidays]);
+
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, selectedDate: null }));
+  }, [todayStr]);
 
   // Days list for plan window (14 days for 2w, 28 days for 1m) starting after Today
   const calendarDays = useMemo(() => {
@@ -146,8 +180,7 @@ export const usePlanningSummaryGate = () => {
     for (let i = 1; i <= count; i++) {
       const d = base.add(i, "day");
       const dateStr = d.format("YYYY-MM-DD");
-      const dayOfWeek = d.day(); // 0 is Sun, 6 is Sat
-      const isHoliday = dayOfWeek === 0 || dayOfWeek === 6 || holidaySet.has(dateStr);
+      const isHoliday = holidaySet.has(dateStr);
       days.push({
         dateStr,
         dayName: d.format("ddd").toUpperCase(),
@@ -187,6 +220,7 @@ export const usePlanningSummaryGate = () => {
         let coming3dCount = 0;
         let needWipCount = 0;
         let mustOutTodayCount = 0;
+        let onScheduleTodayCount = 0;
         let holdCount = 0;
 
         for (let i = 0; i < gateRows.length; i++) {
@@ -195,9 +229,14 @@ export const usePlanningSummaryGate = () => {
             inGateCount++;
             inGateQty += Number(r.qty) || 0;
           }
-          if (r.is_coming_3d || r.gate_state === "coming") coming3dCount++;
+          if (r.is_coming_3d === true) coming3dCount++;
           if (r.gate_state === "need_wip" || r.status?.toLowerCase() === "need wip") needWipCount++;
-          if (r.must_out === todayStr) mustOutTodayCount++;
+          if (r.must_out === todayStr) {
+            mustOutTodayCount++;
+            if (r.on_time === true && !r.is_late && !r.is_hold && r.lot_status !== "HOLD") {
+              onScheduleTodayCount++;
+            }
+          }
           if (r.is_hold || r.lot_status === "HOLD") holdCount++;
         }
 
@@ -209,6 +248,7 @@ export const usePlanningSummaryGate = () => {
           coming_3d_count: coming3dCount,
           need_wip_count: needWipCount,
           must_out_today_count: mustOutTodayCount,
+          on_schedule_today_count: onScheduleTodayCount,
           hold_count: holdCount,
           late_count: 0,
         };
@@ -299,13 +339,12 @@ export const usePlanningSummaryGate = () => {
         comingCount: 0,
       };
 
-      const todayDow = dayjs(todayStr).day();
       const todayCell: MatrixDayCell = {
         dateStr: todayStr,
         dayName: "TODAY",
         dateDisplay: todayDisplay,
         isToday: true,
-        isHoliday: todayDow === 0 || todayDow === 6 || holidaySet.has(todayStr),
+        isHoliday: holidaySet.has(todayStr),
         isLate: false,
         lotsCount: todayLotsCount,
         needCount: todayNeedCount,
@@ -397,6 +436,7 @@ export const usePlanningSummaryGate = () => {
           (r.prd_name && r.prd_name.toLowerCase().includes(q)) ||
           (r.lot_no && r.lot_no.toLowerCase().includes(q)) ||
           (r.item && r.item.toLowerCase().includes(q)) ||
+          (r.po_no && r.po_no.toLowerCase().includes(q)) ||
           (r.status && r.status.toLowerCase().includes(q))
       );
     }
@@ -443,10 +483,6 @@ export const usePlanningSummaryGate = () => {
     setFilters((prev) => ({ ...prev, planWindow: pw }));
   }, []);
 
-  const toggleSkipHolidays = useCallback(() => {
-    setFilters((prev) => ({ ...prev, skipHolidays: !prev.skipHolidays }));
-  }, []);
-
   const setSearch = useCallback((val: string) => {
     setFilters((prev) => ({ ...prev, search: val }));
   }, []);
@@ -465,10 +501,12 @@ export const usePlanningSummaryGate = () => {
 
   return {
     loading,
+    error,
     rows,
     kpis,
     lastUpdated,
     filters,
+    todayStr,
     availableGates,
     calendarDays,
     gateFlowList,
@@ -478,7 +516,6 @@ export const usePlanningSummaryGate = () => {
     tableStats,
     setCategory,
     setPlanWindow,
-    toggleSkipHolidays,
     setSearch,
     selectGate,
     selectDate,

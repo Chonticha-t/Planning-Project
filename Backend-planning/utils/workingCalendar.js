@@ -76,6 +76,12 @@ const createCalendarIndex = (rows, startDate, endDate) => {
     ordinals.set(date, cumulative);
   }
   return {
+    isWorking(dateStr) {
+      const date = dayNumber(dateStr);
+      if (!ordinals.has(date)) throw new CalendarError("Calendar does not cover the requested date");
+      const shifts = dates.get(date);
+      return !shifts || [...shifts.values()].includes("Working day");
+    },
     dayLeft(today, target) {
       const current = dayNumber(today);
       const shipping = dayNumber(target);

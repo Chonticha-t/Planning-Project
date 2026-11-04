@@ -7,7 +7,6 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  Legend,
 } from "recharts";
 import type { GateDailyChartData } from "../types";
 
@@ -24,14 +23,14 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
   selectedDate,
   onSelectDate,
 }) => {
-  const handleBarClick = (data: any) => {
-    if (!data || !data.activePayload || !data.activePayload[0]) return;
-    const item = data.activePayload[0].payload as GateDailyChartData;
-    if (selectedDate === item.fullDate) {
-      onSelectDate(null); // Toggle off if clicked again
-    } else {
-      onSelectDate(item.fullDate);
-    }
+  const handleBarClick = (data: { activeTooltipIndex?: number | string | null }) => {
+    const activeIndex = data?.activeTooltipIndex;
+    if (activeIndex == null || activeIndex === "") return;
+    const index = Number(activeIndex);
+    if (!Number.isInteger(index) || index < 0) return;
+    const item = chartData[index];
+    if (!item) return;
+    onSelectDate(selectedDate === item.fullDate ? null : item.fullDate);
   };
 
   return (
@@ -42,9 +41,6 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
           <h4 className="font-bold text-sm tracking-wide text-base-content uppercase">
             Daily Must-Out Trend • <span className="text-primary">{gateName}</span>
           </h4>
-          <span className="text-xs text-base-content/50">
-            Click bar to inspect lots for that day
-          </span>
           {selectedDate && (
             <button
               type="button"

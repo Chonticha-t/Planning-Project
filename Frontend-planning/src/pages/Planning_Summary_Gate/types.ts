@@ -2,6 +2,7 @@ export interface PlanningSummaryGateRow {
   pri: number;
   prd_name: string;
   item?: string | null;
+  po_no?: string | null;
   due_date: string;
   status: string;
   lot_no?: string | null;
@@ -53,13 +54,13 @@ export interface GateKpiSummary {
   coming_3d_count: number;
   need_wip_count: number;
   must_out_today_count: number;
+  on_schedule_today_count?: number;
   hold_count: number;
   late_count: number;
 }
 
 export type PrdCategory = "FPC" | "SMT" | "ALL";
 export type PlanWindow = "2w" | "1m";
-export type MatrixViewMode = "daily" | "weekly" | "monthly";
 
 export interface GateFilterState {
   category: PrdCategory;
