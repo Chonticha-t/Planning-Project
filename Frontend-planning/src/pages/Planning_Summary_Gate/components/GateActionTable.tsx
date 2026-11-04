@@ -24,15 +24,11 @@ const formatDateShort = (dtStr?: string | null) => {
   return `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}/${dtStr.slice(2, 4)}`;
 };
 
-const formatDayMonth = (dtStr?: string | null) => {
-  if (!dtStr || dtStr.length < 10) return "-";
-  return `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}`;
-};
-
 const formatScanTime = (dtStr?: string | null) => {
   if (!dtStr || dtStr.length < 10) return "-";
+  const datePart = `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}/${dtStr.slice(2, 4)}`;
   const time = dtStr.length >= 16 ? dtStr.slice(11, 16) : "";
-  return time ? `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)} ${time}` : `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}`;
+  return time ? `${datePart} ${time}` : datePart;
 };
 
 const PAGE_SIZE = 50;
@@ -145,17 +141,17 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
         <table className="table table-sm w-full text-left border-collapse">
           <thead>
             <tr className="bg-base-200/70 border-b border-base-300 text-xs font-bold text-base-content">
-              <th className="w-10 text-center px-2 py-2">PRI</th>
+              <th className="px-2 py-2">PRODUCT NAME</th>
+              <th className="px-2 py-2">PO DUE DATE</th>
               <th className="px-2 py-2">LOT NO</th>
-              <th className="px-2 py-2">PRODUCT</th>
-              <th className="px-2 py-2">SHIP (PO DUE)</th>
-              <th className="px-2 py-2">NOW AT</th>
-              <th className="text-right px-2 py-2">QTY</th>
-              <th className="px-2 py-2">SCAN-IN {gateName}</th>
-              <th className="px-2 py-2">START BY</th>
-              <th className="px-2 py-2">MUST OUT</th>
-              <th className="px-2 py-2">TODAY</th>
-              <th className="text-center px-2 py-2">ON TIME?</th>
+              <th className="px-2 py-2">CURRENT PROCESS</th>
+              <th className="px-2 py-2">NEXT GATE</th>
+              <th className="text-right px-2 py-2">LOT QTY</th>
+              <th className="px-2 py-2">SCAN-IN TIME</th>
+              <th className="px-2 py-2">TARGET IN</th>
+              <th className="px-2 py-2">TARGET OUT</th>
+              <th className="px-2 py-2">ACTION PLAN</th>
+              <th className="text-center px-2 py-2">SCHEDULE STATUS</th>
             </tr>
           </thead>
           <tbody>
@@ -179,9 +175,14 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                     key={`${row.pri}-${row.lot_no}-${row.gate_name}-${rIdx}`}
                     className="border-b border-base-300/50 hover:bg-base-200/40 text-[13px] transition-colors"
                   >
-                    {/* PRI */}
-                    <td className="text-center font-bold text-base-content/60 tabular-nums px-2 py-2 text-xs">
-                      {row.pri}
+                    {/* PRODUCT NAME */}
+                    <td className="px-2 py-2">
+                      <span className="font-bold text-base-content text-[13px]">{row.prd_name}</span>
+                    </td>
+
+                    {/* PO DUE DATE */}
+                    <td className="font-semibold text-base-content tabular-nums px-2 py-2 text-xs">
+                      {formatDateShort(row.due_date)}
                     </td>
 
                     {/* LOT NO */}
@@ -197,52 +198,63 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       )}
                     </td>
 
-                    {/* PRODUCT (without routing case) */}
+                    {/* CURRENT PROCESS */}
                     <td className="px-2 py-2">
-                      <span className="font-bold text-base-content text-[13px]">{row.prd_name}</span>
+                      {!isNeedWip && (row.proc_disp || row.current_gate) ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          {row.proc_disp && (
+                            <span className="font-bold text-slate-800 text-[13px]">
+                              {row.proc_disp}
+                            </span>
+                          )}
+                          {row.current_gate && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-slate-600 text-[11px] font-semibold leading-tight">
+                              {row.current_gate}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-base-content/30">-</span>
+                      )}
                     </td>
 
-                    {/* SHIP (PO DUE) */}
-                    <td className="font-semibold text-base-content tabular-nums px-2 py-2 text-xs">
-                      {formatDateShort(row.due_date)}
-                    </td>
-
-                    {/* NOW AT */}
+                    {/* NEXT GATE */}
                     <td className="px-2 py-2">
-                      {row.proc_disp && !isNeedWip ? (
-                        <span className="badge badge-ghost badge-sm font-semibold text-xs text-base-content/80 px-2 py-0.5">
-                          {row.proc_disp}
+                      {row.next_gate ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#eef2ff] border border-indigo-200/70 text-[#4f46e5] text-[11.5px] font-bold leading-tight">
+                          <span>➔</span>
+                          <span>{row.next_gate}</span>
                         </span>
                       ) : (
                         <span className="text-base-content/30">-</span>
                       )}
                     </td>
 
-                    {/* QTY */}
+                    {/* LOT QTY */}
                     <td className="text-right font-black tabular-nums text-base-content px-2 py-2 text-[13px]">
                       {row.qty ? Number(row.qty).toLocaleString() : "-"}
                     </td>
 
-                    {/* SCAN-IN */}
+                    {/* SCAN-IN TIME */}
                     <td className="text-base-content/80 tabular-nums text-xs px-2 py-2">
                       {formatScanTime(row.scan_in)}
                     </td>
 
-                    {/* START BY */}
+                    {/* TARGET IN */}
                     <td
                       className={`tabular-nums font-semibold px-2 py-2 text-xs ${
                         isLateStart ? "text-rose-600 font-bold" : "text-base-content/80"
                       }`}
                     >
-                      {formatDayMonth(row.start_by)}
+                      {formatDateShort(row.start_by)}
                     </td>
 
-                    {/* MUST OUT */}
+                    {/* TARGET OUT */}
                     <td className="font-bold text-base-content tabular-nums px-2 py-2 text-xs">
-                      {formatDayMonth(row.must_out)}
+                      {formatDateShort(row.must_out)}
                     </td>
 
-                    {/* TODAY ACTION */}
+                    {/* ACTION PLAN */}
                     <td className="px-2 py-2">
                       {row.today_action ? (
                         <span
@@ -259,7 +271,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       )}
                     </td>
 
-                    {/* ON TIME? */}
+                    {/* SCHEDULE STATUS */}
                     <td className="text-center px-2 py-2">
                       {row.on_time ? (
                         <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-xs font-bold bg-emerald-600 text-white shadow-2xs">
@@ -339,4 +351,3 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
     </div>
   );
 });
-
