@@ -43,8 +43,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 }) => {
   const [page, setPage] = useState(1);
 
-  const todayMs = useMemo(() => new Date(`${todayStr}T00:00:00`).getTime(), [todayStr]);
-
   // Reset to page 1 when gate, tab, or row count changes
   useEffect(() => {
     setPage(1);
@@ -138,31 +136,31 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
       {/* Main Table */}
       <div className="overflow-x-auto rounded-xl border border-base-300">
-        <table className="table table-sm table-fixed w-full min-w-[1440px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
+        <table className="table table-sm table-fixed w-full min-w-[1400px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
           <colgroup>
-            <col style={{ width: "15%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "13%" }} />
+            <col style={{ width: "14%" }} />
             <col style={{ width: "9%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "7%" }} />
-            <col style={{ width: "7%" }} />
             <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "11%" }} />
             <col style={{ width: "9%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "8%" }} />
           </colgroup>
           <thead>
             <tr className="bg-base-200/70 border-b border-base-300 text-[12.5px] font-bold tracking-[0.04em] text-base-content">
               <th className="px-2 py-2">PRODUCT NAME</th>
               <th className="px-2 py-2">PO DUE DATE</th>
               <th className="px-2 py-2">LOT NO</th>
-              <th className="px-2 py-2 whitespace-nowrap">CURRENT PROCESS</th>
               <th className="px-2 py-2">NET REQUIRED</th>
+              <th className="px-2 py-2">NET WIP</th>
+              <th className="px-2 py-2 whitespace-nowrap">CURRENT PROCESS</th>
               <th className="px-2 py-2">SCAN-IN TIME</th>
               <th className="px-2 py-2">FIRST GATE IN</th>
               <th className="px-2 py-2">TO NEXT GATE</th>
               <th className="px-2 py-2">NEXT GATE</th>
-              <th className="text-center px-2 py-2">SCHEDULE STATUS</th>
             </tr>
           </thead>
           <tbody>
@@ -182,10 +180,8 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                 const netRequired = row.cal_net_required == null
                   ? null
                   : Number(row.cal_net_required);
+                const netWip = row.net_wip_qty == null ? null : Number(row.net_wip_qty);
                 const isLateStart = row.start_by && row.start_by < todayStr;
-                const diffDays = row.must_out
-                  ? Math.round((new Date(`${row.must_out.slice(0, 10)}T00:00:00`).getTime() - todayMs) / 86400000)
-                  : 0;
 
                 return (
                   <tr
@@ -194,7 +190,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   >
                     {/* PRODUCT NAME */}
                     <td className="px-2 py-2">
-                      <span className="font-semibold text-base-content">{row.prd_name}</span>
+                      <span className="font-semibold text-[15px] text-base-content">{row.prd_name}</span>
                     </td>
 
                     {/* PO DUE DATE */}
@@ -213,6 +209,24 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                           {row.lot_no}
                         </span>
                       )}
+                    </td>
+
+                    {/* Use the same Net Required field as Planning Summary. */}
+                    <td className="tabular-nums px-2 py-2">
+                      <span className={`text-[14px] ${netRequired !== null && Number.isFinite(netRequired) ? "font-bold text-error" : "text-base-content/25"}`}>
+                        {netRequired !== null && Number.isFinite(netRequired)
+                          ? netRequired.toLocaleString("en-US", { maximumFractionDigits: 0 })
+                          : "-"}
+                      </span>
+                    </td>
+
+                    {/* Net WIP from the gate API, including zero quantities. */}
+                    <td className="tabular-nums px-2 py-2">
+                      <span className={`text-[14px] ${netWip !== null && Number.isFinite(netWip) ? "font-semibold text-emerald-600 dark:text-emerald-400" : "text-base-content/25"}`}>
+                        {netWip !== null && Number.isFinite(netWip)
+                          ? netWip.toLocaleString("en-US", { maximumFractionDigits: 0 })
+                          : "-"}
+                      </span>
                     </td>
 
                     {/* Current lot location is independent of this row's planned transition. */}
@@ -235,18 +249,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       ) : (
                         <span className="text-base-content/25">-</span>
                       )}
-                    </td>
-
-                    {/* Use the same Net Required field as Planning Summary. */}
-                    <td className="text-right font-normal tabular-nums px-2 py-2 text-[13px]">
-                      <span className={`tabular-nums text-[14px] ${netRequired !== null && Number.isFinite(netRequired) ? "font-bold text-error" : "text-base-content/25"}`}>
-                        {netRequired !== null && Number.isFinite(netRequired)
-                          ? netRequired.toLocaleString("en-US", {
-                              minimumFractionDigits: 0,
-                              maximumFractionDigits: 0,
-                            })
-                          : "-"}
-                      </span>
                     </td>
 
                     {/* SCAN-IN TIME */}
@@ -279,18 +281,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       )}
                     </td>
 
-                    {/* SCHEDULE STATUS */}
-                    <td className="text-center px-2 py-2">
-                      {row.on_time ? (
-                        <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-[12px] leading-4 font-semibold bg-emerald-600 text-white shadow-2xs">
-                          {row.must_out === todayStr || diffDays <= 0 ? "Today" : `OK +${diffDays}d`}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center justify-center min-w-[55px] px-2 py-0.5 rounded text-[12px] leading-4 font-semibold bg-rose-600 text-white shadow-2xs">
-                          Late
-                        </span>
-                      )}
-                    </td>
                   </tr>
                 );
               })
