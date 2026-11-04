@@ -26,12 +26,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {gateFlowList.map((g, idx) => {
           const isSelected = selectedGate === g.gate_name;
-          const hasMustOutToday = g.must_out_today_count > 0;
           const hasHold = g.hold_count > 0;
-          const onScheduleCount = Math.min(g.must_out_today_count, Math.max(0, g.on_schedule_today_count ?? 0));
-          const onSchedulePercent = hasMustOutToday
-            ? Math.round(onScheduleCount / g.must_out_today_count * 100)
-            : 0;
 
           return (
             <div key={g.gate_name} className="relative flex items-center">
@@ -45,7 +40,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                 }`}
               >
                 {/* Top: Gate Title & Hold Badge */}
-                <div className="flex items-center justify-between gap-1 mb-2">
+                <div className="flex items-center justify-between gap-1 mb-1.5">
                   <h4 className="font-semibold text-[15px] text-base-content tracking-normal">
                     {g.gate_name}
                   </h4>
@@ -57,7 +52,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                 </div>
 
                 {/* Primary Stats: In Gate & Coming */}
-                <div className="flex flex-col gap-0.5 mb-3">
+                <div className="flex flex-col gap-0.5">
                   <div className="flex items-baseline gap-1.5 text-xs text-base-content/80">
                     <span className="font-bold text-sm text-base-content tabular-nums">
                       {g.in_gate_count}
@@ -83,39 +78,6 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                     )}
                   </div>
                 </div>
-
-                {/* Bottom: Must Out Today Status & Progress Bar */}
-                <div className="pt-2 border-t border-base-200/80 text-[11px]">
-                  <div className="flex items-center justify-between mb-1 text-base-content/70">
-                    <span>Must out today</span>
-                    <span
-                      className={`font-bold tabular-nums ${
-                        hasMustOutToday ? "text-emerald-600" : "text-base-content/50"
-                      }`}
-                    >
-                      {g.must_out_today_count} lots
-                    </span>
-                  </div>
-
-                  {hasMustOutToday ? (
-                    <div className={`flex items-center gap-1.5 font-semibold text-[10.5px] ${onSchedulePercent === 100 ? "text-emerald-600" : "text-amber-600"}`}>
-                      {/* Share of today's lots explicitly on time, excluding late/hold lots. */}
-                      <div className="w-full bg-base-300 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${onSchedulePercent === 100 ? "bg-emerald-600" : "bg-amber-600"}`}
-                          style={{ width: `${onSchedulePercent}%` }}
-                        />
-                      </div>
-                      <span className="shrink-0 text-[10px]" title={`${onScheduleCount} of ${g.must_out_today_count} lots on time and not late or on hold`}>
-                        {onSchedulePercent}% on schedule ({onScheduleCount}/{g.must_out_today_count})
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="text-[10.5px] text-base-content/40 italic">
-                      No lots must out today
-                    </p>
-                  )}
-                </div>
               </div>
 
               {/* Chevron Arrow to next gate (visible on desktop between cards) */}
@@ -131,4 +93,3 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
     </div>
   );
 };
-
