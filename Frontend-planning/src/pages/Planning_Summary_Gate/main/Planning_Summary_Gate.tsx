@@ -14,6 +14,7 @@ const Planning_Summary_Gate: React.FC = () => {
     lastUpdated,
     filters,
     todayStr,
+    availableProducts,
     gateFlowList,
     matrixRows,
     chartData,
@@ -21,6 +22,7 @@ const Planning_Summary_Gate: React.FC = () => {
     tableStats,
     setCategory,
     setPlanWindow,
+    setSelectedProduct,
     setSearch,
     selectGate,
     selectDate,
@@ -45,6 +47,9 @@ const Planning_Summary_Gate: React.FC = () => {
         onCategoryChange={setCategory}
         planWindow={filters.planWindow}
         onPlanWindowChange={setPlanWindow}
+        products={availableProducts}
+        selectedProduct={filters.selectedProduct}
+        onProductChange={setSelectedProduct}
         search={filters.search}
         onSearchChange={setSearch}
         lastUpdated={lastUpdated}
@@ -67,7 +72,7 @@ const Planning_Summary_Gate: React.FC = () => {
             onSelectGate={selectGate}
           />
 
-          {/* 3. Section 2: Gate Must-Out Schedule */}
+          {/* 3. Section 2: Gate Arrival Schedule */}
           <GateMatrixTable
             matrixRows={matrixRows}
             selectedGate={filters.selectedGate}

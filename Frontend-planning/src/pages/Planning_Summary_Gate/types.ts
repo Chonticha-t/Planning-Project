@@ -66,6 +66,7 @@ export interface GateFilterState {
   category: PrdCategory;
   planWindow: PlanWindow;
   skipHolidays: boolean;
+  selectedProduct?: string;
   search: string;
   selectedGate: string;
   selectedDate: string | null;

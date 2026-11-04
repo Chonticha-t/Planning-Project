@@ -35,6 +35,7 @@ export const usePlanningSummaryGate = () => {
     category: "FPC",
     planWindow: "2w",
     skipHolidays: true,
+    selectedProduct: "",
     search: "",
     selectedGate: "FFPC",
     selectedDate: null,
@@ -127,7 +128,12 @@ export const usePlanningSummaryGate = () => {
 
   // Distinct gates based on category and data (deduplicated & canonical ordered)
   const availableGates = useMemo(() => {
-    const defaultGates = filters.category === "SMT" ? DEFAULT_GATES_SMT : DEFAULT_GATES_FPC;
+    const defaultGates =
+      filters.category === "SMT"
+        ? DEFAULT_GATES_SMT
+        : filters.category === "ALL"
+          ? [...DEFAULT_GATES_FPC, ...DEFAULT_GATES_SMT.filter((g) => !DEFAULT_GATES_FPC.includes(g))]
+          : DEFAULT_GATES_FPC;
     if (kpis.length > 0) {
       // Deduplicate gate names while preserving lowest gate_order
       const map = new Map<string, number>();
@@ -151,6 +157,16 @@ export const usePlanningSummaryGate = () => {
     return defaultGates;
   }, [kpis, filters.category]);
 
+  // Distinct sorted product names for the dropdown filter
+  const availableProducts = useMemo(() => {
+    const set = new Set<string>();
+    for (let i = 0; i < sourceRows.length; i++) {
+      const p = sourceRows[i].prd_name?.trim();
+      if (p) set.add(p);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [sourceRows]);
+
   // Ensure selectedGate is valid when availableGates change
   useEffect(() => {
     if (!availableGates.includes(filters.selectedGate) && availableGates.length > 0) {
@@ -161,7 +177,7 @@ export const usePlanningSummaryGate = () => {
   const todayDisplay = dayjs(todayStr).format("DD/MM");
 
   // Select the source schedule without inventing dates when one variant is missing.
-  const rows = useMemo(() => sourceRows.map((row) => filters.skipHolidays ? row : ({
+  const baseRows = useMemo(() => sourceRows.map((row) => filters.skipHolidays ? row : ({
     ...row,
     start_by: row.start_by_no_skip ?? row.start_by,
     arrive_by: row.arrive_by_no_skip ?? row.arrive_by,
@@ -196,11 +212,43 @@ export const usePlanningSummaryGate = () => {
   // Deferred search value to keep typing smooth even with 10,000+ rows
   const deferredSearch = useDeferredValue(filters.search);
 
-  // Pre-index rows by gate_name in a single O(N) pass
+  // Globally filtered rows by Product Dropdown + Search Box so ALL 4 sections update together
+  const globallyFilteredRows = useMemo(() => {
+    const prodFilter = filters.selectedProduct?.trim() || "";
+    const q = deferredSearch.toLowerCase().trim();
+    const normalizedQ = q.replace(/\s*(?:->|\u2192)\s*/g, " \u2192 ");
+
+    if (!prodFilter && !q) return baseRows;
+
+    return baseRows.filter((r) => {
+      if (prodFilter && r.prd_name !== prodFilter) {
+        return false;
+      }
+      if (q) {
+        const matchesText =
+          (r.prd_name && r.prd_name.toLowerCase().includes(q)) ||
+          (r.lot_no && r.lot_no.toLowerCase().includes(q)) ||
+          (r.item && r.item.toLowerCase().includes(q)) ||
+          (r.po_no && r.po_no.toLowerCase().includes(q)) ||
+          (r.status && r.status.toLowerCase().includes(q)) ||
+          [
+            r.current_gate,
+            r.gate_name,
+            r.next_gate,
+            formatGateName(r.current_gate),
+            formatGateTransition(r.gate_name, r.next_gate),
+          ].some((value) => value?.toLowerCase().includes(normalizedQ));
+        if (!matchesText) return false;
+      }
+      return true;
+    });
+  }, [baseRows, filters.selectedProduct, deferredSearch]);
+
+  // Pre-index globally filtered rows by gate_name in a single O(N) pass
   const rowsByGate = useMemo(() => {
     const map = new Map<string, PlanningSummaryGateRow[]>();
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
+    for (let i = 0; i < globallyFilteredRows.length; i++) {
+      const r = globallyFilteredRows[i];
       let arr = map.get(r.gate_name);
       if (!arr) {
         arr = [];
@@ -209,13 +257,15 @@ export const usePlanningSummaryGate = () => {
       arr.push(r);
     }
     return map;
-  }, [rows]);
+  }, [globallyFilteredRows]);
 
-  // Aggregated Gate Flow KPIs (Section 1) - O(N) single pass matching todayStr
+  const hasFilterActive = Boolean(filters.selectedProduct?.trim() || deferredSearch.trim());
+
+  // Aggregated Gate Flow KPIs (Section 1) - O(N) single pass matching todayStr & active filters
   const gateFlowList = useMemo(() => {
     return availableGates.map((gName, idx) => {
       const gateRows = rowsByGate.get(gName) || [];
-      if (gateRows.length > 0) {
+      if (gateRows.length > 0 || baseRows.length > 0 || hasFilterActive) {
         let inGateCount = 0;
         let inGateQty = 0;
         let coming3dCount = 0;
@@ -283,7 +333,7 @@ export const usePlanningSummaryGate = () => {
         late_count: 0,
       };
     });
-  }, [availableGates, kpis, rowsByGate, todayStr]);
+  }, [availableGates, kpis, rowsByGate, baseRows.length, hasFilterActive, todayStr]);
 
   // Section 2: Gate Matrix rows (Heatmap by Gate and Arrival Date) - Single O(N) pass per gate
   const matrixRows = useMemo<MatrixGateRow[]>(() => {
@@ -429,24 +479,8 @@ export const usePlanningSummaryGate = () => {
       list = list.filter((r) => r.gate_state === "need_wip");
     }
 
-    // Search filter using deferredSearch so typing never lags
-    if (deferredSearch.trim()) {
-      const q = deferredSearch.toLowerCase().trim();
-      list = list.filter(
-        (r) =>
-          (r.prd_name && r.prd_name.toLowerCase().includes(q)) ||
-          (r.lot_no && r.lot_no.toLowerCase().includes(q)) ||
-          (r.item && r.item.toLowerCase().includes(q)) ||
-          (r.po_no && r.po_no.toLowerCase().includes(q)) ||
-          (r.status && r.status.toLowerCase().includes(q)) ||
-          [r.current_gate, r.gate_name, r.next_gate, formatGateName(r.current_gate),
-            formatGateTransition(r.gate_name, r.next_gate)]
-            .some((value) => value?.toLowerCase().includes(q.replace(/\s*(?:->|\u2192)\s*/g, " \u2192 ")))
-      );
-    }
-
     return [...list].sort((a, b) => (a.pri || 9999) - (b.pri || 9999));
-  }, [rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, deferredSearch, todayStr]);
+  }, [rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr]);
 
   // Bottom Summary stats for Section 3 (Single O(K) pass)
   const tableStats = useMemo(() => {
@@ -478,6 +512,7 @@ export const usePlanningSummaryGate = () => {
     setFilters((prev) => ({
       ...prev,
       category: cat,
+      selectedProduct: "",
       selectedGate: cat === "SMT" ? "SMT" : "FFPC",
       selectedDate: null,
     }));
@@ -485,6 +520,10 @@ export const usePlanningSummaryGate = () => {
 
   const setPlanWindow = useCallback((pw: PlanWindow) => {
     setFilters((prev) => ({ ...prev, planWindow: pw }));
+  }, []);
+
+  const setSelectedProduct = useCallback((prd: string) => {
+    setFilters((prev) => ({ ...prev, selectedProduct: prd }));
   }, []);
 
   const setSearch = useCallback((val: string) => {
@@ -506,12 +545,13 @@ export const usePlanningSummaryGate = () => {
   return {
     loading,
     error,
-    rows,
+    rows: baseRows,
     kpis,
     lastUpdated,
     filters,
     todayStr,
     availableGates,
+    availableProducts,
     calendarDays,
     gateFlowList,
     matrixRows,
@@ -520,6 +560,7 @@ export const usePlanningSummaryGate = () => {
     tableStats,
     setCategory,
     setPlanWindow,
+    setSelectedProduct,
     setSearch,
     selectGate,
     selectDate,
