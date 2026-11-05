@@ -1,12 +1,24 @@
 import React, { useState, useEffect, useMemo, useRef, memo } from "react";
-import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, Check } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronDown,
+  Check,
+  GitCommitHorizontal,
+} from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
 import type { PlanningSummaryGateRow } from "../types";
+import { formatGateName } from "../gatePresentation";
 
 interface GateActionTableProps {
   todayStr: string;
   gateName: string;
   rows: PlanningSummaryGateRow[];
+  allRows?: PlanningSummaryGateRow[];
   actionTab: "all" | "today" | "in_gate" | "need_wip";
   onTabChange: (tab: "all" | "today" | "in_gate" | "need_wip") => void;
   stats: {
@@ -25,11 +37,151 @@ const formatDateShort = (dtStr?: string | null) => {
   return `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}/${dtStr.slice(2, 4)}`;
 };
 
+const formatDateFull = (dtStr?: string | null) => {
+  if (!dtStr || dtStr.length < 10) return "-";
+  return `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}/${dtStr.slice(0, 4)}`;
+};
+
 const formatScanTime = (dtStr?: string | null) => {
   if (!dtStr || dtStr.length < 10) return "-";
   const datePart = `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}/${dtStr.slice(2, 4)}`;
   const time = dtStr.length >= 16 ? dtStr.slice(11, 16) : "";
   return time ? `${datePart} ${time}` : datePart;
+};
+
+const addDaysIso = (isoDate: string, deltaDays: number): string => {
+  const ms = Date.parse(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return isoDate;
+  return new Date(ms + deltaDays * 86400000).toISOString().slice(0, 10);
+};
+
+interface RouteStepNode {
+  gateRaw: string;
+  gateLabel: string;
+  dateFull: string;
+  leadDays: number | null;
+  isCurrentGate: boolean;
+  isSelectedGate: boolean;
+}
+
+const buildLotRouteSteps = (
+  row: PlanningSummaryGateRow,
+  sourcePool: PlanningSummaryGateRow[],
+  selectedGateName: string
+): RouteStepNode[] => {
+  const isNeedWip =
+    row.lot_no === "NEED WIP" || row.gate_state === "need_wip" || row.status === "need wip";
+  const lotTrimmed = row.lot_no?.trim() ?? "";
+
+  let candidates: PlanningSummaryGateRow[] = [];
+
+  if (!isNeedWip && lotTrimmed) {
+    // Match all gate stages for this lot across the entire unfiltered dataset
+    candidates = sourcePool.filter(
+      (r) => r.prd_name === row.prd_name && (r.lot_no?.trim() ?? "") === lotTrimmed
+    );
+  } else {
+    // For NEED WIP, match all gate stages of this product + due_date
+    candidates = sourcePool.filter(
+      (r) =>
+        r.prd_name === row.prd_name &&
+        (r.lot_no === "NEED WIP" || r.gate_state === "need_wip" || r.status === "need wip") &&
+        r.due_date === row.due_date
+    );
+  }
+
+  if (candidates.length === 0) {
+    candidates = [row];
+  }
+
+  // Deduplicate by gate_name, preferring matching due_date & qty, then closest pri
+  const byGate = new Map<string, PlanningSummaryGateRow>();
+  for (const c of candidates) {
+    const existing = byGate.get(c.gate_name);
+    if (!existing) {
+      byGate.set(c.gate_name, c);
+      continue;
+    }
+    const cSameDue = c.due_date === row.due_date ? 1 : 0;
+    const exSameDue = existing.due_date === row.due_date ? 1 : 0;
+    if (cSameDue !== exSameDue) {
+      if (cSameDue > exSameDue) byGate.set(c.gate_name, c);
+      continue;
+    }
+    const cSameQty = c.qty === row.qty ? 1 : 0;
+    const exSameQty = existing.qty === row.qty ? 1 : 0;
+    if (cSameQty !== exSameQty) {
+      if (cSameQty > exSameQty) byGate.set(c.gate_name, c);
+      continue;
+    }
+    if (Math.abs((c.pri || 0) - (row.pri || 0)) < Math.abs((existing.pri || 0) - (row.pri || 0))) {
+      byGate.set(c.gate_name, c);
+    }
+  }
+
+  // If this lot is already mid-route and earlier/later gates of the same product routing exist in sourcePool,
+  // include those stages so the timeline always shows the complete stage sequence.
+  const productRouteRows = sourcePool.filter(
+    (r) =>
+      r.prd_name === row.prd_name &&
+      (!row.routing_case || !r.routing_case || r.routing_case === row.routing_case)
+  );
+  const templateByGate = new Map<string, PlanningSummaryGateRow>();
+  for (const pr of productRouteRows) {
+    const ex = templateByGate.get(pr.gate_name);
+    if (!ex || (pr.gate_order || 999) < (ex.gate_order || 999)) {
+      templateByGate.set(pr.gate_name, pr);
+    }
+  }
+
+  // Merge any missing stages from the product's route template
+  for (const [gName, tmpl] of templateByGate.entries()) {
+    if (!byGate.has(gName)) {
+      byGate.set(gName, {
+        ...row,
+        gate_name: gName,
+        gate_order: tmpl.gate_order,
+        next_gate: tmpl.next_gate,
+        lead_days: tmpl.lead_days,
+        arrive_by: gName === row.first_gate ? (row.start_by ?? null) : null,
+        start_by: gName === row.first_gate ? (row.start_by ?? null) : null,
+        must_out: "",
+      });
+    }
+  }
+
+  const sortedGates = Array.from(byGate.values()).sort(
+    (a, b) => (a.gate_order || 0) - (b.gate_order || 0)
+  );
+
+  // Extract raw ISO dates per stage and back-fill / forward-fill any missing stage dates using lead_days
+  const rawDates: (string | null)[] = sortedGates.map(
+    (g) => g.arrive_by || g.start_by || g.must_out || null
+  );
+
+  // Back-fill earlier stages if an upstream stage was reconstructed from template
+  for (let i = rawDates.length - 2; i >= 0; i--) {
+    if (!rawDates[i] && rawDates[i + 1]) {
+      const lead = Number(sortedGates[i].lead_days) || 0;
+      rawDates[i] = addDaysIso(rawDates[i + 1]!, -lead);
+    }
+  }
+  // Forward-fill later stages if needed
+  for (let i = 1; i < rawDates.length; i++) {
+    if (!rawDates[i] && rawDates[i - 1]) {
+      const lead = Number(sortedGates[i - 1].lead_days) || 0;
+      rawDates[i] = addDaysIso(rawDates[i - 1]!, lead);
+    }
+  }
+
+  return sortedGates.map((g, idx) => ({
+    gateRaw: g.gate_name,
+    gateLabel: formatGateName(g.gate_name) || g.gate_name,
+    dateFull: formatDateFull(rawDates[idx]),
+    leadDays: g.lead_days != null ? Number(g.lead_days) : null,
+    isCurrentGate: !isNeedWip && Boolean(row.current_gate && row.current_gate === g.gate_name),
+    isSelectedGate: g.gate_name === selectedGateName,
+  }));
 };
 
 const PAGE_SIZE = 50;
@@ -43,9 +195,6 @@ const SORT_OPTIONS = [
   { key: "net_wip_qty", label: "NET WIP" },
   { key: "proc_disp", label: "CURRENT PROCESS" },
   { key: "scan_in", label: "SCAN-IN TIME" },
-  { key: "start_by", label: "FIRST GATE IN" },
-  { key: "must_out", label: "TO NEXT GATE" },
-  { key: "next_gate", label: "NEXT GATE" },
 ] as const;
 
 type SortKey = typeof SORT_OPTIONS[number]["key"];
@@ -254,6 +403,7 @@ const GateSortByDropdown = ({
 export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   gateName,
   rows,
+  allRows,
   actionTab,
   onTabChange,
   stats,
@@ -261,11 +411,45 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>("default");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [activePopover, setActivePopover] = useState<{
+    rowKey: string;
+    row: PlanningSummaryGateRow;
+    top: number;
+    right: number;
+  } | null>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   // Reset to page 1 when gate, tab, or row count changes
   useEffect(() => {
     setPage(1);
+    setActivePopover(null);
   }, [gateName, actionTab, rows.length]);
+
+  // Close floating popover on outside click, Escape, scroll, or resize
+  useEffect(() => {
+    if (!activePopover) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (popoverRef.current?.contains(target as Node)) return;
+      if (target?.closest("[data-gate-stage-btn]")) return;
+      setActivePopover(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActivePopover(null);
+    };
+    const handleClose = () => setActivePopover(null);
+
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleClose, true);
+    window.addEventListener("resize", handleClose);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleClose, true);
+      window.removeEventListener("resize", handleClose);
+    };
+  }, [activePopover]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
 
@@ -295,6 +479,8 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
     }
     return sum;
   }, [rows]);
+
+  const sourcePool = allRows && allRows.length > 0 ? allRows : rows;
 
   return (
     <div className="flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
@@ -381,17 +567,15 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
       {/* Main Table */}
       <div className="overflow-x-auto rounded-xl border border-base-300">
-        <table className="table table-sm table-fixed w-full min-w-[1400px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
+        <table className="table table-sm table-fixed w-full min-w-[1100px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
           <colgroup>
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "8%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "13%" }} />
             <col style={{ width: "12%" }} />
             <col style={{ width: "11%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "9%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "12%" }} />
             <col style={{ width: "8%" }} />
           </colgroup>
           <thead>
@@ -403,15 +587,13 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
               <th className="px-2 py-2">NET WIP</th>
               <th className="px-2 py-2 whitespace-nowrap">CURRENT PROCESS</th>
               <th className="px-2 py-2">SCAN-IN TIME</th>
-              <th className="px-2 py-2">FIRST GATE IN</th>
-              <th className="px-2 py-2">TO NEXT GATE</th>
-              <th className="px-2 py-2">NEXT GATE</th>
+              <th className="px-2 py-2">GATE STAGE</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-10 text-base-content/50 text-sm">
+                <td colSpan={8} className="text-center py-10 text-base-content/50 text-sm">
                   No lots found for the selected gate and criteria.
                 </td>
               </tr>
@@ -421,16 +603,20 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   row.lot_no === "NEED WIP" || row.gate_state === "need_wip" || row.status === "need wip";
                 const currentProcess = row.proc_disp?.trim() ?? "";
                 const currentGate = row.current_gate?.trim() ?? "";
-                const nextGate = row.next_gate?.trim() ?? "";
                 const netRequired = row.cal_net_required == null
                   ? null
                   : Number(row.cal_net_required);
                 const netWip = row.net_wip_qty == null ? null : Number(row.net_wip_qty);
 
+                const rowKey = `${row.pri}-${row.lot_no}-${row.gate_name}-${rIdx}`;
+                const isExpanded = activePopover?.rowKey === rowKey;
+
                 return (
                   <tr
-                    key={`${row.pri}-${row.lot_no}-${row.gate_name}-${rIdx}`}
-                    className="border-b border-base-300/50 hover:bg-base-200/40 text-[14px] leading-5 transition-colors"
+                    key={rowKey}
+                    className={`border-b border-base-300/50 hover:bg-base-200/40 text-[14px] leading-5 transition-colors ${
+                      isExpanded ? "bg-[#eef2ff]/50" : ""
+                    }`}
                   >
                     {/* PRODUCT NAME */}
                     <td className="px-2 py-2">
@@ -500,27 +686,37 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       {formatScanTime(row.scan_in)}
                     </td>
 
-                    {/* FIRST GATE IN */}
-                    <td className="tabular-nums font-semibold text-[13.5px] text-sky-700 px-2 py-2">
-                      {formatDateShort(row.start_by)}
-                    </td>
-
-                    {/* TO NEXT GATE */}
-                    <td className="tabular-nums font-bold text-[13.5px] text-[#4f46e5] px-2 py-2">
-                      {formatDateShort(row.must_out)}
-                    </td>
-
-                    {/* Next gate in this row's planned route. */}
+                    {/* GATE STAGE (Floating Popover Toggle Button) */}
                     <td className="px-2 py-2">
-                      {nextGate ? (
-                        <span className="font-semibold text-base-content">
-                          {nextGate}
-                        </span>
-                      ) : (
-                        <span className="text-base-content/30">-</span>
-                      )}
+                      <div className="inline-flex items-center justify-center">
+                        <button
+                          type="button"
+                          data-gate-stage-btn="true"
+                          onClick={(e) => {
+                            if (isExpanded) {
+                              setActivePopover(null);
+                              return;
+                            }
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const top = Math.max(
+                              40,
+                              Math.min(window.innerHeight - 40, rect.top + rect.height / 2)
+                            );
+                            const right = Math.max(12, window.innerWidth - rect.left + 10);
+                            setActivePopover({ rowKey, row, top, right });
+                          }}
+                          title="View gate stage timeline"
+                          aria-expanded={isExpanded}
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-all cursor-pointer shrink-0 ${
+                            isExpanded
+                              ? "bg-[#4f46e5] text-white border-[#4f46e5] shadow-2xs"
+                              : "bg-slate-100/80 text-slate-600 border-slate-200/80 hover:bg-[#eef2ff] hover:text-[#4f46e5] hover:border-indigo-200"
+                          }`}
+                        >
+                          <GitCommitHorizontal size={15} />
+                        </button>
+                      </div>
                     </td>
-
                   </tr>
                 );
               })
@@ -586,6 +782,89 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
           </div>
         )}
       </div>
+
+      {/* Floating Popover for Step Gate Line */}
+      {activePopover &&
+        typeof document !== "undefined" &&
+        createPortal(
+          (() => {
+            const routeSteps = buildLotRouteSteps(activePopover.row, sourcePool, gateName);
+            return (
+              <div
+                ref={popoverRef}
+                role="dialog"
+                aria-label="Gate stage timeline"
+                style={{
+                  position: "fixed",
+                  top: activePopover.top,
+                  right: activePopover.right,
+                  transform: "translateY(-50%)",
+                }}
+                className="z-[9999] rounded-xl bg-white border border-slate-200/90 shadow-xl px-3.5 py-2.5 max-w-[calc(100vw-32px)]"
+              >
+                {/* Right-pointing Caret Arrow to the Button */}
+                <div className="w-2.5 h-2.5 bg-white border-t border-r border-slate-200/90 rotate-45 absolute -right-[6px] top-1/2 -translate-y-1/2" />
+
+                <div className="flex items-center overflow-x-auto">
+                  <div className="inline-flex items-start">
+                    {routeSteps.map((step, sIdx) => {
+                      const isFirst = sIdx === 0;
+                      const isLast = sIdx === routeSteps.length - 1;
+                      const isHighlighted = step.isCurrentGate || step.isSelectedGate;
+
+                      return (
+                        <div key={`${step.gateRaw}-${sIdx}`} className="inline-flex items-start">
+                          {/* Compact Gate Node Column */}
+                          <div className="flex flex-col items-center w-[64px]">
+                            {/* Top Track (h-5) with continuous horizontal line behind Gate Pill */}
+                            <div className="relative flex items-center justify-center w-full h-5">
+                              {!isFirst && (
+                                <div className="absolute left-0 right-1/2 top-1/2 -translate-y-1/2 h-[1.5px] bg-slate-300" />
+                              )}
+                              {!isLast && (
+                                <div className="absolute left-1/2 right-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-slate-300" />
+                              )}
+                              <span
+                                className={`relative z-10 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[11px] font-bold tracking-wide leading-none border transition-all ${
+                                  step.isCurrentGate
+                                    ? "bg-[#4f46e5] border-[#4f46e5] text-white shadow-2xs"
+                                    : isHighlighted
+                                      ? "bg-[#eef2ff] border-indigo-300 text-[#4f46e5]"
+                                      : "bg-white border-slate-200 text-slate-700"
+                                }`}
+                              >
+                                {step.gateLabel}
+                              </span>
+                            </div>
+
+                            {/* Target Date (DD/MM/YYYY) */}
+                            <div
+                              className={`mt-1 text-[10px] tabular-nums leading-none tracking-tight ${
+                                isHighlighted
+                                  ? "text-[#4f46e5] font-bold"
+                                  : "text-slate-600 font-medium"
+                              }`}
+                            >
+                              {step.dateFull}
+                            </div>
+                          </div>
+
+                          {/* Unbroken Connector Line */}
+                          {!isLast && (
+                            <div className="relative flex items-center justify-center w-4 h-5 shrink-0">
+                              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-slate-300" />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })(),
+          document.body
+        )}
     </div>
   );
 });

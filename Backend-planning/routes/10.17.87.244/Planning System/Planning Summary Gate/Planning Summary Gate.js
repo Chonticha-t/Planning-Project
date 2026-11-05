@@ -76,9 +76,7 @@ router.get("/table", async (req, res) => {
     }
     if (startdate) {
       params.push(startdate);
-      conditions.push(`${mustOutColumn} >= $${params.length}::date`);
-    } else {
-      conditions.push(`(${mustOutColumn} IS NULL OR ${mustOutColumn} >= CURRENT_DATE)`);
+      conditions.push(`(${mustOutColumn} IS NULL OR ${mustOutColumn} >= $${params.length}::date)`);
     }
     if (stopdate) {
       params.push(stopdate);

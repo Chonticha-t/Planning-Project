@@ -44,7 +44,7 @@ export const usePlanningSummaryGate = () => {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fetch data
+  // Fetch data (fetch all categories and all stage dates for complete lot stage timelines)
   const fetchData = useCallback(async () => {
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -62,11 +62,11 @@ export const usePlanningSummaryGate = () => {
           PLANNING_SUMMARY_GATE_TABLE_API,
           {
             params: {
-              prd_category: filters.category === "ALL" ? undefined : filters.category,
               skip_holidays: filters.skipHolidays,
+              startdate: "2000-01-01",
             },
             signal: controller.signal,
-            timeout: 6000,
+            timeout: 10000,
           }
         ),
         axios.get<{ status: string; data: GateKpiSummary[] }>(
@@ -157,15 +157,32 @@ export const usePlanningSummaryGate = () => {
     return defaultGates;
   }, [kpis, filters.category]);
 
+  // Select the source schedule without inventing dates when one variant is missing.
+  // Contains ALL categories and ALL stage dates for the Gate Stage timeline.
+  const baseRows = useMemo(() => sourceRows.map((row) => filters.skipHolidays ? row : ({
+    ...row,
+    start_by: row.start_by_no_skip ?? row.start_by,
+    arrive_by: row.arrive_by_no_skip ?? row.arrive_by,
+    must_out: row.must_out_no_skip ?? row.must_out,
+  })), [sourceRows, filters.skipHolidays]);
+
+  // Rows filtered by the top category switcher (ALL | FPC | SMT)
+  const categoryRows = useMemo(() => {
+    if (filters.category === "ALL") return baseRows;
+    return baseRows.filter((r) => r.prd_category === filters.category);
+  }, [baseRows, filters.category]);
+
   // Distinct sorted product names for the dropdown filter
   const availableProducts = useMemo(() => {
     const set = new Set<string>();
-    for (let i = 0; i < sourceRows.length; i++) {
-      const p = sourceRows[i].prd_name?.trim();
+    for (let i = 0; i < categoryRows.length; i++) {
+      const r = categoryRows[i];
+      if (r.must_out && r.must_out < todayStr) continue;
+      const p = r.prd_name?.trim();
       if (p) set.add(p);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [sourceRows]);
+  }, [categoryRows, todayStr]);
 
   // Ensure selectedGate is valid when availableGates change
   useEffect(() => {
@@ -175,14 +192,6 @@ export const usePlanningSummaryGate = () => {
   }, [availableGates, filters.selectedGate]);
 
   const todayDisplay = dayjs(todayStr).format("DD/MM");
-
-  // Select the source schedule without inventing dates when one variant is missing.
-  const baseRows = useMemo(() => sourceRows.map((row) => filters.skipHolidays ? row : ({
-    ...row,
-    start_by: row.start_by_no_skip ?? row.start_by,
-    arrive_by: row.arrive_by_no_skip ?? row.arrive_by,
-    must_out: row.must_out_no_skip ?? row.must_out,
-  })), [sourceRows, filters.skipHolidays]);
 
   useEffect(() => {
     setFilters((prev) => ({ ...prev, selectedDate: null }));
@@ -218,9 +227,9 @@ export const usePlanningSummaryGate = () => {
     const q = deferredSearch.toLowerCase().trim();
     const normalizedQ = q.replace(/\s*(?:->|\u2192)\s*/g, " \u2192 ");
 
-    if (!prodFilter && !q) return baseRows;
+    if (!prodFilter && !q) return categoryRows;
 
-    return baseRows.filter((r) => {
+    return categoryRows.filter((r) => {
       if (prodFilter && r.prd_name !== prodFilter) {
         return false;
       }
@@ -242,13 +251,14 @@ export const usePlanningSummaryGate = () => {
       }
       return true;
     });
-  }, [baseRows, filters.selectedProduct, deferredSearch]);
+  }, [categoryRows, filters.selectedProduct, deferredSearch]);
 
   // Pre-index globally filtered rows by gate_name in a single O(N) pass
   const rowsByGate = useMemo(() => {
     const map = new Map<string, PlanningSummaryGateRow[]>();
     for (let i = 0; i < globallyFilteredRows.length; i++) {
       const r = globallyFilteredRows[i];
+      if (r.must_out && r.must_out < todayStr) continue;
       let arr = map.get(r.gate_name);
       if (!arr) {
         arr = [];
@@ -257,7 +267,7 @@ export const usePlanningSummaryGate = () => {
       arr.push(r);
     }
     return map;
-  }, [globallyFilteredRows]);
+  }, [globallyFilteredRows, todayStr]);
 
   const hasFilterActive = Boolean(filters.selectedProduct?.trim() || deferredSearch.trim());
 
@@ -265,7 +275,7 @@ export const usePlanningSummaryGate = () => {
   const gateFlowList = useMemo(() => {
     return availableGates.map((gName, idx) => {
       const gateRows = rowsByGate.get(gName) || [];
-      if (gateRows.length > 0 || baseRows.length > 0 || hasFilterActive) {
+      if (gateRows.length > 0 || categoryRows.length > 0 || hasFilterActive) {
         let inGateCount = 0;
         let inGateQty = 0;
         let coming3dCount = 0;
@@ -333,7 +343,7 @@ export const usePlanningSummaryGate = () => {
         late_count: 0,
       };
     });
-  }, [availableGates, kpis, rowsByGate, baseRows.length, hasFilterActive, todayStr]);
+  }, [availableGates, kpis, rowsByGate, categoryRows.length, hasFilterActive, todayStr]);
 
   // Section 2: Gate Matrix rows (Heatmap by Gate and Arrival Date) - Single O(N) pass per gate
   const matrixRows = useMemo<MatrixGateRow[]>(() => {

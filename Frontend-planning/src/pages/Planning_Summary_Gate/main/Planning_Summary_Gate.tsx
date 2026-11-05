@@ -94,6 +94,7 @@ const Planning_Summary_Gate: React.FC = () => {
             todayStr={todayStr}
             gateName={filters.selectedGate}
             rows={filteredTableRows}
+            allRows={rows}
             actionTab={filters.actionTab}
             onTabChange={setActionTab}
             stats={tableStats}
