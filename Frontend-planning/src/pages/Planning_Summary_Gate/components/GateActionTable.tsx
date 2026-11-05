@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, memo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useId, memo } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
@@ -11,7 +11,7 @@ import {
   GitCommitHorizontal,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
-import type { PlanningSummaryGateRow } from "../types";
+import type { GateStatusFilter, PlanningSummaryGateRow } from "../types";
 import { formatGateName } from "../gatePresentation";
 
 interface GateActionTableProps {
@@ -21,6 +21,11 @@ interface GateActionTableProps {
   allRows?: PlanningSummaryGateRow[];
   actionTab: "all" | "today" | "in_gate" | "need_wip";
   onTabChange: (tab: "all" | "today" | "in_gate" | "need_wip") => void;
+  statusFilter: GateStatusFilter;
+  onStatusFilterChange: (status: GateStatusFilter) => void;
+  currentProcessFilter: string;
+  onCurrentProcessFilterChange: (process: string) => void;
+  availableCurrentProcesses: string[];
   stats: {
     inGateLots: number;
     comingLots: number;
@@ -419,12 +424,90 @@ const GateSortByDropdown = ({
   );
 };
 
+const GateFilterDropdown = ({ label, value, options, active, width, onChange }: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  active: boolean;
+  width: string;
+  onChange: (value: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    wrapperRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')?.focus({ preventScroll: true });
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className={`relative ${width}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setOpen(false);
+          buttonRef.current?.focus();
+        }
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          if (!open) { setOpen(true); return; }
+          const items = Array.from(wrapperRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') || []);
+          if (!items.length) return;
+          const index = items.indexOf(document.activeElement as HTMLButtonElement);
+          const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+            : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          items[next]?.focus({ preventScroll: true });
+        }
+      }}
+    >
+      <button ref={buttonRef} type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen((prev) => !prev)}
+        className={`btn btn-sm h-8 min-h-0 w-full justify-between rounded-lg border bg-base-100 text-[13px] font-medium shadow-none hover:bg-base-200 focus-visible:outline-primary ${open ? "border-primary text-primary" : active ? "border-primary/50 text-primary" : "border-base-content/20 hover:border-base-content/30 text-base-content"}`}
+      >
+        <span className="truncate">{options.find((option) => option.value === value)?.label || value}</span>
+        <ChevronDown size={13} className={`shrink-0 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div id={menuId} role="menu" aria-label={label}
+          className="absolute top-full left-0 z-50 mt-1 max-h-60 w-full min-w-max overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"
+          style={{ backgroundColor: "var(--color-base-100, #ffffff)", opacity: 1 }}
+        >
+          {options.map((option) => (
+            <button key={option.value} type="button" role="menuitemradio" aria-checked={option.value === value}
+              className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-[13px] hover:bg-base-200 focus:bg-base-200 focus:outline-none ${option.value === value ? "font-semibold text-primary" : "text-base-content"}`}
+              onClick={() => { onChange(option.value); setOpen(false); buttonRef.current?.focus(); }}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <Check size={14} className="shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   gateName,
   rows,
   allRows,
   actionTab,
   onTabChange,
+  statusFilter,
+  onStatusFilterChange,
+  currentProcessFilter,
+  onCurrentProcessFilterChange,
+  availableCurrentProcesses,
   stats,
 }) => {
   const [page, setPage] = useState(1);
@@ -442,7 +525,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   useEffect(() => {
     setPage(1);
     setActivePopover(null);
-  }, [gateName, actionTab, rows.length]);
+  }, [gateName, actionTab, statusFilter, currentProcessFilter, rows.length]);
 
   // Close floating popover on outside click, Escape, scroll, or resize
   useEffect(() => {
@@ -534,7 +617,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
               }`}
             >
-              All lots at gate
+              All scheduled lots
             </button>
           </div>
 
@@ -547,6 +630,46 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
               setSortKey(option?.key ?? "default");
               setSortDirection(selected?.sort === "asc" ? "asc" : "desc");
               setPage(1);
+            }}
+          />
+
+            <GateFilterDropdown
+              label="Filter by status"
+              width="w-36"
+              active={statusFilter !== "all"}
+              value={statusFilter}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "in_gate", label: "In gate" },
+                { value: "coming", label: "Coming" },
+                { value: "need_wip", label: "Need WIP" },
+              ]}
+              onChange={(value) => {
+                if (value === "all" || value === "in_gate" || value === "coming" || value === "need_wip") {
+                  setPage(1);
+                  setActivePopover(null);
+                  onStatusFilterChange(value);
+                }
+              }}
+            />
+
+          <GateFilterDropdown
+            label="Filter by current process"
+            width="w-48"
+            active={Boolean(currentProcessFilter)}
+            value={currentProcessFilter}
+            options={[
+              { value: "", label: "All current processes" },
+              ...(currentProcessFilter && !availableCurrentProcesses.includes(currentProcessFilter)
+                ? [{ value: currentProcessFilter, label: currentProcessFilter }] : []),
+              ...availableCurrentProcesses.map((process) => ({ value: process, label: process })),
+            ]}
+            onChange={(value) => {
+              if (value === "" || availableCurrentProcesses.includes(value)) {
+                setPage(1);
+                setActivePopover(null);
+                onCurrentProcessFilterChange(value);
+              }
             }}
           />
 

@@ -61,6 +61,7 @@ export interface GateKpiSummary {
 
 export type PrdCategory = "FPC" | "SMT" | "ALL";
 export type PlanWindow = "2w" | "1m";
+export type GateStatusFilter = "all" | "in_gate" | "coming" | "need_wip";
 
 export interface GateFilterState {
   category: PrdCategory;

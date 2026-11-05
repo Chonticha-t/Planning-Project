@@ -17,10 +17,17 @@ import type {
   GateDailyChartData,
   PrdCategory,
   PlanWindow,
+  GateStatusFilter,
 } from "../types";
 
 const DEFAULT_GATES_FPC = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
 const DEFAULT_GATES_SMT = ["SMT", "FADL", "FIN", "W/H"];
+
+// Use the visible process label; needed WIP has no current process.
+const getCurrentProcess = (row: PlanningSummaryGateRow): string => {
+  if (row.lot_no === "NEED WIP" || row.gate_state === "need_wip" || row.status === "need wip") return "";
+  return row.proc_disp?.trim() || row.current_gate?.trim() || "";
+};
 
 export const usePlanningSummaryGate = () => {
   const [loading, setLoading] = useState<boolean>(true);
@@ -30,6 +37,8 @@ export const usePlanningSummaryGate = () => {
   const [kpis, setKpis] = useState<GateKpiSummary[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<GateStatusFilter>("all");
+  const [currentProcessFilter, setCurrentProcessFilter] = useState("");
 
   const [filters, setFilters] = useState<GateFilterState>({
     category: "FPC",
@@ -473,6 +482,15 @@ export const usePlanningSummaryGate = () => {
     return list;
   }, [matrixRows, filters.selectedGate, todayStr]);
 
+  const availableCurrentProcesses = useMemo(() => {
+    const processes = new Set<string>();
+    for (const row of rowsByGate.get(filters.selectedGate) || []) {
+      const process = getCurrentProcess(row);
+      if (process) processes.add(process);
+    }
+    return [...processes].sort((a, b) => a.localeCompare(b));
+  }, [rowsByGate, filters.selectedGate]);
+
   // Section 3: Filtered Action Table Rows (Arrivals from Today onwards)
   const filteredTableRows = useMemo(() => {
     let list = (rowsByGate.get(filters.selectedGate) || []).filter(
@@ -490,8 +508,15 @@ export const usePlanningSummaryGate = () => {
       list = list.filter((r) => r.gate_state === "need_wip");
     }
 
+    if (statusFilter !== "all") {
+      list = list.filter((r) => r.gate_state === statusFilter);
+    }
+    if (currentProcessFilter) {
+      list = list.filter((r) => getCurrentProcess(r) === currentProcessFilter);
+    }
+
     return [...list].sort((a, b) => (a.pri || 9999) - (b.pri || 9999));
-  }, [rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr]);
+  }, [rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr, statusFilter, currentProcessFilter]);
 
   // Summarize displayed detail rows, including the selected date and action tab.
   const tableStats = useMemo(() => {
@@ -520,6 +545,7 @@ export const usePlanningSummaryGate = () => {
 
   // Handlers
   const setCategory = useCallback((cat: PrdCategory) => {
+    setCurrentProcessFilter("");
     setFilters((prev) => ({
       ...prev,
       category: cat,
@@ -542,8 +568,9 @@ export const usePlanningSummaryGate = () => {
   }, []);
 
   const selectGate = useCallback((gName: string) => {
+    if (gName !== filters.selectedGate) setCurrentProcessFilter("");
     setFilters((prev) => ({ ...prev, selectedGate: gName, selectedDate: null }));
-  }, []);
+  }, [filters.selectedGate]);
 
   const selectDate = useCallback((dateStr: string | null) => {
     setFilters((prev) => ({ ...prev, selectedDate: dateStr }));
@@ -569,6 +596,11 @@ export const usePlanningSummaryGate = () => {
     chartData,
     filteredTableRows,
     tableStats,
+    statusFilter,
+    setStatusFilter,
+    currentProcessFilter,
+    setCurrentProcessFilter,
+    availableCurrentProcesses,
     setCategory,
     setPlanWindow,
     setSelectedProduct,

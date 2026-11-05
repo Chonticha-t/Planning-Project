@@ -21,6 +21,11 @@ const Planning_Summary_Gate: React.FC = () => {
     chartData,
     filteredTableRows,
     tableStats,
+    statusFilter,
+    setStatusFilter,
+    currentProcessFilter,
+    setCurrentProcessFilter,
+    availableCurrentProcesses,
     setCategory,
     setPlanWindow,
     setSelectedProduct,
@@ -98,6 +103,11 @@ const Planning_Summary_Gate: React.FC = () => {
             actionTab={filters.actionTab}
             onTabChange={setActionTab}
             stats={tableStats}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            currentProcessFilter={currentProcessFilter}
+            onCurrentProcessFilterChange={setCurrentProcessFilter}
+            availableCurrentProcesses={availableCurrentProcesses}
           />
         </>
       )}
