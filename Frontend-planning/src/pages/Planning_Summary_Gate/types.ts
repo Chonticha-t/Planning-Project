@@ -59,6 +59,10 @@ export interface GateKpiSummary {
   late_count: number;
 }
 
+export interface GateFlowSummary extends Omit<GateKpiSummary, "coming_3d_count"> {
+  coming_count: number;
+}
+
 export type PrdCategory = "FPC" | "SMT" | "ALL";
 export type PlanWindow = "2w" | "1m";
 export type GateStatusFilter = "all" | "in_gate" | "coming" | "need_wip";

@@ -1,9 +1,9 @@
 import React from "react";
 import { ChevronRight } from "lucide-react";
-import type { GateKpiSummary } from "../types";
+import type { GateFlowSummary } from "../types";
 
 interface GateFlowCardsProps {
-  gateFlowList: GateKpiSummary[];
+  gateFlowList: GateFlowSummary[];
   selectedGate: string;
   onSelectGate: (gateName: string) => void;
 }
@@ -15,6 +15,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5">
+      <p className="text-[11px] text-base-content/60">Summary for selected arrival period</p>
       {/* Connected Gate Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {gateFlowList.map((g, idx) => {
@@ -71,7 +72,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                     <span className="text-[11.5px]">in gate</span>
                     <span
                       className="inline-flex flex-col pl-1"
-                      title="Coming due by today + 3 days, including overdue."
+                      title="Coming within the selected planned-arrival period."
                     >
                       <span className="inline-flex items-baseline gap-1.5">
                         <span
@@ -79,14 +80,14 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                             isSelected ? "text-white" : "text-primary"
                           }`}
                         >
-                          {g.coming_3d_count}
+                          {g.coming_count}
                         </span>
                         <span
                           className={`text-[11px] ${
                             isSelected ? "text-blue-100/90" : "text-base-content/60"
                           }`}
                         >
-                          Coming ≤ 3 days
+                          Coming
                         </span>
                       </span>
                     </span>

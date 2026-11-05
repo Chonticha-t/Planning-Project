@@ -12,6 +12,7 @@ import {
 import type {
   PlanningSummaryGateRow,
   GateKpiSummary,
+  GateFlowSummary,
   GateFilterState,
   MatrixGateRow,
   MatrixDayCell,
@@ -103,7 +104,6 @@ export const usePlanningSummaryGate = () => {
           {
             params: {
               skip_holidays: filters.skipHolidays,
-              startdate: "2000-01-01",
             },
             signal: controller.signal,
             timeout: 10000,
@@ -246,10 +246,13 @@ export const usePlanningSummaryGate = () => {
         : filters.category === "ALL"
           ? [...DEFAULT_GATES_FPC, ...DEFAULT_GATES_SMT.filter((g) => !DEFAULT_GATES_FPC.includes(g))]
           : DEFAULT_GATES_FPC;
-    if (kpis.length > 0) {
+    const gateSources = [...kpis, ...sourceRows.filter((row) =>
+      filters.category === "ALL" || row.prd_category === filters.category
+    )];
+    if (gateSources.length > 0) {
       // Deduplicate gate names while preserving lowest gate_order
       const map = new Map<string, number>();
-      kpis.forEach((k) => {
+      gateSources.forEach((k) => {
         if (!map.has(k.gate_name) || (k.gate_order < (map.get(k.gate_name) ?? 999))) {
           map.set(k.gate_name, k.gate_order);
         }
@@ -267,7 +270,7 @@ export const usePlanningSummaryGate = () => {
       });
     }
     return defaultGates;
-  }, [kpis, filters.category]);
+  }, [kpis, sourceRows, filters.category]);
 
   // Select the source schedule without inventing dates when one variant is missing.
   // Contains ALL categories and ALL stage dates for the Gate Stage timeline.
@@ -365,13 +368,15 @@ export const usePlanningSummaryGate = () => {
     });
   }, [categoryRows, filters.selectedProduct, deferredSearch]);
 
-  // Exclude passed stages before indexing the active gate views in a single O(N) pass.
+  // Cards, schedule and trend share exactly the visible planned-arrival dates.
+  // Exit deadlines remain available for warnings, never for excluding arrivals.
   const rowsByGate = useMemo(() => {
+    const visibleDates = new Set([todayStr, ...calendarDays.map((day) => day.dateStr)]);
     const map = new Map<string, PlanningSummaryGateRow[]>();
     for (let i = 0; i < globallyFilteredRows.length; i++) {
       const r = globallyFilteredRows[i];
       if (r.gate_state === "passed") continue;
-      if (r.must_out && r.must_out < todayStr) continue;
+      if (!r.arrive_by || !visibleDates.has(r.arrive_by)) continue;
       let arr = map.get(r.gate_name);
       if (!arr) {
         arr = [];
@@ -380,7 +385,7 @@ export const usePlanningSummaryGate = () => {
       arr.push(r);
     }
     return map;
-  }, [globallyFilteredRows, todayStr]);
+  }, [globallyFilteredRows, calendarDays, todayStr]);
 
   const detailRowsByGate = useMemo(() => {
     const map = new Map<string, PlanningSummaryGateRow[]>();
@@ -393,27 +398,25 @@ export const usePlanningSummaryGate = () => {
     return map;
   }, [globallyFilteredRows, todayStr]);
 
-  // Limit all card KPIs to the inclusive due-date range shown by Plan ahead.
-  const gateFlowList = useMemo(() => {
-    const dueDateEnd = dayjs(todayStr).add(filters.planWindow === "2w" ? 14 : 28, "day").format("YYYY-MM-DD");
+  // Summarize the same stage rows counted by the arrival schedule and trend.
+  const gateFlowList = useMemo<GateFlowSummary[]>(() => {
     return availableGates.map((gName, idx) => {
       const gateRows = rowsByGate.get(gName) || [];
       let inGateCount = 0;
       let inGateQty = 0;
-      let coming3dCount = 0;
+      let comingCount = 0;
       let needWipCount = 0;
       let mustOutTodayCount = 0;
       let onScheduleTodayCount = 0;
       let holdCount = 0;
 
       for (const r of gateRows) {
-        if (!r.due_date || r.due_date < todayStr || r.due_date > dueDateEnd) continue;
         if (r.gate_state === "in_gate") {
           inGateCount++;
           inGateQty += Number(r.qty) || 0;
         }
-        if (r.is_coming_3d === true) coming3dCount++;
-        if (r.gate_state === "need_wip" || r.status?.toLowerCase() === "need wip") needWipCount++;
+        if (r.gate_state === "coming") comingCount++;
+        if (r.gate_state === "need_wip") needWipCount++;
         if (r.must_out === todayStr) {
           mustOutTodayCount++;
           if (r.on_time === true && !r.is_late && !r.is_hold && r.lot_status !== "HOLD") {
@@ -428,7 +431,7 @@ export const usePlanningSummaryGate = () => {
         gate_order: idx + 1,
         in_gate_count: inGateCount,
         in_gate_qty: inGateQty,
-        coming_3d_count: coming3dCount,
+        coming_count: comingCount,
         need_wip_count: needWipCount,
         must_out_today_count: mustOutTodayCount,
         on_schedule_today_count: onScheduleTodayCount,
@@ -436,7 +439,7 @@ export const usePlanningSummaryGate = () => {
         late_count: 0,
       };
     });
-  }, [availableGates, rowsByGate, filters.planWindow, todayStr]);
+  }, [availableGates, rowsByGate, todayStr]);
 
   // Section 2: Gate Matrix rows (Heatmap by Gate and Arrival Date) - Single O(N) pass per gate
   const matrixRows = useMemo<MatrixGateRow[]>(() => {
@@ -582,7 +585,7 @@ export const usePlanningSummaryGate = () => {
 
     // If a specific date is selected from matrix/chart
     if (filters.selectedDate) {
-      list = list.filter((r) => r.arrive_by === filters.selectedDate);
+      list = (rowsByGate.get(filters.selectedGate) || []).filter((r) => r.arrive_by === filters.selectedDate);
     } else if (filters.actionTab === "today") {
       list = list.filter((r) => r.arrive_by === todayStr);
     } else if (filters.actionTab === "in_gate") {
@@ -599,7 +602,7 @@ export const usePlanningSummaryGate = () => {
     }
 
     return [...list].sort((a, b) => (a.pri || 9999) - (b.pri || 9999));
-  }, [detailRowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr, statusFilter, currentProcessFilter]);
+  }, [detailRowsByGate, rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr, statusFilter, currentProcessFilter]);
 
   // Summarize displayed detail rows, including the selected date and action tab.
   const tableStats = useMemo(() => {
@@ -639,7 +642,7 @@ export const usePlanningSummaryGate = () => {
   }, []);
 
   const setPlanWindow = useCallback((pw: PlanWindow) => {
-    setFilters((prev) => ({ ...prev, planWindow: pw }));
+    setFilters((prev) => ({ ...prev, planWindow: pw, selectedDate: null }));
   }, []);
 
   const setSelectedProduct = useCallback((prd: string) => {

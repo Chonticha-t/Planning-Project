@@ -176,7 +176,7 @@ const frontendRequire = createRequire(path.join(frontendRoot, "package.json"));
 const ts = frontendRequire("typescript");
 const dayjs = frontendRequire("dayjs");
 
-function hookHarness() {
+function hookHarness(today = "2026-01-01") {
   const slots = [];
   const effects = [];
   const pendingEffects = [];
@@ -197,7 +197,11 @@ function hookHarness() {
       const i = cursor++;
       return slots[i] || (slots[i] = { current: initial });
     },
-    useMemo(callback) { cursor++; return callback(); },
+    useMemo(callback, deps) {
+      const i = cursor++;
+      if (!slots[i] || !same(slots[i].deps, deps)) slots[i] = { value: callback(), deps };
+      return slots[i].value;
+    },
     useDeferredValue(value) { cursor++; return value; },
     useCallback(callback, deps) {
       const i = cursor++;
@@ -234,7 +238,7 @@ function hookHarness() {
         requests.push({ url, options, resolve, reject });
       }) };
       if (name === "dayjs") return dayjs;
-      if (name === "./useGateToday") return { useGateToday: () => "2026-01-01" };
+      if (name === "./useGateToday") return { useGateToday: () => today };
       if (name === "../gatePresentation") return {
         formatGateName: gate => gate || "",
         formatGateTransition: (gate, next) => `${gate || ""} → ${next || ""}`,
@@ -263,7 +267,7 @@ function hookHarness() {
       let data = [];
       if (request.url === "table") data = tableRows;
       if (request.url === "calendar") data = Array.from({ length: 29 }, (_, i) => ({
-        date: dayjs("2026-01-01").add(i, "day").format("YYYY-MM-DD"), is_working: true,
+        date: dayjs(today).add(i, "day").format("YYYY-MM-DD"), is_working: true,
       }));
       request.resolve({ data: { status: "OK", data } });
     }
@@ -337,58 +341,93 @@ test("overdue pending arrivals stay in details without changing schedule cards o
   h.unmount();
 });
 
-test("overview cards follow inclusive Plan ahead due dates without filtering arrival schedules or details", async () => {
+test("overview cards reconcile with schedule and trend across inclusive arrival windows and global filters", async () => {
   const h = hookHarness();
   try {
     h.render();
-    const dueDates = ["2025-12-31", "2026-01-01", "2026-01-15", "2026-01-16", "2026-01-29", "2026-01-30", null];
-    const rows = dueDates.flatMap((due_date, index) => ["in_gate", "coming", "need_wip"].map(gate_state => ({
+    const arrivals = ["2025-12-31", "2026-01-01", "2026-01-15", "2026-01-16", "2026-01-29", "2026-01-30", null];
+    const rows = arrivals.flatMap((arrive_by, index) => ["in_gate", "coming", "need_wip"].map(gate_state => ({
       prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
-      lot_no: `ROW-${index}-${gate_state}`, due_date, gate_state,
-      arrive_by: "2026-01-01", must_out: "2026-01-01", qty: 10, pri: 1,
-      is_coming_3d: gate_state === "coming", is_hold: true,
+      lot_no: `ROW-${index}-${gate_state}`, due_date: ["2025-12-31", "2026-02-01", null][index % 3], gate_state,
+      arrive_by, must_out: "2026-01-01", qty: 10, pri: 1,
+      is_coming_3d: false, is_hold: true,
     })));
     rows.push(
       { ...rows[3], lot_no: "PASSED", gate_state: "passed" },
       { ...rows[3], lot_no: "OVERDUE-EXIT", must_out: "2025-12-31" },
+      { ...rows[4], lot_no: "STATE-TAKES-PRIORITY", status: "need wip" },
       { ...rows[3], lot_no: "OTHER-CATEGORY", prd_category: "SMT" },
       { ...rows[3], lot_no: "OTHER-GATE", gate_name: "FIN" },
     );
     await h.succeed(h.requests.slice(), rows);
+    assert.equal(h.requests.find(request => request.url === "table").options.params.startdate, undefined);
     let value = h.render();
     const card = () => h.render().gateFlowList.find(row => row.gate_name === "FFPC");
     const assertCard = expected => {
       const result = card();
-      assert.equal(result.in_gate_count, expected);
-      assert.equal(result.in_gate_qty, expected * 10);
-      assert.equal(result.coming_3d_count, expected);
+      assert.equal(result.in_gate_count, expected + 1);
+      assert.equal(result.in_gate_qty, (expected + 1) * 10);
+      assert.equal(result.coming_count, expected + 1);
       assert.equal(result.need_wip_count, expected);
-      assert.equal(result.hold_count, expected * 3);
-      assert.equal(result.must_out_today_count, expected * 3);
+      assert.equal(result.hold_count, expected * 3 + 2);
+      assert.equal(result.must_out_today_count, expected * 3 + 1);
+    };
+    const assertReconciled = () => {
+      const current = h.render();
+      for (const summary of current.gateFlowList) {
+        const matrix = current.matrixRows.find(row => row.gate_name === summary.gate_name);
+        const cells = [matrix.todayCell, ...matrix.days];
+        assert.equal(summary.in_gate_count, cells.reduce((sum, cell) => sum + cell.inGateCount, 0));
+        assert.equal(summary.coming_count, cells.reduce((sum, cell) => sum + cell.comingCount, 0));
+        assert.equal(summary.need_wip_count, cells.reduce((sum, cell) => sum + cell.needCount, 0));
+      }
+      const selected = current.gateFlowList.find(row => row.gate_name === current.filters.selectedGate);
+      assert.equal(selected.in_gate_count, current.chartData.reduce((sum, day) => sum + day.in_gate, 0));
+      assert.equal(selected.coming_count, current.chartData.reduce((sum, day) => sum + day.coming, 0));
+      assert.equal(selected.need_wip_count, current.chartData.reduce((sum, day) => sum + day.need_wip, 0));
     };
     assertCard(2);
+    assertReconciled();
     const todayCell = JSON.stringify(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell);
-    assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.lotsCount, 21);
+    assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.lotsCount, 5);
     const details = JSON.stringify(value.filteredTableRows);
     value.setPlanWindow("1m");
     value = h.render();
     assertCard(4);
+    assertReconciled();
     assert.equal(JSON.stringify(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell), todayCell);
     assert.equal(JSON.stringify(value.filteredTableRows), details);
     assert.equal(h.requests.length, 3);
-    value.setPlanWindow("2w");
+    value.selectDate("2026-01-29");
+    assert.equal(h.render().filteredTableRows.length, 3);
+    h.render().setPlanWindow("2w");
+    assert.equal(h.render().filters.selectedDate, null);
     assertCard(2);
+    assertReconciled();
+    h.render().setSearch("OVERDUE-EXIT");
+    assert.equal(card().in_gate_count, 1);
+    assertReconciled();
+    h.render().selectDate("2026-01-01");
+    assert.equal(h.render().filteredTableRows[0].lot_no, "OVERDUE-EXIT");
+    h.render().selectDate(null);
     h.render().setSearch("NO-MATCH");
-    assertCard(0);
+    assert.equal(card().in_gate_count, 0);
+    assertReconciled();
     h.render().setSearch("");
     h.render().setSelectedProduct("NO-MATCH");
-    assertCard(0);
+    assert.equal(card().in_gate_count, 0);
+    assertReconciled();
+    h.render().setSelectedProduct("");
+    h.render().setCategory("ALL");
+    await h.succeed(h.requests.slice(3), rows);
+    assert.equal(card().in_gate_count, 4);
+    assertReconciled();
   } finally {
     h.unmount();
   }
 });
 
-test("overview cards never fall back to summary totals without due-date filtering", async () => {
+test("overview cards never fall back to summary totals without arrival-date filtering", async () => {
   const h = hookHarness();
   try {
     h.render();
@@ -399,6 +438,47 @@ test("overview cards never fall back to summary totals without due-date filterin
     const card = h.render().gateFlowList.find(row => row.gate_name === "FFPC");
     assert.equal(card.in_gate_count, 0);
     assert.equal(card.in_gate_qty, 0);
+  } finally {
+    h.unmount();
+  }
+});
+
+test("arrival dates keep a gate visible even when the summary API omits that gate", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    h.requests.find(request => request.url === "summary").resolve({
+      data: { status: "OK", data: [{ gate_name: "FFPC", gate_order: 1, in_gate_count: 999 }] },
+    });
+    await h.succeed(h.requests.slice(), [{
+      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FVAC", gate_order: 2,
+      gate_state: "coming", arrive_by: "2026-01-02", must_out: "2025-12-31", qty: 10,
+    }]);
+    let value = h.render();
+    assert.ok(value.availableGates.includes("FVAC"));
+    assert.equal(value.gateFlowList.find(row => row.gate_name === "FVAC").coming_count, 1);
+    value.selectGate("FVAC");
+    value = h.render();
+    assert.equal(value.chartData.reduce((sum, day) => sum + day.coming, 0), 1);
+    value.selectDate("2026-01-02");
+    assert.equal(h.render().filteredTableRows.length, 1);
+  } finally {
+    h.unmount();
+  }
+});
+
+test("date drilldown includes every counted arrival even with an unknown state and past exit date", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    await h.succeed(h.requests.slice(), [{
+      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+      gate_state: "unknown", arrive_by: "2026-01-01", must_out: "2025-12-31", qty: 10,
+    }]);
+    const value = h.render();
+    assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.lotsCount, 1);
+    value.selectDate("2026-01-01");
+    assert.equal(h.render().filteredTableRows.length, 1);
   } finally {
     h.unmount();
   }
