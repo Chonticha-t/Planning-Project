@@ -7,6 +7,7 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  Cell,
 } from "recharts";
 import type { GateDailyChartData } from "../types";
 
@@ -23,6 +24,8 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
   selectedDate,
   onSelectDate,
 }) => {
+  const selectedBar = chartData.find((item) => item.fullDate === selectedDate);
+
   const handleBarClick = (data: { activeTooltipIndex?: number | string | null }) => {
     const activeIndex = data?.activeTooltipIndex;
     if (activeIndex == null || activeIndex === "") return;
@@ -94,6 +97,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
               tick={{ fontSize: 10, fill: "var(--color-base-content, #666)" }}
             />
             <Tooltip
+              cursor={false}
               content={({ active, payload, label }) => {
                 if (!active || !payload || !payload.length) return null;
                 const d = payload[0].payload as GateDailyChartData;
@@ -122,9 +126,21 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
                 );
               }}
             />
-            <Bar dataKey="in_gate" stackId="a" fill="#2563eb" radius={[0, 0, 0, 0]} cursor="pointer" />
-            <Bar dataKey="coming" stackId="a" fill="#06b6d4" radius={[0, 0, 0, 0]} cursor="pointer" />
-            <Bar dataKey="need_wip" stackId="a" fill="#f97316" radius={[3, 3, 0, 0]} cursor="pointer" />
+            <Bar dataKey="in_gate" stackId="a" fill="#2563eb" radius={[0, 0, 0, 0]} cursor="pointer">
+              {chartData.map((item) => (
+                <Cell key={item.fullDate} fillOpacity={!selectedBar || item.fullDate === selectedDate ? 1 : 0.5} style={{ transition: "fill-opacity 160ms ease" }} />
+              ))}
+            </Bar>
+            <Bar dataKey="coming" stackId="a" fill="#06b6d4" radius={[0, 0, 0, 0]} cursor="pointer">
+              {chartData.map((item) => (
+                <Cell key={item.fullDate} fillOpacity={!selectedBar || item.fullDate === selectedDate ? 1 : 0.5} style={{ transition: "fill-opacity 160ms ease" }} />
+              ))}
+            </Bar>
+            <Bar dataKey="need_wip" stackId="a" fill="#f97316" radius={[3, 3, 0, 0]} cursor="pointer">
+              {chartData.map((item) => (
+                <Cell key={item.fullDate} fillOpacity={!selectedBar || item.fullDate === selectedDate ? 1 : 0.5} style={{ transition: "fill-opacity 160ms ease" }} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

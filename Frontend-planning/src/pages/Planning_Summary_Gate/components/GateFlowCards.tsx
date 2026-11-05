@@ -46,15 +46,20 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
 
                 {/* Primary Stats: In Gate & Coming */}
                 <div className="flex flex-col gap-0.5">
-                  <div className="flex items-baseline gap-1.5 text-xs text-base-content/80">
+                  <div className="flex flex-wrap items-baseline gap-1.5 text-xs text-base-content/80">
                     <span className="font-bold text-sm text-base-content tabular-nums">
                       {g.in_gate_count}
                     </span>
                     <span className="text-[11.5px]">in gate</span>
-                    <span className="font-semibold text-primary tabular-nums pl-1">
-                      +{g.coming_3d_count}
+                    <span
+                      className="inline-flex flex-col pl-1"
+                      title="Coming due by today + 3 days, including overdue."
+                    >
+                      <span className="inline-flex items-baseline gap-1.5">
+                        <span className="font-semibold text-primary tabular-nums">{g.coming_3d_count}</span>
+                        <span className="text-[11px] text-base-content/60">Coming ≤ 3 days</span>
+                      </span>
                     </span>
-                    <span className="text-[11px] text-base-content/60">coming (3d)</span>
                   </div>
 
                   <div className="text-[11.5px] text-base-content/60 flex items-center gap-1">
