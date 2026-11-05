@@ -26,19 +26,29 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
               {/* Card Container */}
               <div
                 onClick={() => onSelectGate(g.gate_name)}
-                className={`w-full flex flex-col justify-between p-3.5 rounded-2xl border transition-all cursor-pointer select-none bg-base-100 ${
+                className={`w-full flex flex-col justify-between p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
                   isSelected
-                    ? "border-primary ring-2 ring-primary/20 bg-primary/[0.03] shadow-md shadow-primary/5"
-                    : "border-base-300/80 hover:border-base-300 hover:shadow-xs hover:bg-base-200/30"
+                    ? "bg-[#316be8] border-[#316be8] text-white shadow-md shadow-blue-600/15"
+                    : "bg-base-100 border-base-300/80 hover:border-base-300 hover:shadow-xs hover:bg-base-200/30"
                 }`}
               >
                 {/* Top: Gate Title & Hold Badge */}
                 <div className="flex items-center justify-between gap-1 mb-1.5">
-                  <h4 className="font-semibold text-[15px] text-base-content tracking-normal">
+                  <h4
+                    className={`font-semibold text-[15px] tracking-normal ${
+                      isSelected ? "text-white" : "text-base-content"
+                    }`}
+                  >
                     {g.gate_name}
                   </h4>
                   {hasHold && (
-                    <span className="badge badge-xs bg-amber-600 text-white font-bold px-2 py-0.5 text-[10px] shadow-2xs">
+                    <span
+                      className={`badge badge-xs font-bold px-2 py-0.5 text-[10px] shadow-2xs border-0 ${
+                        isSelected
+                          ? "bg-amber-300 text-slate-900"
+                          : "bg-amber-600 text-white"
+                      }`}
+                    >
                       {g.hold_count} hold
                     </span>
                   )}
@@ -46,8 +56,16 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
 
                 {/* Primary Stats: In Gate & Coming */}
                 <div className="flex flex-col gap-0.5">
-                  <div className="flex flex-wrap items-baseline gap-1.5 text-xs text-base-content/80">
-                    <span className="font-bold text-sm text-base-content tabular-nums">
+                  <div
+                    className={`flex flex-wrap items-baseline gap-1.5 text-xs ${
+                      isSelected ? "text-blue-100" : "text-base-content/80"
+                    }`}
+                  >
+                    <span
+                      className={`font-bold text-sm tabular-nums ${
+                        isSelected ? "text-white" : "text-base-content"
+                      }`}
+                    >
                       {g.in_gate_count}
                     </span>
                     <span className="text-[11.5px]">in gate</span>
@@ -56,20 +74,40 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                       title="Coming due by today + 3 days, including overdue."
                     >
                       <span className="inline-flex items-baseline gap-1.5">
-                        <span className="font-semibold text-primary tabular-nums">{g.coming_3d_count}</span>
-                        <span className="text-[11px] text-base-content/60">Coming ≤ 3 days</span>
+                        <span
+                          className={`font-semibold tabular-nums ${
+                            isSelected ? "text-white" : "text-primary"
+                          }`}
+                        >
+                          {g.coming_3d_count}
+                        </span>
+                        <span
+                          className={`text-[11px] ${
+                            isSelected ? "text-blue-100/90" : "text-base-content/60"
+                          }`}
+                        >
+                          Coming ≤ 3 days
+                        </span>
                       </span>
                     </span>
                   </div>
 
-                  <div className="text-[11.5px] text-base-content/60 flex items-center gap-1">
+                  <div
+                    className={`text-[11.5px] flex items-center gap-1 ${
+                      isSelected ? "text-blue-100/95" : "text-base-content/60"
+                    }`}
+                  >
                     <span className="font-semibold tabular-nums">
                       {g.in_gate_qty.toLocaleString()} pcs
                     </span>
                     {g.need_wip_count > 0 && (
                       <>
                         <span>•</span>
-                        <span className="font-bold text-amber-600">
+                        <span
+                          className={`font-bold ${
+                            isSelected ? "text-amber-200" : "text-amber-600"
+                          }`}
+                        >
                           {g.need_wip_count} need WIP
                         </span>
                       </>
