@@ -8,6 +8,7 @@ import {
   Tooltip,
   CartesianGrid,
   Cell,
+  ReferenceArea,
 } from "recharts";
 import type { GateDailyChartData } from "../types";
 import { ARRIVAL_GATE_WIDTH, getArrivalMinWidth } from "../arrivalLayout";
@@ -26,6 +27,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
   onSelectDate,
 }) => {
   const selectedBar = chartData.find((item) => item.fullDate === selectedDate);
+  const holidayPatternId = `arrival-holiday-${React.useId().replace(/:/g, "")}`;
 
   const handleBarClick = (data: { activeTooltipIndex?: number | string | null }) => {
     const activeIndex = data?.activeTooltipIndex;
@@ -85,14 +87,45 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
             style={{ outline: "none", border: "none" }}
             margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
           >
+            <defs>
+              <pattern id={holidayPatternId} width={8} height={8} patternUnits="userSpaceOnUse">
+                <rect width={8} height={8} fill="var(--color-base-content, #64748b)" fillOpacity={0.025} />
+                <path d="M-2 2L2-2 M0 8L8 0 M6 10L10 6" stroke="var(--color-base-content, #64748b)" strokeOpacity={0.12} strokeWidth={1} />
+              </pattern>
+            </defs>
+            {chartData.filter((day) => day.isHoliday).map((day) => (
+              <ReferenceArea
+                key={day.fullDate}
+                x1={day.dateLabel}
+                x2={day.dateLabel}
+                fill={`url(#${holidayPatternId})`}
+                fillOpacity={1}
+                stroke="none"
+                zIndex={50}
+                pointerEvents="none"
+              />
+            ))}
             <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
             <XAxis
               dataKey="dateLabel"
               interval={0}
+              height={44}
               padding={{ left: 0, right: 0 }}
               tickLine={false}
               axisLine={{ stroke: "rgba(150, 150, 150, 0.2)" }}
-              tick={{ fontSize: 10, fill: "var(--color-base-content, #666)" }}
+              tick={({ x, y, payload }) => {
+                const isHoliday = chartData.some((day) => day.dateLabel === payload.value && day.isHoliday);
+                return (
+                  <g transform={`translate(${x},${y})`}>
+                    <text y={12} textAnchor="middle" fontSize={10} fill="var(--color-base-content, #666)" fillOpacity={isHoliday ? 0.55 : 1}>
+                      {payload.value}
+                    </text>
+                    {isHoliday && (
+                      <text y={26} textAnchor="middle" fontSize={9} fontWeight={600} fill="var(--color-base-content, #64748b)" fillOpacity={0.6}>OFF</text>
+                    )}
+                  </g>
+                );
+              }}
             />
             <YAxis
               width={ARRIVAL_GATE_WIDTH}
@@ -110,6 +143,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
                   <div className="p-2.5 rounded-xl border border-base-300 bg-base-100 shadow-xl text-xs flex flex-col gap-1 min-w-[140px]">
                     <div className="font-bold text-base-content pb-1 border-b border-base-200">
                       {label} ({d.fullDate})
+                      {d.isHoliday && <span className="ml-2 text-base-content/60 font-medium">OFF</span>}
                     </div>
                     <div className="flex items-center justify-between text-blue-600">
                       <span>In gate:</span>

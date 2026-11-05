@@ -102,6 +102,7 @@ export interface GateDailyChartData {
   coming: number;
   need_wip: number;
   total: number;
+  isHoliday: boolean;
   isLate?: boolean;
   isToday?: boolean;
 }

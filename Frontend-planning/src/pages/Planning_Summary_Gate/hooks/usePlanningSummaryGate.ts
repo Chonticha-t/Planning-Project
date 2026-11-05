@@ -464,6 +464,7 @@ export const usePlanningSummaryGate = () => {
       coming: selectedMatrix.todayCell.comingCount,
       need_wip: selectedMatrix.todayCell.needCount,
       total: selectedMatrix.todayCell.lotsCount,
+      isHoliday: selectedMatrix.todayCell.isHoliday,
       isToday: true,
     });
 
@@ -476,6 +477,7 @@ export const usePlanningSummaryGate = () => {
         coming: d.comingCount,
         need_wip: d.needCount,
         total: d.lotsCount,
+        isHoliday: d.isHoliday,
       });
     });
 

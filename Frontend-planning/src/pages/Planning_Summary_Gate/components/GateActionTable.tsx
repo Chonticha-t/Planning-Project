@@ -956,7 +956,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                 {/* Right-pointing Caret Arrow to the Button */}
                 <div className="w-2.5 h-2.5 bg-white border-t border-r border-slate-200/90 rotate-45 absolute -right-[6px] top-1/2 -translate-y-1/2" />
 
-                <div className="flex items-center overflow-x-auto">
+                <div className="flex items-center overflow-x-auto overflow-y-hidden">
                   <div className="inline-flex items-start">
                     {routeSteps.map((step, sIdx) => {
                       const isFirst = sIdx === 0;
