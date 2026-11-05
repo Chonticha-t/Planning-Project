@@ -253,11 +253,12 @@ export const usePlanningSummaryGate = () => {
     });
   }, [categoryRows, filters.selectedProduct, deferredSearch]);
 
-  // Pre-index globally filtered rows by gate_name in a single O(N) pass
+  // Exclude passed stages before indexing the active gate views in a single O(N) pass.
   const rowsByGate = useMemo(() => {
     const map = new Map<string, PlanningSummaryGateRow[]>();
     for (let i = 0; i < globallyFilteredRows.length; i++) {
       const r = globallyFilteredRows[i];
+      if (r.gate_state === "passed") continue;
       if (r.must_out && r.must_out < todayStr) continue;
       let arr = map.get(r.gate_name);
       if (!arr) {
@@ -492,9 +493,9 @@ export const usePlanningSummaryGate = () => {
     return [...list].sort((a, b) => (a.pri || 9999) - (b.pri || 9999));
   }, [rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr]);
 
-  // Bottom Summary stats for Section 3 (Single O(K) pass)
+  // Summarize displayed detail rows, including the selected date and action tab.
   const tableStats = useMemo(() => {
-    const gateRows = rowsByGate.get(filters.selectedGate) || [];
+    const gateRows = filteredTableRows;
     let inGateLots = 0;
     let comingLots = 0;
     let needWipLots = 0;
@@ -515,7 +516,7 @@ export const usePlanningSummaryGate = () => {
       totalLots: gateRows.length,
       totalPcs,
     };
-  }, [rowsByGate, filters.selectedGate]);
+  }, [filteredTableRows]);
 
   // Handlers
   const setCategory = useCallback((cat: PrdCategory) => {

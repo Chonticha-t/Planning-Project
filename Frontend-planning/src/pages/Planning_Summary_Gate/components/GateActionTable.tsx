@@ -31,6 +31,25 @@ interface GateActionTableProps {
   };
 }
 
+const formatGateState = (state?: string | null): string => {
+  switch (state) {
+    case "in_gate": return "In gate";
+    case "coming": return "Coming";
+    case "need_wip": return "Need WIP";
+    case "passed": return "Passed";
+    default: return state?.trim() || "-";
+  }
+};
+
+const getGateStateClass = (state?: string | null): string => {
+  switch (state) {
+    case "in_gate": return "bg-blue-50 text-blue-700 border-blue-200";
+    case "coming": return "bg-sky-100 text-sky-700 border-sky-300";
+    case "need_wip": return "bg-orange-50 text-orange-800 border-orange-200";
+    default: return "bg-base-200 text-base-content/70 border-base-300";
+  }
+};
+
 // Ultra-fast string slice date formatters (avoids thousands of dayjs allocations per render)
 const formatDateShort = (dtStr?: string | null) => {
   if (!dtStr || dtStr.length < 10) return "-";
@@ -569,13 +588,14 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
       <div className="overflow-x-auto rounded-xl border border-base-300">
         <table className="table table-sm table-fixed w-full min-w-[1100px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
           <colgroup>
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "13%" }} />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "10%" }} />
             <col style={{ width: "12%" }} />
             <col style={{ width: "11%" }} />
-            <col style={{ width: "15%" }} />
-            <col style={{ width: "12%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "8%" }} />
             <col style={{ width: "8%" }} />
           </colgroup>
           <thead>
@@ -587,13 +607,14 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
               <th className="px-2 py-2">NET WIP</th>
               <th className="px-2 py-2 whitespace-nowrap">CURRENT PROCESS</th>
               <th className="px-2 py-2">SCAN-IN TIME</th>
+              <th className="px-2 py-2">STATUS</th>
               <th className="px-2 py-2">GATE STAGE</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center py-10 text-base-content/50 text-sm">
+                <td colSpan={9} className="text-center py-10 text-base-content/50 text-sm">
                   No lots found for the selected gate and criteria.
                 </td>
               </tr>
@@ -684,6 +705,13 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                     {/* SCAN-IN TIME */}
                     <td className="font-medium text-[13.5px] text-base-content/85 tabular-nums px-2 py-2">
                       {formatScanTime(row.scan_in)}
+                    </td>
+
+                    {/* STATUS from this gate stage, independent of the lot's general status. */}
+                    <td className="font-semibold text-[13px] text-base-content/85 whitespace-nowrap px-2 py-2">
+                      <span className={`inline-flex items-center rounded-md border px-2 py-1 ${row.gate_state === "in_gate" ? "text-[12px]" : "text-[11px]"} font-semibold leading-none ${getGateStateClass(row.gate_state)}`}>
+                        {formatGateState(row.gate_state)}
+                      </span>
                     </td>
 
                     {/* GATE STAGE (Floating Popover Toggle Button) */}
