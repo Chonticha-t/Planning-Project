@@ -10,6 +10,7 @@ import {
   Cell,
 } from "recharts";
 import type { GateDailyChartData } from "../types";
+import { ARRIVAL_GATE_WIDTH, getArrivalMinWidth } from "../arrivalLayout";
 
 interface GateMustOutChartProps {
   gateName: string;
@@ -74,23 +75,27 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
       </div>
 
       {/* Chart Canvas */}
-      <div className="h-48 w-full mt-1 outline-none select-none [&_*]:outline-none [&_*]:focus:outline-none [&_.recharts-wrapper]:outline-none [&_.recharts-surface]:outline-none">
+      <div className="w-full mt-1 overflow-x-auto" data-arrival-scroll>
+      <div className="h-48 w-full outline-none select-none [&_*]:outline-none [&_*]:focus:outline-none [&_.recharts-wrapper]:outline-none [&_.recharts-surface]:outline-none" style={{ minWidth: getArrivalMinWidth(chartData.length) }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
             onClick={handleBarClick}
             tabIndex={-1}
             style={{ outline: "none", border: "none" }}
-            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+            margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
             <XAxis
               dataKey="dateLabel"
+              interval={0}
+              padding={{ left: 0, right: 0 }}
               tickLine={false}
               axisLine={{ stroke: "rgba(150, 150, 150, 0.2)" }}
               tick={{ fontSize: 10, fill: "var(--color-base-content, #666)" }}
             />
             <YAxis
+              width={ARRIVAL_GATE_WIDTH}
               allowDecimals={false}
               tickLine={false}
               axisLine={false}
@@ -143,6 +148,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
       </div>
     </div>
   );

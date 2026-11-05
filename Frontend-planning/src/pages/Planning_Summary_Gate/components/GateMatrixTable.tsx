@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import type { MatrixGateRow } from "../types";
+import { ARRIVAL_GATE_WIDTH, getArrivalMinWidth } from "../arrivalLayout";
 
 interface GateMatrixTableProps {
   matrixRows: MatrixGateRow[];
@@ -50,8 +51,14 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
       </div>
 
       {/* Heatmap Matrix Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-center border-collapse select-none">
+      <div className="overflow-x-auto" data-arrival-scroll>
+        <table className="w-full table-fixed text-center border-collapse select-none" style={{ minWidth: getArrivalMinWidth((matrixRows[0]?.days.length ?? 0) + 1) }}>
+          <colgroup>
+            <col style={{ width: ARRIVAL_GATE_WIDTH }} />
+            {Array.from({ length: (matrixRows[0]?.days.length ?? 0) + 1 }, (_, index) => (
+              <col key={index} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {/* Gate Column */}

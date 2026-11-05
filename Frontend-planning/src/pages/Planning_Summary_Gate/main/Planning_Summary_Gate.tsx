@@ -44,6 +44,16 @@ const Planning_Summary_Gate: React.FC = () => {
     [selectGate, selectDate]
   );
 
+  const syncArrivalScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const source = event.target;
+    if (!(source instanceof HTMLDivElement) || !source.hasAttribute("data-arrival-scroll")) return;
+    event.currentTarget.querySelectorAll<HTMLDivElement>("[data-arrival-scroll]").forEach((target) => {
+      if (target !== source && Math.abs(target.scrollLeft - source.scrollLeft) > 1) {
+        target.scrollLeft = source.scrollLeft;
+      }
+    });
+  }, []);
+
   return (
     <div className="planning-summary-gate flex flex-col gap-3 w-full">
       {/* 1. Global Filter & Control Bar */}
@@ -79,20 +89,22 @@ const Planning_Summary_Gate: React.FC = () => {
           />
 
           {/* 3. Section 2: Gate Arrival Schedule */}
-          <GateMatrixTable
-            matrixRows={matrixRows}
-            selectedGate={filters.selectedGate}
-            selectedDate={filters.selectedDate}
-            onSelectCell={handleSelectCell}
-          />
+          <div className="flex min-w-0 flex-col gap-3" onScrollCapture={syncArrivalScroll}>
+            <GateMatrixTable
+              matrixRows={matrixRows}
+              selectedGate={filters.selectedGate}
+              selectedDate={filters.selectedDate}
+              onSelectCell={handleSelectCell}
+            />
 
-          {/* 4. Section 2 (Bottom): Stacked Bar Chart for Selected Gate */}
-          <GateMustOutChart
-            gateName={filters.selectedGate}
-            chartData={chartData}
-            selectedDate={filters.selectedDate}
-            onSelectDate={selectDate}
-          />
+            {/* 4. Section 2 (Bottom): Stacked Bar Chart for Selected Gate */}
+            <GateMustOutChart
+              gateName={filters.selectedGate}
+              chartData={chartData}
+              selectedDate={filters.selectedDate}
+              onSelectDate={selectDate}
+            />
+          </div>
 
           {/* 5. Section 3: Action & Task Table */}
           <GateActionTable
