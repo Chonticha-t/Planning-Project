@@ -8,7 +8,6 @@ import {
   ArrowDown,
   ChevronDown,
   Check,
-  GitCommitHorizontal,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
 import type { GateStatusFilter, PlanningSummaryGateRow } from "../types";
@@ -64,6 +63,49 @@ const formatDateShort = (dtStr?: string | null) => {
 const formatDateFull = (dtStr?: string | null) => {
   if (!dtStr || dtStr.length < 10) return "-";
   return `${dtStr.slice(8, 10)}/${dtStr.slice(5, 7)}/${dtStr.slice(0, 4)}`;
+};
+
+// Compare calendar dates only; reject missing or invalid dates instead of showing zero.
+const calendarDayNumber = (value?: string | null): number | null => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value) return null;
+  return timestamp / 86400000;
+};
+
+const getGateArrivalPresentation = (row: PlanningSummaryGateRow, todayStr: string) => {
+  const gate = formatGateName(row.gate_name);
+  if (row.gate_state === "in_gate" || row.gate_state === "passed") {
+    return {
+      label: null,
+      colors: "text-[#40916C]",
+      description: `${gate} · ${row.gate_state === "passed" ? "ผ่าน Gate แล้ว" : "อยู่ใน Gate แล้ว"}`,
+    };
+  }
+  if (row.gate_state !== "coming" && row.gate_state !== "need_wip") {
+    return {
+      label: "—",
+      colors: "text-slate-500",
+      description: `${gate} · ${formatGateState(row.gate_state)} · ยังไม่มี Lot ที่กำลังเดินทางเข้า Gate`,
+    };
+  }
+  const target = calendarDayNumber(row.arrive_by);
+  const today = calendarDayNumber(todayStr);
+  const days = target !== null && today !== null ? target - today : null;
+  return {
+    label: days === null ? "—" : days === 0 ? "Today" : `${days < 0 ? "−" : ""}${Math.abs(days)}d`,
+    colors: days === null ? "text-slate-500"
+      : days < 0 ? "text-[#701414]"
+      : days === 0 ? "text-[#DA4848]"
+      : days === 1 ? "text-[#EB5E28]"
+      : days === 2 ? "text-[#F27F34]"
+      : days === 3 ? "text-[#F9A03F]"
+      : days === 4 ? "text-[#FFA62B]"
+      : "text-[#2E5AA7]",
+    description: days === null
+      ? `ยังไม่มีวันที่เข้า ${gate} ตามแผนที่ใช้คำนวณได้`
+      : `กำหนดเข้า ${gate}: ${formatDateFull(row.arrive_by)} · ${days < 0 ? `เลยกำหนด ${Math.abs(days)} วัน` : days === 0 ? "ถึงกำหนดวันนี้" : `เหลือ ${days} วันปฏิทิน`}`,
+  };
 };
 
 const formatScanTime = (dtStr?: string | null) => {
@@ -498,6 +540,7 @@ const GateFilterDropdown = ({ label, value, options, active, width, onChange }: 
 };
 
 export const GateActionTable: React.FC<GateActionTableProps> = memo(({
+  todayStr,
   gateName,
   rows,
   allRows,
@@ -709,17 +752,17 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
       {/* Main Table */}
       <div className="overflow-x-auto rounded-xl border border-base-300">
-        <table className="table table-sm table-fixed w-full min-w-[1100px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
+        <table className="table table-sm table-fixed w-full min-w-[1240px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th]:px-3 [&_th]:py-3 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-middle [&_td]:break-words [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
           <colgroup>
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "8%" }} />
+            <col style={{ width: 176 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 132 }} />
+            <col style={{ width: 121 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 154 }} />
+            <col style={{ width: 121 }} />
+            <col style={{ width: 88 }} />
+            <col style={{ width: 140 }} />
           </colgroup>
           <thead>
             <tr className="bg-base-200/70 border-b border-base-300 text-[12.5px] font-bold tracking-[0.04em] text-base-content">
@@ -731,7 +774,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
               <th className="px-2 py-2 whitespace-nowrap">CURRENT PROCESS</th>
               <th className="px-2 py-2">SCAN-IN TIME</th>
               <th className="px-2 py-2">STATUS</th>
-              <th className="px-2 py-2">GATE STAGE</th>
+              <th className="px-2 py-2">GATE ARRIVAL</th>
             </tr>
           </thead>
           <tbody>
@@ -754,6 +797,17 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
                 const rowKey = `${row.pri}-${row.lot_no}-${row.gate_name}-${rIdx}`;
                 const isExpanded = activePopover?.rowKey === rowKey;
+                const arrival = getGateArrivalPresentation(row, todayStr);
+                const toggleTimeline = (event: React.MouseEvent<HTMLButtonElement>) => {
+                  if (isExpanded) {
+                    setActivePopover(null);
+                    return;
+                  }
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const top = Math.max(40, Math.min(window.innerHeight - 40, rect.top + rect.height / 2));
+                  const right = Math.max(12, window.innerWidth - rect.left + 10);
+                  setActivePopover({ rowKey, row, top, right });
+                };
 
                 return (
                   <tr
@@ -832,42 +886,32 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
                     {/* STATUS from this gate stage, independent of the lot's general status. */}
                     <td className="font-semibold text-[13px] text-base-content/85 whitespace-nowrap px-2 py-2">
-                      <span className={`inline-flex items-center rounded-md border px-2 py-1 ${row.gate_state === "in_gate" ? "text-[12px]" : "text-[11px]"} font-semibold leading-none ${getGateStateClass(row.gate_state)}`}>
+                      <span className={`inline-flex items-center rounded-md border px-2 py-1 text-[12px] font-semibold leading-none ${getGateStateClass(row.gate_state)}`}>
                         {formatGateState(row.gate_state)}
                       </span>
                     </td>
 
-                    {/* GATE STAGE (Floating Popover Toggle Button) */}
+                    {/* GATE ARRIVAL: ticket opens the same timeline as the stage button. */}
                     <td className="px-2 py-2">
-                      <div className="inline-flex items-center justify-center">
-                        <button
-                          type="button"
-                          data-gate-stage-btn="true"
-                          onClick={(e) => {
-                            if (isExpanded) {
-                              setActivePopover(null);
-                              return;
-                            }
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const top = Math.max(
-                              40,
-                              Math.min(window.innerHeight - 40, rect.top + rect.height / 2)
-                            );
-                            const right = Math.max(12, window.innerWidth - rect.left + 10);
-                            setActivePopover({ rowKey, row, top, right });
-                          }}
-                          title="View gate stage timeline"
-                          aria-expanded={isExpanded}
-                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-all cursor-pointer shrink-0 ${
-                            isExpanded
-                              ? "bg-[#4f46e5] text-white border-[#4f46e5] shadow-2xs"
-                              : "bg-slate-100/80 text-slate-600 border-slate-200/80 hover:bg-[#eef2ff] hover:text-[#4f46e5] hover:border-indigo-200"
-                          }`}
-                        >
-                          <GitCommitHorizontal size={15} />
-                        </button>
+                      <div className="flex items-center justify-center">
+                          <button
+                            type="button"
+                            data-gate-stage-btn="true"
+                            onClick={toggleTimeline}
+                            aria-label={`${arrival.description} · ดู Gate Timeline`}
+                            aria-expanded={isExpanded}
+                            className={`inline-flex h-6 w-[88px] items-stretch overflow-hidden rounded-md border border-current/20 bg-current/5 shadow-xs transition-[filter,box-shadow] hover:brightness-95 hover:shadow-sm cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${arrival.colors} ${isExpanded ? "ring-2 ring-indigo-400/50 ring-offset-1" : ""}`}
+                          >
+                            <span className="inline-flex w-10 shrink-0 items-center justify-center bg-current px-1">
+                              <span className="truncate text-[10px] font-bold tracking-wide text-white">{formatGateName(row.gate_name) || "—"}</span>
+                            </span>
+                            <span className="inline-flex min-w-0 flex-1 items-center justify-center px-1 text-[11px] font-bold tabular-nums whitespace-nowrap">
+                              {arrival.label === null ? <Check size={12} aria-hidden="true" /> : arrival.label}
+                            </span>
+                          </button>
                       </div>
                     </td>
+
                   </tr>
                 );
               })
