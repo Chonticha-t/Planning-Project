@@ -12,6 +12,7 @@ import { getThemeColors, observeThemeChanges } from "./themeUtils";
 import AppRoutes from "@/routes/AppRoutes";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { AuthProvider } from "@/context/AuthContext";
+import DevelopmentWatermark from "@/components/DevelopmentWatermark";
 
 function App() {
   const [themeColors, setThemeColors] = useState<any>({});
@@ -68,6 +69,7 @@ function App() {
           <ConfirmProvider>
             <AuthProvider>
               <AppRoutes />
+              <DevelopmentWatermark />
             </AuthProvider>
           </ConfirmProvider>
           <Toaster

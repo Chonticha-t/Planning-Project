@@ -235,7 +235,10 @@ function hookHarness() {
       }) };
       if (name === "dayjs") return dayjs;
       if (name === "./useGateToday") return { useGateToday: () => "2026-01-01" };
-      if (name === "../gatePresentation") return {};
+      if (name === "../gatePresentation") return {
+        formatGateName: gate => gate || "",
+        formatGateTransition: (gate, next) => `${gate || ""} → ${next || ""}`,
+      };
       if (name === "./api") return {
         PLANNING_SUMMARY_GATE_TABLE_API: "table", PLANNING_SUMMARY_GATE_SUMMARY_API: "summary",
         PLANNING_SUMMARY_GATE_CALENDAR_API: "calendar", PLANNING_SUMMARY_GATE_STREAM_API: "stream",
@@ -272,6 +275,168 @@ function hookHarness() {
     unmount: () => effects.forEach(effect => effect.cleanup?.()),
   };
 }
+
+test("overdue pending arrivals stay in details without changing schedule cards or chart", async () => {
+  const h = hookHarness();
+  h.render();
+  const makeRow = (lot, state, arrival, departure, extra = {}) => ({
+    prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+    lot_no: lot, gate_state: state, arrive_by: arrival, must_out: departure,
+    qty: 10, pri: 1, ...extra,
+  });
+  const active = [
+    makeRow("TODAY", "coming", "2026-01-01", "2026-01-02"),
+    makeRow("FUTURE", "coming", "2026-01-03", "2026-01-04"),
+    makeRow("IN-GATE", "in_gate", "2026-01-01", "2026-01-02"),
+  ];
+  await h.succeed(h.requests.slice(), active);
+  const baseline = h.render();
+  const schedule = JSON.stringify([baseline.gateFlowList, baseline.matrixRows, baseline.chartData]);
+  baseline.refreshData();
+  await h.succeed(h.requests.slice(3), [...active,
+    makeRow("LATE-COMING", "coming", "2025-12-30", "2025-12-31", {
+      prd_name: "OVERDUE-ONLY", proc_disp: "SAMPLE-PROCESS", is_coming_3d: true,
+    }),
+    makeRow("NEED WIP", "need_wip", "2025-12-31", "2025-12-31"),
+    makeRow("OLD-IN-GATE", "in_gate", "2025-12-30", "2025-12-31"),
+    makeRow("PASSED", "passed", "2026-01-01", "2026-01-02"),
+    makeRow("NO-DATE", "need_wip", null, "2025-12-31"),
+  ]);
+  let value = h.render();
+  const lots = () => Array.from(h.render().filteredTableRows, row => row.lot_no).sort();
+  assert.deepEqual(lots(), ["FUTURE", "IN-GATE", "LATE-COMING", "NEED WIP", "NO-DATE", "OLD-IN-GATE", "TODAY"]);
+  assert.equal(value.tableStats.totalLots, 7);
+  assert.equal(value.tableStats.totalPcs, 70);
+  assert.equal(value.tableStats.inGateLots, 2);
+  assert.equal(value.tableStats.needWipLots, 2);
+  assert.equal(JSON.stringify([value.gateFlowList, value.matrixRows, value.chartData]), schedule);
+  assert.ok(value.availableProducts.includes("OVERDUE-ONLY"));
+  assert.ok(value.availableCurrentProcesses.includes("SAMPLE-PROCESS"));
+
+  value.setActionTab("today");
+  assert.deepEqual(lots(), ["IN-GATE", "TODAY"]);
+  h.render().setActionTab("need_wip");
+  assert.deepEqual(lots(), ["NEED WIP", "NO-DATE"]);
+  h.render().setActionTab("in_gate");
+  assert.deepEqual(lots(), ["IN-GATE", "OLD-IN-GATE"]);
+  h.render().setActionTab("all");
+  h.render().selectDate("2026-01-03");
+  assert.deepEqual(lots(), ["FUTURE"]);
+  h.render().selectDate(null);
+  h.render().setStatusFilter("coming");
+  assert.deepEqual(lots(), ["FUTURE", "LATE-COMING", "TODAY"]);
+  h.render().setStatusFilter("all");
+  h.render().setCurrentProcessFilter("SAMPLE-PROCESS");
+  assert.deepEqual(lots(), ["LATE-COMING"]);
+  h.render().setCurrentProcessFilter("");
+  h.render().setSelectedProduct("OVERDUE-ONLY");
+  assert.deepEqual(lots(), ["LATE-COMING"]);
+  h.render().setSelectedProduct("");
+  h.render().setSearch("LATE-COMING");
+  assert.deepEqual(lots(), ["LATE-COMING"]);
+  h.unmount();
+});
+
+test("overview cards follow inclusive Plan ahead due dates without filtering arrival schedules or details", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const dueDates = ["2025-12-31", "2026-01-01", "2026-01-15", "2026-01-16", "2026-01-29", "2026-01-30", null];
+    const rows = dueDates.flatMap((due_date, index) => ["in_gate", "coming", "need_wip"].map(gate_state => ({
+      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+      lot_no: `ROW-${index}-${gate_state}`, due_date, gate_state,
+      arrive_by: "2026-01-01", must_out: "2026-01-01", qty: 10, pri: 1,
+      is_coming_3d: gate_state === "coming", is_hold: true,
+    })));
+    rows.push(
+      { ...rows[3], lot_no: "PASSED", gate_state: "passed" },
+      { ...rows[3], lot_no: "OVERDUE-EXIT", must_out: "2025-12-31" },
+      { ...rows[3], lot_no: "OTHER-CATEGORY", prd_category: "SMT" },
+      { ...rows[3], lot_no: "OTHER-GATE", gate_name: "FIN" },
+    );
+    await h.succeed(h.requests.slice(), rows);
+    let value = h.render();
+    const card = () => h.render().gateFlowList.find(row => row.gate_name === "FFPC");
+    const assertCard = expected => {
+      const result = card();
+      assert.equal(result.in_gate_count, expected);
+      assert.equal(result.in_gate_qty, expected * 10);
+      assert.equal(result.coming_3d_count, expected);
+      assert.equal(result.need_wip_count, expected);
+      assert.equal(result.hold_count, expected * 3);
+      assert.equal(result.must_out_today_count, expected * 3);
+    };
+    assertCard(2);
+    const todayCell = JSON.stringify(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell);
+    assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.lotsCount, 21);
+    const details = JSON.stringify(value.filteredTableRows);
+    value.setPlanWindow("1m");
+    value = h.render();
+    assertCard(4);
+    assert.equal(JSON.stringify(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell), todayCell);
+    assert.equal(JSON.stringify(value.filteredTableRows), details);
+    assert.equal(h.requests.length, 3);
+    value.setPlanWindow("2w");
+    assertCard(2);
+    h.render().setSearch("NO-MATCH");
+    assertCard(0);
+    h.render().setSearch("");
+    h.render().setSelectedProduct("NO-MATCH");
+    assertCard(0);
+  } finally {
+    h.unmount();
+  }
+});
+
+test("overview cards never fall back to summary totals without due-date filtering", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    h.requests.find(request => request.url === "summary").resolve({
+      data: { status: "OK", data: [{ gate_name: "FFPC", gate_order: 1, in_gate_count: 999, in_gate_qty: 9990 }] },
+    });
+    await h.succeed(h.requests.slice(), []);
+    const card = h.render().gateFlowList.find(row => row.gate_name === "FFPC");
+    assert.equal(card.in_gate_count, 0);
+    assert.equal(card.in_gate_qty, 0);
+  } finally {
+    h.unmount();
+  }
+});
+
+test("in-gate lots survive past plan dates until passed and remain discoverable", async () => {
+  const h = hookHarness();
+  h.render();
+  const makeRow = (lot, arrival, departure) => ({
+    prd_name: lot, prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+    lot_no: lot, gate_state: "in_gate", arrive_by: arrival, must_out: departure,
+    proc_disp: `PROCESS-${lot}`, qty: 10, pri: 1,
+  });
+  const rows = [
+    makeRow("PAST-ARRIVAL", "2025-12-31", "2026-01-02"),
+    makeRow("PAST-DEPARTURE", "2025-12-30", "2025-12-31"),
+    makeRow("MISSING-DATES", null, null),
+  ];
+  await h.succeed(h.requests.slice(), rows);
+  let value = h.render();
+  assert.equal(value.filteredTableRows.length, 3);
+  assert.equal(value.tableStats.inGateLots, 3);
+  assert.ok(value.availableProducts.includes("PAST-DEPARTURE"));
+  assert.ok(value.availableCurrentProcesses.includes("PROCESS-PAST-DEPARTURE"));
+  value.setActionTab("in_gate");
+  assert.equal(h.render().filteredTableRows.length, 3);
+  h.render().setSelectedProduct("PAST-DEPARTURE");
+  assert.equal(h.render().filteredTableRows[0].lot_no, "PAST-DEPARTURE");
+  h.render().setSelectedProduct("");
+  h.render().refreshData();
+  await h.succeed(h.requests.slice(3), rows.map(row => row.lot_no === "PAST-DEPARTURE"
+    ? { ...row, gate_state: "passed" } : row));
+  value = h.render();
+  assert.equal(value.filteredTableRows.length, 2);
+  assert.equal(value.tableStats.inGateLots, 2);
+  assert.ok(!value.filteredTableRows.some(row => row.lot_no === "PAST-DEPARTURE"));
+  h.unmount();
+});
 
 test("bursts coalesce into one trailing refresh and background failures retain data", async () => {
   const h = hookHarness();

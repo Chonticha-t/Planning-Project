@@ -95,7 +95,7 @@ const getGateArrivalPresentation = (row: PlanningSummaryGateRow, todayStr: strin
   return {
     label: days === null ? "—" : days === 0 ? "Today" : `${days < 0 ? "−" : ""}${Math.abs(days)}d`,
     colors: days === null ? "text-slate-500"
-      : days < 0 ? "text-[#701414]"
+      : days < 0 ? "text-[#9F0202]"
       : days === 0 ? "text-[#DA4848]"
       : days === 1 ? "text-[#EB5E28]"
       : days === 2 ? "text-[#F27F34]"
@@ -660,7 +660,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
               }`}
             >
-              All scheduled lots
+              All + overdue
             </button>
           </div>
 

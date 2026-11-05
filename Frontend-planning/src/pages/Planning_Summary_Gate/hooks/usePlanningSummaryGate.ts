@@ -24,6 +24,18 @@ import type {
 const DEFAULT_GATES_FPC = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
 const DEFAULT_GATES_SMT = ["SMT", "FADL", "FIN", "W/H"];
 
+const isPendingArrival = (row: PlanningSummaryGateRow): boolean =>
+  row.gate_state === "coming" || row.gate_state === "need_wip";
+
+// Keep pending arrivals and lots still in gate regardless of plan dates.
+const isDetailTableRow = (row: PlanningSummaryGateRow, today: string): boolean =>
+  row.gate_state !== "passed" && (
+    isPendingArrival(row) || row.gate_state === "in_gate" || (
+      (!row.must_out || row.must_out >= today) &&
+      (!row.arrive_by || row.arrive_by >= today)
+    )
+  );
+
 // Use the visible process label; needed WIP has no current process.
 const getCurrentProcess = (row: PlanningSummaryGateRow): string => {
   if (row.lot_no === "NEED WIP" || row.gate_state === "need_wip" || row.status === "need wip") return "";
@@ -277,7 +289,7 @@ export const usePlanningSummaryGate = () => {
     const set = new Set<string>();
     for (let i = 0; i < categoryRows.length; i++) {
       const r = categoryRows[i];
-      if (r.must_out && r.must_out < todayStr) continue;
+      if (r.must_out && r.must_out < todayStr && !isPendingArrival(r) && r.gate_state !== "in_gate") continue;
       const p = r.prd_name?.trim();
       if (p) set.add(p);
     }
@@ -370,66 +382,45 @@ export const usePlanningSummaryGate = () => {
     return map;
   }, [globallyFilteredRows, todayStr]);
 
-  const hasFilterActive = Boolean(filters.selectedProduct?.trim() || deferredSearch.trim());
+  const detailRowsByGate = useMemo(() => {
+    const map = new Map<string, PlanningSummaryGateRow[]>();
+    for (const row of globallyFilteredRows) {
+      if (!isDetailTableRow(row, todayStr)) continue;
+      const gateRows = map.get(row.gate_name);
+      if (gateRows) gateRows.push(row);
+      else map.set(row.gate_name, [row]);
+    }
+    return map;
+  }, [globallyFilteredRows, todayStr]);
 
-  // Aggregated Gate Flow KPIs (Section 1) - O(N) single pass matching todayStr & active filters
+  // Limit all card KPIs to the inclusive due-date range shown by Plan ahead.
   const gateFlowList = useMemo(() => {
+    const dueDateEnd = dayjs(todayStr).add(filters.planWindow === "2w" ? 14 : 28, "day").format("YYYY-MM-DD");
     return availableGates.map((gName, idx) => {
       const gateRows = rowsByGate.get(gName) || [];
-      if (gateRows.length > 0 || categoryRows.length > 0 || hasFilterActive) {
-        let inGateCount = 0;
-        let inGateQty = 0;
-        let coming3dCount = 0;
-        let needWipCount = 0;
-        let mustOutTodayCount = 0;
-        let onScheduleTodayCount = 0;
-        let holdCount = 0;
-
-        for (let i = 0; i < gateRows.length; i++) {
-          const r = gateRows[i];
-          if (r.gate_state === "in_gate") {
-            inGateCount++;
-            inGateQty += Number(r.qty) || 0;
-          }
-          if (r.is_coming_3d === true) coming3dCount++;
-          if (r.gate_state === "need_wip" || r.status?.toLowerCase() === "need wip") needWipCount++;
-          if (r.must_out === todayStr) {
-            mustOutTodayCount++;
-            if (r.on_time === true && !r.is_late && !r.is_hold && r.lot_status !== "HOLD") {
-              onScheduleTodayCount++;
-            }
-          }
-          if (r.is_hold || r.lot_status === "HOLD") holdCount++;
-        }
-
-        return {
-          gate_name: gName,
-          gate_order: idx + 1,
-          in_gate_count: inGateCount,
-          in_gate_qty: inGateQty,
-          coming_3d_count: coming3dCount,
-          need_wip_count: needWipCount,
-          must_out_today_count: mustOutTodayCount,
-          on_schedule_today_count: onScheduleTodayCount,
-          hold_count: holdCount,
-          late_count: 0,
-        };
-      }
-
-      const matchingKpis = kpis.filter((k) => k.gate_name === gName);
       let inGateCount = 0;
       let inGateQty = 0;
       let coming3dCount = 0;
       let needWipCount = 0;
       let mustOutTodayCount = 0;
+      let onScheduleTodayCount = 0;
       let holdCount = 0;
-      for (const k of matchingKpis) {
-        inGateCount += Number(k.in_gate_count) || 0;
-        inGateQty += Number(k.in_gate_qty) || 0;
-        coming3dCount += Number(k.coming_3d_count) || 0;
-        needWipCount += Number(k.need_wip_count) || 0;
-        mustOutTodayCount += Number(k.must_out_today_count) || 0;
-        holdCount += Number(k.hold_count) || 0;
+
+      for (const r of gateRows) {
+        if (!r.due_date || r.due_date < todayStr || r.due_date > dueDateEnd) continue;
+        if (r.gate_state === "in_gate") {
+          inGateCount++;
+          inGateQty += Number(r.qty) || 0;
+        }
+        if (r.is_coming_3d === true) coming3dCount++;
+        if (r.gate_state === "need_wip" || r.status?.toLowerCase() === "need wip") needWipCount++;
+        if (r.must_out === todayStr) {
+          mustOutTodayCount++;
+          if (r.on_time === true && !r.is_late && !r.is_hold && r.lot_status !== "HOLD") {
+            onScheduleTodayCount++;
+          }
+        }
+        if (r.is_hold || r.lot_status === "HOLD") holdCount++;
       }
 
       return {
@@ -440,11 +431,12 @@ export const usePlanningSummaryGate = () => {
         coming_3d_count: coming3dCount,
         need_wip_count: needWipCount,
         must_out_today_count: mustOutTodayCount,
+        on_schedule_today_count: onScheduleTodayCount,
         hold_count: holdCount,
         late_count: 0,
       };
     });
-  }, [availableGates, kpis, rowsByGate, categoryRows.length, hasFilterActive, todayStr]);
+  }, [availableGates, rowsByGate, filters.planWindow, todayStr]);
 
   // Section 2: Gate Matrix rows (Heatmap by Gate and Arrival Date) - Single O(N) pass per gate
   const matrixRows = useMemo<MatrixGateRow[]>(() => {
@@ -577,18 +569,16 @@ export const usePlanningSummaryGate = () => {
 
   const availableCurrentProcesses = useMemo(() => {
     const processes = new Set<string>();
-    for (const row of rowsByGate.get(filters.selectedGate) || []) {
+    for (const row of detailRowsByGate.get(filters.selectedGate) || []) {
       const process = getCurrentProcess(row);
       if (process) processes.add(process);
     }
     return [...processes].sort((a, b) => a.localeCompare(b));
-  }, [rowsByGate, filters.selectedGate]);
+  }, [detailRowsByGate, filters.selectedGate]);
 
-  // Section 3: Filtered Action Table Rows (Arrivals from Today onwards)
+  // Section 3: Include overdue pending arrivals; explicit date filters stay exact.
   const filteredTableRows = useMemo(() => {
-    let list = (rowsByGate.get(filters.selectedGate) || []).filter(
-      (r) => !r.arrive_by || r.arrive_by >= todayStr
-    );
+    let list = detailRowsByGate.get(filters.selectedGate) || [];
 
     // If a specific date is selected from matrix/chart
     if (filters.selectedDate) {
@@ -609,7 +599,7 @@ export const usePlanningSummaryGate = () => {
     }
 
     return [...list].sort((a, b) => (a.pri || 9999) - (b.pri || 9999));
-  }, [rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr, statusFilter, currentProcessFilter]);
+  }, [detailRowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr, statusFilter, currentProcessFilter]);
 
   // Summarize displayed detail rows, including the selected date and action tab.
   const tableStats = useMemo(() => {
