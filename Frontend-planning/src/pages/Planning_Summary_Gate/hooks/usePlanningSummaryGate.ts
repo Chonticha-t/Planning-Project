@@ -7,6 +7,7 @@ import {
   PLANNING_SUMMARY_GATE_TABLE_API,
   PLANNING_SUMMARY_GATE_SUMMARY_API,
   PLANNING_SUMMARY_GATE_CALENDAR_API,
+  PLANNING_SUMMARY_GATE_STREAM_API,
 } from "./api";
 import type {
   PlanningSummaryGateRow,
@@ -37,6 +38,8 @@ export const usePlanningSummaryGate = () => {
   const [kpis, setKpis] = useState<GateKpiSummary[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const [streamDisconnected, setStreamDisconnected] = useState(false);
   const [statusFilter, setStatusFilter] = useState<GateStatusFilter>("all");
   const [currentProcessFilter, setCurrentProcessFilter] = useState("");
 
@@ -52,18 +55,34 @@ export const usePlanningSummaryGate = () => {
   });
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingRefreshRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch data (fetch all categories and all stage dates for complete lot stage timelines)
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async function loadData(options: { silent?: boolean } = {}) {
+    const silent = options.silent === true;
+    // Coalesce notifications during a request into one trailing refresh.
+    if (silent && abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
+      pendingRefreshRef.current = true;
+      return;
+    }
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
     abortControllerRef.current?.abort();
+    pendingRefreshRef.current = false;
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setLoading(true);
-    setError(null);
-    setRows([]);
-    setKpis([]);
-    setHolidaySet(new Set());
-    setLastUpdated("");
+    if (!silent) {
+      hasLoadedRef.current = false;
+      setLoading(true);
+      setError(null);
+      setRefreshWarning(null);
+      setRows([]);
+      setKpis([]);
+      setHolidaySet(new Set());
+      setLastUpdated("");
+    }
 
     try {
       const [tableRes, summaryRes, calendarRes] = await Promise.all([
@@ -116,24 +135,96 @@ export const usePlanningSummaryGate = () => {
       setHolidaySet(new Set([...calendar].filter(([, working]) => !working).map(([date]) => date)));
       setRows(tableRes.data.data);
       setKpis(summaryRes.data.data);
-      setLastUpdated(dayjs().format("DD/MM/YYYY HH:mm"));
+      hasLoadedRef.current = true;
+      setError(null);
+      setRefreshWarning(null);
+      setLastUpdated(dayjs().format("DD/MM/YYYY HH:mm:ss"));
     } catch {
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
-      setRows([]);
-      setKpis([]);
-      setHolidaySet(new Set());
-      setError("Unable to load planning gate data. Please refresh to try again.");
+      controller.abort();
+      if (hasLoadedRef.current) {
+        setRefreshWarning("Live refresh failed. Displayed data may be out of date. Retrying automatically.");
+      } else {
+        setError("Unable to load planning gate data. Retrying automatically, or select Refresh to try again.");
+      }
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (document.visibilityState === "visible" && navigator.onLine) void loadData({ silent: true });
+      }, 5000);
     } finally {
-      if (!controller.signal.aborted && abortControllerRef.current === controller) {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
         setLoading(false);
+        if (pendingRefreshRef.current) {
+          pendingRefreshRef.current = false;
+          void loadData({ silent: true });
+        }
       }
     }
   }, [filters.category, filters.skipHolidays, todayStr]);
 
   useEffect(() => {
     void fetchData();
-    return () => abortControllerRef.current?.abort();
+    return () => {
+      pendingRefreshRef.current = false;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
   }, [fetchData]);
+
+  useEffect(() => {
+    let active = true;
+    let monitorUnavailable = false;
+    let stream: EventSource | null = null;
+    const refresh = () => {
+      if (active && document.visibilityState === "visible" && navigator.onLine) {
+        void fetchData({ silent: true });
+      }
+    };
+    try {
+      stream = new EventSource(PLANNING_SUMMARY_GATE_STREAM_API);
+      stream.onopen = () => {
+        if (!active) return;
+        setStreamDisconnected(false);
+        // Re-fetch on every connection, including reconnection after missed events.
+        refresh();
+      };
+      stream.onmessage = (event) => {
+        if (!active) return;
+        try {
+          const type = JSON.parse(event.data)?.type;
+          if (type === "GATE_MONITOR_UNAVAILABLE") {
+            monitorUnavailable = true;
+            setStreamDisconnected(true);
+          } else if (type === "GATE_MONITOR_OK" || type === "PLANNING_SUMMARY_GATE_UPDATED") {
+            const recovered = monitorUnavailable;
+            monitorUnavailable = false;
+            setStreamDisconnected(false);
+            if (recovered || type === "PLANNING_SUMMARY_GATE_UPDATED") refresh();
+          }
+        } catch {
+          // Ignore malformed or unrelated events; never discard displayed data.
+        }
+      };
+      stream.onerror = () => {
+        if (active) setStreamDisconnected(true);
+        // EventSource reconnects automatically using the server retry interval.
+      };
+    } catch {
+      setStreamDisconnected(true);
+    }
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      active = false;
+      stream?.close();
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", refresh);
+    };
+  }, [fetchData]);
+
+  const refreshData = useCallback(() => { void fetchData(); }, [fetchData]);
 
   // Distinct gates based on category and data (deduplicated & canonical ordered)
   const availableGates = useMemo(() => {
@@ -585,6 +676,9 @@ export const usePlanningSummaryGate = () => {
   return {
     loading,
     error,
+    refreshWarning: refreshWarning || (streamDisconnected
+      ? "Live connection interrupted. Displayed data may be out of date. Reconnecting automatically."
+      : null),
     rows: baseRows,
     kpis,
     lastUpdated,
@@ -610,7 +704,7 @@ export const usePlanningSummaryGate = () => {
     selectGate,
     selectDate,
     setActionTab,
-    refreshData: fetchData,
+    refreshData,
   };
 };
 

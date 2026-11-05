@@ -11,6 +11,7 @@ const Planning_Summary_Gate: React.FC = () => {
   const {
     loading,
     error,
+    refreshWarning,
     rows,
     lastUpdated,
     filters,
@@ -72,6 +73,10 @@ const Planning_Summary_Gate: React.FC = () => {
         loading={loading}
         onRefresh={refreshData}
       />
+
+      {refreshWarning && !loading && !error && (
+        <div role="status" className="alert alert-warning text-sm">{refreshWarning}</div>
+      )}
 
       {loading ? (
         <div role="status" className="p-4 text-sm text-base-content/70">Loading planning gate data...</div>

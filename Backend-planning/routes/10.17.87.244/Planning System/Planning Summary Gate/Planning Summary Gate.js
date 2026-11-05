@@ -3,6 +3,92 @@ const router = express.Router();
 const { pool_smart } = require("../../config");
 const { createCalendarIndex, loadCalendar } = require("../../../../utils/workingCalendar");
 
+// Share one read-only monitor per process, and only while this gate has viewers.
+const gateClients = new Set();
+let gatePollTimer = null;
+let gateChecking = false;
+let gateFingerprint = null;
+let gateMonitorGeneration = 0;
+
+const checkGateChanges = async () => {
+  if (gateChecking || gateClients.size === 0) return;
+  gateChecking = true;
+  const generation = gateMonitorGeneration;
+  try {
+    const result = await pool_smart.query({
+      // Include all fields so changes without an updated_at bump and deletes are detected.
+      // Sum row hashes without sorting or transferring factory rows to the application.
+      text: `SELECT COUNT(*)::text AS row_count,
+        COALESCE(SUM(('x' || SUBSTR(MD5(g::text), 1, 15))::bit(60)::bigint::numeric), 0)::text AS content_hash
+        FROM planning.planning_summary_gate g`,
+      query_timeout: 5000,
+    });
+    if (generation !== gateMonitorGeneration || gateClients.size === 0) return;
+    const row = result.rows[0];
+    if (!row) throw new Error("Missing gate monitor result");
+    const next = `${row.row_count}|${row.content_hash}`;
+    const changed = gateFingerprint !== null && next !== gateFingerprint;
+    gateFingerprint = next;
+    for (const client of gateClients) {
+      client.send(changed ? "PLANNING_SUMMARY_GATE_UPDATED" : "GATE_MONITOR_OK");
+    }
+  } catch {
+    if (generation === gateMonitorGeneration) {
+      for (const client of gateClients) client.send("GATE_MONITOR_UNAVAILABLE");
+    }
+  } finally {
+    gateChecking = false;
+  }
+};
+
+router.get("/stream", (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders?.();
+  let closed = false;
+  let heartbeat;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(heartbeat);
+    gateClients.delete(client);
+    if (gateClients.size === 0) {
+      clearInterval(gatePollTimer);
+      gatePollTimer = null;
+      gateFingerprint = null;
+      gateMonitorGeneration += 1;
+    }
+    res.destroy();
+  };
+  const write = (message) => {
+    if (closed) return;
+    try {
+      // Disconnect slow consumers instead of accumulating an unbounded response buffer.
+      if (res.destroyed || res.writableEnded || !res.write(message)) return close();
+      res.flush?.();
+    } catch {
+      close();
+    }
+  };
+  const client = {
+    send: (type) => write(`data: ${JSON.stringify({ type })}\n\n`),
+  };
+  gateClients.add(client);
+  req.on("close", close);
+  res.on("error", close);
+  res.on("close", close);
+  heartbeat = setInterval(() => write(": keep-alive\n\n"), 25000);
+  write('retry: 3000\ndata: {"type":"CONNECTED"}\n\n');
+  if (!closed && !gatePollTimer) {
+    gatePollTimer = setInterval(() => { void checkGateChanges(); }, 2500);
+    void checkGateChanges();
+  }
+});
+
 // Helper prevent browser caching
 const setNoCache = (res) => {
   res.set({
