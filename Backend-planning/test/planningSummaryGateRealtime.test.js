@@ -175,6 +175,11 @@ const { createRequire } = require("node:module");
 const frontendRequire = createRequire(path.join(frontendRoot, "package.json"));
 const ts = frontendRequire("typescript");
 const dayjs = frontendRequire("dayjs");
+const gateUnits = {};
+const unitModule = ts.transpileModule(fs.readFileSync(path.join(frontendRoot, "src/pages/Planning_Summary_Gate/gateUnits.ts"), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+});
+vm.runInNewContext(unitModule.outputText, { exports: gateUnits });
 
 function hookHarness(today = "2026-01-01") {
   const slots = [];
@@ -238,6 +243,7 @@ function hookHarness(today = "2026-01-01") {
         requests.push({ url, options, resolve, reject });
       }) };
       if (name === "dayjs") return dayjs;
+      if (name === "../gateUnits") return gateUnits;
       if (name === "./useGateToday") return { useGateToday: () => today };
       if (name === "../gatePresentation") return {
         formatGateName: gate => gate || "",
@@ -309,7 +315,7 @@ test("overdue pending arrivals stay in details without changing schedule cards o
   let value = h.render();
   const lots = () => Array.from(h.render().filteredTableRows, row => row.lot_no).sort();
   assert.deepEqual(lots(), ["FUTURE", "IN-GATE", "LATE-COMING", "NEED WIP", "NO-DATE", "OLD-IN-GATE", "TODAY"]);
-  assert.equal(value.tableStats.totalLots, 7);
+  assert.equal(value.tableStats.totalLots, 5);
   assert.equal(value.tableStats.totalPcs, 70);
   assert.equal(value.tableStats.inGateLots, 2);
   assert.equal(value.tableStats.needWipLots, 2);
@@ -382,14 +388,14 @@ test("overview cards reconcile with schedule and trend across inclusive arrival 
         assert.equal(summary.need_wip_count, cells.reduce((sum, cell) => sum + cell.needCount, 0));
       }
       const selected = current.gateFlowList.find(row => row.gate_name === current.filters.selectedGate);
-      assert.equal(selected.in_gate_count, current.chartData.reduce((sum, day) => sum + day.in_gate, 0));
-      assert.equal(selected.coming_count, current.chartData.reduce((sum, day) => sum + day.coming, 0));
-      assert.equal(selected.need_wip_count, current.chartData.reduce((sum, day) => sum + day.need_wip, 0));
+      assert.equal(selected.in_gate_count, current.chartDataByUnit.lot.reduce((sum, day) => sum + day.in_gate, 0));
+      assert.equal(selected.coming_count, current.chartDataByUnit.lot.reduce((sum, day) => sum + day.coming, 0));
+      assert.equal(selected.need_wip_count, current.chartDataByUnit.lot.reduce((sum, day) => sum + day.needCount, 0));
     };
     assertCard(2);
     assertReconciled();
     const todayCell = JSON.stringify(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell);
-    assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.lotsCount, 5);
+    assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.lotsCount, 4);
     const details = JSON.stringify(value.filteredTableRows);
     value.setPlanWindow("1m");
     value = h.render();
@@ -451,7 +457,7 @@ test("arrival dates keep a gate visible even when the summary API omits that gat
       data: { status: "OK", data: [{ gate_name: "FFPC", gate_order: 1, in_gate_count: 999 }] },
     });
     await h.succeed(h.requests.slice(), [{
-      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FVAC", gate_order: 2,
+      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FVAC", gate_order: 2, lot_no: "SAMPLE-ARRIVAL",
       gate_state: "coming", arrive_by: "2026-01-02", must_out: "2025-12-31", qty: 10,
     }]);
     let value = h.render();
@@ -459,7 +465,7 @@ test("arrival dates keep a gate visible even when the summary API omits that gat
     assert.equal(value.gateFlowList.find(row => row.gate_name === "FVAC").coming_count, 1);
     value.selectGate("FVAC");
     value = h.render();
-    assert.equal(value.chartData.reduce((sum, day) => sum + day.coming, 0), 1);
+    assert.equal(value.chartDataByUnit.lot.reduce((sum, day) => sum + day.coming, 0), 1);
     value.selectDate("2026-01-02");
     assert.equal(h.render().filteredTableRows.length, 1);
   } finally {
@@ -472,7 +478,7 @@ test("date drilldown includes every counted arrival even with an unknown state a
   try {
     h.render();
     await h.succeed(h.requests.slice(), [{
-      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, lot_no: "SAMPLE-UNKNOWN",
       gate_state: "unknown", arrive_by: "2026-01-01", must_out: "2025-12-31", qty: 10,
     }]);
     const value = h.render();
@@ -579,4 +585,100 @@ test("manual refresh cancels stale requests; unmount prevents trailing work", as
   await h.succeed(h.requests.slice(6));
   assert.equal(h.requests.length, 9);
   assert.equal(h.timers.size, 0);
+});
+
+
+test("actual lots deduplicate PO allocations and exclude Need WIP and missing lot identifiers", () => {
+  const base = { prd_name: "SAMPLE-A", gate_name: "FFPC", gate_state: "coming", lot_no: "LOT-A", qty: 900, pcs_per_sheet: 30, pri: 1 };
+  const result = gateUnits.summarizeGateQuantities([
+    base, { ...base, due_date: "2026-02-01", allocated_qty: 100 },
+    { ...base, lot_no: "LOT-B", qty: 125, pcs_per_sheet: 20 },
+    { ...base, prd_name: "SAMPLE-B", lot_no: "LOT-C", qty: 80, pcs_per_sheet: 8 },
+    { ...base, lot_no: "NEED WIP", gate_state: "need_wip", qty: 60 },
+    { ...base, lot_no: " ", qty: 30 },
+    { ...base, gate_state: "passed", lot_no: "PASSED" },
+  ]);
+  assert.equal(result.total.lot, 3);
+  assert.equal(result.coming.lot, 3);
+  assert.equal(result.need_wip.lot, 0);
+  assert.equal(result.needCount, 1);
+  assert.equal(result.unidentifiedCount, 1);
+  assert.equal(result.total.piece, 1195);
+  assert.equal(result.total.sheet, 49.25);
+});
+
+test("one physical lot cannot be counted twice through conflicting product labels", () => {
+  const base = { prd_name: "SAMPLE-A", gate_name: "FFPC", gate_state: "coming", lot_no: " LOT-A ", qty: 900, pcs_per_sheet: 30 };
+  const result = gateUnits.summarizeGateQuantities([base, { ...base, lot_no: "LOT-A", prd_name: "SAMPLE-B" }]);
+  assert.equal(result.total.lot, 1);
+  assert.equal(result.total.piece, null);
+  assert.equal(result.total.sheet, null);
+});
+
+test("sheet equivalents preserve fractions and missing factors never become false zero totals", () => {
+  const base = { prd_name: "SAMPLE", gate_name: "FFPC", gate_state: "in_gate", lot_no: "LOT-A", qty: 1, pcs_per_sheet: 3 };
+  assert.equal(gateUnits.summarizeGateQuantities([base]).total.sheet, 1 / 3);
+  assert.equal(gateUnits.formatGateQuantity(0.001, "sheet"), "<0.01");
+  for (const rate of [null, undefined, 0, -2, "", "invalid", Infinity]) {
+    const result = gateUnits.summarizeGateQuantities([base, { ...base, lot_no: "LOT-B", pcs_per_sheet: rate }]);
+    assert.equal(result.total.sheet, null);
+    assert.equal(result.total.piece, 2);
+    assert.equal(result.total.lot, 2);
+  }
+  assert.equal(gateUnits.summarizeGateQuantities([{ ...base, qty: "90", pcs_per_sheet: "30" }]).total.sheet, 3);
+  assert.equal(gateUnits.summarizeGateQuantities([{ ...base, qty: -1 }]).total.piece, null);
+  assert.equal(gateUnits.summarizeGateQuantities([base, { ...base, pcs_per_sheet: 4 }]).total.sheet, null);
+});
+
+test("unit switching uses cached quantities, keeps drilldown, and survives live refresh", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const base = { prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, gate_state: "coming", lot_no: "LOT-A", qty: 900, pcs_per_sheet: 30, pri: 1, arrive_by: "2026-01-01", must_out: "2026-01-02" };
+    const rows = [base, { ...base, due_date: "2026-02-01" }, { ...base, lot_no: "NEED WIP", gate_state: "need_wip", qty: 60 }];
+    await h.succeed(h.requests.slice(), rows);
+    let value = h.render();
+    assert.equal(value.unitMode, "all");
+    assert.equal(value.summaryUnit, "piece");
+    assert.equal(value.chartData[0].total, 960);
+    assert.equal(value.chartDataByUnit.sheet[0].total, 32);
+    assert.equal(value.chartDataByUnit.lot[0].total, 1);
+    assert.equal(value.chartDataByUnit.lot[0].need_wip, 0);
+    value.selectDate("2026-01-01");
+    for (const [mode, unit, total] of [["piece", "piece", 960], ["sheet", "sheet", 32], ["lot", "lot", 1], ["all", "piece", 960]]) {
+      h.render().setUnitMode(mode);
+      value = h.render();
+      assert.equal(value.summaryUnit, unit);
+      assert.equal(value.chartData[0].total, total);
+      assert.equal(value.tableStats.quantities.total[unit], total);
+      assert.equal(value.filters.selectedDate, "2026-01-01");
+      assert.equal(value.filteredTableRows.length, 3);
+      assert.equal(h.requests.length, 3);
+    }
+    value.setUnitMode("sheet");
+    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    await h.succeed(h.requests.slice(3), rows.map(row => ({ ...row, qty: row.qty * 2 })));
+    value = h.render();
+    assert.equal(value.unitMode, "sheet");
+    assert.equal(value.chartData[0].total, 64);
+    assert.equal(value.tableStats.totalLots, 1);
+  } finally { h.unmount(); }
+});
+
+
+test("period counts deduplicate a physical lot across dates without changing daily drilldown", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const base = { prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, gate_state: "coming", lot_no: "LOT-A", qty: 90, pcs_per_sheet: 30, pri: 1, arrive_by: "2026-01-01", must_out: "2026-01-03" };
+    await h.succeed(h.requests.slice(), [base, { ...base, arrive_by: "2026-01-02", due_date: "2026-02-01" }]);
+    const value = h.render();
+    assert.equal(value.gateFlowList[0].quantities.total.lot, 1);
+    assert.equal(value.gateFlowList[0].quantities.total.piece, 90);
+    assert.equal(value.chartDataByUnit.lot[0].total, 1);
+    assert.equal(value.chartDataByUnit.lot[1].total, 1);
+    value.selectDate("2026-01-02");
+    assert.equal(h.render().tableStats.totalLots, 1);
+    assert.equal(h.render().filteredTableRows.length, 1);
+  } finally { h.unmount(); }
 });

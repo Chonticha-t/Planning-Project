@@ -3,6 +3,7 @@ import axios from "axios";
 import dayjs from "dayjs";
 import { useGateToday } from "./useGateToday";
 import { formatGateName, formatGateTransition } from "../gatePresentation";
+import { summarizeGateQuantities } from "../gateUnits";
 import {
   PLANNING_SUMMARY_GATE_TABLE_API,
   PLANNING_SUMMARY_GATE_SUMMARY_API,
@@ -20,6 +21,8 @@ import type {
   PrdCategory,
   PlanWindow,
   GateStatusFilter,
+  GateUnit,
+  GateUnitMode,
 } from "../types";
 
 const DEFAULT_GATES_FPC = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
@@ -55,6 +58,8 @@ export const usePlanningSummaryGate = () => {
   const [streamDisconnected, setStreamDisconnected] = useState(false);
   const [statusFilter, setStatusFilter] = useState<GateStatusFilter>("all");
   const [currentProcessFilter, setCurrentProcessFilter] = useState("");
+  const [unitMode, setUnitMode] = useState<GateUnitMode>("all");
+  const summaryUnit: GateUnit = unitMode === "all" ? "piece" : unitMode;
 
   const [filters, setFilters] = useState<GateFilterState>({
     category: "FPC",
@@ -398,177 +403,60 @@ export const usePlanningSummaryGate = () => {
     return map;
   }, [globallyFilteredRows, todayStr]);
 
-  // Summarize the same stage rows counted by the arrival schedule and trend.
-  const gateFlowList = useMemo<GateFlowSummary[]>(() => {
-    return availableGates.map((gName, idx) => {
-      const gateRows = rowsByGate.get(gName) || [];
-      let inGateCount = 0;
-      let inGateQty = 0;
-      let comingCount = 0;
-      let needWipCount = 0;
-      let mustOutTodayCount = 0;
-      let onScheduleTodayCount = 0;
-      let holdCount = 0;
+  // Aggregate physical lots once within each reporting scope.
+  const gateFlowList = useMemo<GateFlowSummary[]>(() => availableGates.map((gate, index) => {
+    const rows = rowsByGate.get(gate) || [];
+    const quantities = summarizeGateQuantities(rows);
+    return {
+      gate_name: gate, gate_order: index + 1, quantities,
+      in_gate_count: quantities.in_gate.lot,
+      in_gate_qty: quantities.in_gate.piece ?? 0,
+      coming_count: quantities.coming.lot,
+      need_wip_count: quantities.needCount,
+      must_out_today_count: rows.filter((row) => row.must_out === todayStr).length,
+      on_schedule_today_count: rows.filter((row) => row.must_out === todayStr && row.on_time === true && !row.is_late && !row.is_hold && row.lot_status !== "HOLD").length,
+      hold_count: rows.filter((row) => row.is_hold || row.lot_status === "HOLD").length,
+      late_count: 0,
+    };
+  }), [availableGates, rowsByGate, todayStr]);
 
-      for (const r of gateRows) {
-        if (r.gate_state === "in_gate") {
-          inGateCount++;
-          inGateQty += Number(r.qty) || 0;
-        }
-        if (r.gate_state === "coming") comingCount++;
-        if (r.gate_state === "need_wip") needWipCount++;
-        if (r.must_out === todayStr) {
-          mustOutTodayCount++;
-          if (r.on_time === true && !r.is_late && !r.is_hold && r.lot_status !== "HOLD") {
-            onScheduleTodayCount++;
-          }
-        }
-        if (r.is_hold || r.lot_status === "HOLD") holdCount++;
-      }
-
+  const matrixRows = useMemo<MatrixGateRow[]>(() => availableGates.map((gate, index) => {
+    const buckets = new Map<string, PlanningSummaryGateRow[]>();
+    for (const row of rowsByGate.get(gate) || []) {
+      if (!row.arrive_by) continue;
+      const bucket = buckets.get(row.arrive_by);
+      if (bucket) bucket.push(row);
+      else buckets.set(row.arrive_by, [row]);
+    }
+    const makeCell = (date: { dateStr: string; dayName: string; dateDisplay: string; isToday: boolean; isHoliday: boolean }): MatrixDayCell => {
+      const quantities = summarizeGateQuantities(buckets.get(date.dateStr) || []);
       return {
-        gate_name: gName,
-        gate_order: idx + 1,
-        in_gate_count: inGateCount,
-        in_gate_qty: inGateQty,
-        coming_count: comingCount,
-        need_wip_count: needWipCount,
-        must_out_today_count: mustOutTodayCount,
-        on_schedule_today_count: onScheduleTodayCount,
-        hold_count: holdCount,
-        late_count: 0,
+        ...date, isLate: false, quantities,
+        lotsCount: quantities.total.lot, needCount: quantities.needCount,
+        inGateCount: quantities.in_gate.lot, comingCount: quantities.coming.lot,
       };
-    });
-  }, [availableGates, rowsByGate, todayStr]);
+    };
+    return {
+      gate_name: gate, gate_order: index + 1,
+      lateCell: { ...makeCell({ dateStr: "late", dayName: "LATE", dateDisplay: "Overdue", isToday: false, isHoliday: false }), isLate: true },
+      todayCell: makeCell({ dateStr: todayStr, dayName: "TODAY", dateDisplay: todayDisplay, isToday: true, isHoliday: holidaySet.has(todayStr) }),
+      days: calendarDays.map(makeCell),
+    };
+  }), [availableGates, rowsByGate, calendarDays, todayStr, todayDisplay, holidaySet]);
 
-  // Section 2: Gate Matrix rows (Heatmap by Gate and Arrival Date) - Single O(N) pass per gate
-  const matrixRows = useMemo<MatrixGateRow[]>(() => {
-    return availableGates.map((gName, idx) => {
-      const gateRows = rowsByGate.get(gName) || [];
-
-      // Bucket counts by date in 1 pass instead of 30*4 filter passes
-      const dateBuckets = new Map<
-        string,
-        { lotsCount: number; needCount: number; inGateCount: number; comingCount: number }
-      >();
-
-      let todayLotsCount = 0;
-      let todayNeedCount = 0;
-      let todayInGateCount = 0;
-      let todayComingCount = 0;
-
-      for (let i = 0; i < gateRows.length; i++) {
-        const r = gateRows[i];
-        const isNeed = r.gate_state === "need_wip";
-        const isInGate = r.gate_state === "in_gate";
-        const isComing = r.gate_state === "coming";
-
-        if (r.arrive_by === todayStr) {
-          todayLotsCount++;
-          if (isNeed) todayNeedCount++;
-          if (isInGate) todayInGateCount++;
-          if (isComing) todayComingCount++;
-        }
-
-        if (r.arrive_by) {
-          let b = dateBuckets.get(r.arrive_by);
-          if (!b) {
-            b = { lotsCount: 0, needCount: 0, inGateCount: 0, comingCount: 0 };
-            dateBuckets.set(r.arrive_by, b);
-          }
-          b.lotsCount++;
-          if (isNeed) b.needCount++;
-          if (isInGate) b.inGateCount++;
-          if (isComing) b.comingCount++;
-        }
-      }
-
-      const lateCell: MatrixDayCell = {
-        dateStr: "late",
-        dayName: "LATE",
-        dateDisplay: "Overdue",
-        isToday: false,
-        isHoliday: false,
-        isLate: true,
-        lotsCount: 0,
-        needCount: 0,
-        inGateCount: 0,
-        comingCount: 0,
-      };
-
-      const todayCell: MatrixDayCell = {
-        dateStr: todayStr,
-        dayName: "TODAY",
-        dateDisplay: todayDisplay,
-        isToday: true,
-        isHoliday: holidaySet.has(todayStr),
-        isLate: false,
-        lotsCount: todayLotsCount,
-        needCount: todayNeedCount,
-        inGateCount: todayInGateCount,
-        comingCount: todayComingCount,
-      };
-
-      const days: MatrixDayCell[] = calendarDays.map((cd) => {
-        const b = dateBuckets.get(cd.dateStr);
-        return {
-          dateStr: cd.dateStr,
-          dayName: cd.dayName,
-          dateDisplay: cd.dateDisplay,
-          isToday: false,
-          isHoliday: cd.isHoliday,
-          isLate: false,
-          lotsCount: b ? b.lotsCount : 0,
-          needCount: b ? b.needCount : 0,
-          inGateCount: b ? b.inGateCount : 0,
-          comingCount: b ? b.comingCount : 0,
-        };
-      });
-
-      return {
-        gate_name: gName,
-        gate_order: idx + 1,
-        lateCell,
-        todayCell,
-        days,
-      };
-    });
-  }, [availableGates, rowsByGate, calendarDays, todayStr, todayDisplay, holidaySet]);
-
-  // Section 2: Stacked Chart Data for Selected Gate (Starts from Today, NO Late)
-  const chartData = useMemo<GateDailyChartData[]>(() => {
-    const selectedMatrix = matrixRows.find((m) => m.gate_name === filters.selectedGate);
-    if (!selectedMatrix) return [];
-
-    const list: GateDailyChartData[] = [];
-
-    // Today (First bar)
-    list.push({
-      dateLabel: "Today",
-      fullDate: todayStr,
-      in_gate: selectedMatrix.todayCell.inGateCount,
-      coming: selectedMatrix.todayCell.comingCount,
-      need_wip: selectedMatrix.todayCell.needCount,
-      total: selectedMatrix.todayCell.lotsCount,
-      isHoliday: selectedMatrix.todayCell.isHoliday,
-      isToday: true,
-    });
-
-    // Each day in calendar
-    selectedMatrix.days.forEach((d) => {
-      list.push({
-        dateLabel: d.dateDisplay,
-        fullDate: d.dateStr,
-        in_gate: d.inGateCount,
-        coming: d.comingCount,
-        need_wip: d.needCount,
-        total: d.lotsCount,
-        isHoliday: d.isHoliday,
-      });
-    });
-
-    return list;
-  }, [matrixRows, filters.selectedGate, todayStr]);
+  const chartDataByUnit = useMemo<Record<GateUnit, GateDailyChartData[]>>(() => {
+    const selected = matrixRows.find((row) => row.gate_name === filters.selectedGate);
+    const cells = selected ? [selected.todayCell, ...selected.days] : [];
+    const forUnit = (unit: GateUnit): GateDailyChartData[] => cells.map((cell) => ({
+      dateLabel: cell.isToday ? "Today" : cell.dateDisplay, fullDate: cell.dateStr,
+      in_gate: cell.quantities.in_gate[unit], coming: cell.quantities.coming[unit],
+      need_wip: cell.quantities.need_wip[unit], other: cell.quantities.other[unit],
+      total: cell.quantities.total[unit], needCount: cell.needCount,
+      isHoliday: cell.isHoliday, isToday: cell.isToday,
+    }));
+    return { piece: forUnit("piece"), sheet: forUnit("sheet"), lot: forUnit("lot") };
+  }, [matrixRows, filters.selectedGate]);
+  const chartData = chartDataByUnit[summaryUnit];
 
   const availableCurrentProcesses = useMemo(() => {
     const processes = new Set<string>();
@@ -604,28 +492,13 @@ export const usePlanningSummaryGate = () => {
     return [...list].sort((a, b) => (a.pri || 9999) - (b.pri || 9999));
   }, [detailRowsByGate, rowsByGate, filters.selectedGate, filters.selectedDate, filters.actionTab, todayStr, statusFilter, currentProcessFilter]);
 
-  // Summarize displayed detail rows, including the selected date and action tab.
+  // Detail summaries use the exact same aggregation as cards and chart cells.
   const tableStats = useMemo(() => {
-    const gateRows = filteredTableRows;
-    let inGateLots = 0;
-    let comingLots = 0;
-    let needWipLots = 0;
-    let totalPcs = 0;
-
-    for (let i = 0; i < gateRows.length; i++) {
-      const r = gateRows[i];
-      if (r.gate_state === "in_gate") inGateLots++;
-      if (r.gate_state === "coming") comingLots++;
-      if (r.gate_state === "need_wip" || r.status?.toLowerCase() === "need wip") needWipLots++;
-      totalPcs += Number(r.qty) || 0;
-    }
-
+    const quantities = summarizeGateQuantities(filteredTableRows);
     return {
-      inGateLots,
-      comingLots,
-      needWipLots,
-      totalLots: gateRows.length,
-      totalPcs,
+      quantities, inGateLots: quantities.in_gate.lot, comingLots: quantities.coming.lot,
+      needWipLots: quantities.needCount, totalLots: quantities.total.lot,
+      totalPcs: quantities.total.piece,
     };
   }, [filteredTableRows]);
 
@@ -683,6 +556,10 @@ export const usePlanningSummaryGate = () => {
     gateFlowList,
     matrixRows,
     chartData,
+    chartDataByUnit,
+    unitMode,
+    setUnitMode,
+    summaryUnit,
     filteredTableRows,
     tableStats,
     statusFilter,

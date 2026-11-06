@@ -10,10 +10,12 @@ import {
   Check,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
-import type { GateStatusFilter, PlanningSummaryGateRow } from "../types";
+import type { GateStatusFilter, PlanningSummaryGateRow, GateQuantitySummary, GateUnit } from "../types";
 import { formatGateName } from "../gatePresentation";
+import { formatGateQuantity, GATE_UNIT_LABELS } from "../gateUnits";
 
 interface GateActionTableProps {
+  unit: GateUnit;
   todayStr: string;
   gateName: string;
   rows: PlanningSummaryGateRow[];
@@ -31,7 +33,8 @@ interface GateActionTableProps {
     needWipLots: number;
     lateLots?: number;
     totalLots: number;
-    totalPcs: number;
+    totalPcs: number | null;
+    quantities: GateQuantitySummary;
   };
 }
 
@@ -540,6 +543,7 @@ const GateFilterDropdown = ({ label, value, options, active, width, onChange }: 
 };
 
 export const GateActionTable: React.FC<GateActionTableProps> = memo(({
+  unit,
   todayStr,
   gateName,
   rows,
@@ -616,14 +620,6 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
     const start = (page - 1) * PAGE_SIZE;
     return sortedRows.slice(start, start + PAGE_SIZE);
   }, [sortedRows, page]);
-
-  const totalFilteredPcs = useMemo(() => {
-    let sum = 0;
-    for (let i = 0; i < rows.length; i++) {
-      sum += Number(rows[i].qty) || 0;
-    }
-    return sum;
-  }, [rows]);
 
   const sourcePool = allRows && allRows.length > 0 ? allRows : rows;
 
@@ -718,7 +714,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
 
           {/* Total Counter Badge */}
           <div className="badge badge-sm badge-ghost font-bold text-xs tabular-nums text-base-content/80">
-            {rows.length.toLocaleString()} lots • {totalFilteredPcs.toLocaleString()} pcs
+            {stats.totalLots.toLocaleString()} actual lots • {formatGateQuantity(stats.quantities.total[unit], unit)} {GATE_UNIT_LABELS[unit]} • {rows.length.toLocaleString()} rows
           </div>
         </div>
 
@@ -920,6 +916,13 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
         </table>
       </div>
 
+      {(stats.quantities.total[unit] === null || stats.quantities.unidentifiedCount > 0) && (
+        <p role="status" className="text-xs text-warning">
+          {stats.quantities.total[unit] === null ? "N/A: some quantities or sheet conversion factors are missing or invalid. " : ""}
+          {stats.quantities.unidentifiedCount > 0 ? "Rows without a lot number are excluded from actual lot counts." : ""}
+        </p>
+      )}
+
       {/* Bottom Summary Status Badges */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -928,7 +931,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
             <span className="font-semibold text-base-content/70">IN GATE (Ready):</span>
             <strong className="text-sm font-black text-blue-600 tabular-nums">
-              {stats.inGateLots} lots
+              {formatGateQuantity(stats.quantities.in_gate[unit], unit)} {GATE_UNIT_LABELS[unit]}
             </strong>
           </div>
 
@@ -937,7 +940,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
             <span className="w-2.5 h-2.5 rounded-full bg-cyan-600 shrink-0" />
             <span className="font-semibold text-base-content/70">COMING (Upstream Gate):</span>
             <strong className="text-sm font-black text-cyan-600 tabular-nums">
-              {stats.comingLots} lots
+              {formatGateQuantity(stats.quantities.coming[unit], unit)} {GATE_UNIT_LABELS[unit]}
             </strong>
           </div>
 
@@ -946,7 +949,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
             <span className="w-2.5 h-2.5 rounded-full bg-amber-600 shrink-0" />
             <span className="font-semibold text-base-content/70">NEED WIP (Unreleased):</span>
             <strong className="text-sm font-black text-amber-600 tabular-nums">
-              {stats.needWipLots} lots
+              {unit === "lot" ? `${stats.needWipLots} requests (no lot)` : `${formatGateQuantity(stats.quantities.need_wip[unit], unit)} ${GATE_UNIT_LABELS[unit]}`}
             </strong>
           </div>
         </div>

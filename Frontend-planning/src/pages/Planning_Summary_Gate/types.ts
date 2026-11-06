@@ -7,6 +7,9 @@ export interface PlanningSummaryGateRow {
   status: string;
   lot_no?: string | null;
   qty?: number | null;
+  sheet_per_lot?: number | null;
+  pcs_per_lot?: number | null;
+  pcs_per_sheet?: number | null;
   allocated_qty?: number | null;
   net_required_pcs?: number | null;
   cal_net_required?: number | null;
@@ -61,6 +64,24 @@ export interface GateKpiSummary {
 
 export interface GateFlowSummary extends Omit<GateKpiSummary, "coming_3d_count"> {
   coming_count: number;
+  quantities: GateQuantitySummary;
+}
+
+export type GateUnit = "piece" | "sheet" | "lot";
+export type GateUnitMode = "all" | GateUnit;
+export interface GateUnitValues {
+  piece: number | null;
+  sheet: number | null;
+  lot: number;
+}
+export interface GateQuantitySummary {
+  total: GateUnitValues;
+  in_gate: GateUnitValues;
+  coming: GateUnitValues;
+  need_wip: GateUnitValues;
+  other: GateUnitValues;
+  needCount: number;
+  unidentifiedCount: number;
 }
 
 export type PrdCategory = "FPC" | "SMT" | "ALL";
@@ -89,6 +110,7 @@ export interface MatrixDayCell {
   needCount: number;
   inGateCount: number;
   comingCount: number;
+  quantities: GateQuantitySummary;
 }
 
 export interface MatrixGateRow {
@@ -102,10 +124,12 @@ export interface MatrixGateRow {
 export interface GateDailyChartData {
   dateLabel: string;
   fullDate: string;
-  in_gate: number;
-  coming: number;
-  need_wip: number;
-  total: number;
+  in_gate: number | null;
+  coming: number | null;
+  need_wip: number | null;
+  other: number | null;
+  total: number | null;
+  needCount: number;
   isHoliday: boolean;
   isLate?: boolean;
   isToday?: boolean;

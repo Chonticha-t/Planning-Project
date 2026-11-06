@@ -1,17 +1,20 @@
 import React from "react";
 import { ChevronRight } from "lucide-react";
-import type { GateFlowSummary } from "../types";
+import type { GateFlowSummary, GateUnit } from "../types";
+import { formatGateQuantity, GATE_UNIT_LABELS } from "../gateUnits";
 
 interface GateFlowCardsProps {
   gateFlowList: GateFlowSummary[];
   selectedGate: string;
   onSelectGate: (gateName: string) => void;
+  unit: GateUnit;
 }
 
 export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
   gateFlowList,
   selectedGate,
   onSelectGate,
+  unit,
 }) => {
   return (
     <div className="flex flex-col gap-2.5">
@@ -67,9 +70,9 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                         isSelected ? "text-white" : "text-base-content"
                       }`}
                     >
-                      {g.in_gate_count}
+                      {formatGateQuantity(g.quantities.in_gate[unit], unit)}
                     </span>
-                    <span className="text-[11.5px]">in gate</span>
+                    <span className="text-[11.5px]">{GATE_UNIT_LABELS[unit]} in gate</span>
                     <span
                       className="inline-flex flex-col pl-1"
                       title="Coming within the selected planned-arrival period."
@@ -80,14 +83,14 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                             isSelected ? "text-white" : "text-primary"
                           }`}
                         >
-                          {g.coming_count}
+                          {formatGateQuantity(g.quantities.coming[unit], unit)}
                         </span>
                         <span
                           className={`text-[11px] ${
                             isSelected ? "text-blue-100/90" : "text-base-content/60"
                           }`}
                         >
-                          Coming
+                          {GATE_UNIT_LABELS[unit]} coming
                         </span>
                       </span>
                     </span>
@@ -99,7 +102,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                     }`}
                   >
                     <span className="font-semibold tabular-nums">
-                      {g.in_gate_qty.toLocaleString()} pcs
+                      {g.in_gate_count.toLocaleString()} actual lots
                     </span>
                     {g.need_wip_count > 0 && (
                       <>
@@ -109,12 +112,13 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                             isSelected ? "text-amber-200" : "text-amber-600"
                           }`}
                         >
-                          {g.need_wip_count} need WIP
+                          {unit === "lot" ? `${g.need_wip_count} Need WIP requests` : `${formatGateQuantity(g.quantities.need_wip[unit], unit)} ${GATE_UNIT_LABELS[unit]} Need WIP`}
                         </span>
                       </>
                     )}
                   </div>
                 </div>
+                {g.quantities.unidentifiedCount > 0 && <p className="mt-1 text-[10px] opacity-80">Some rows have no lot number and are excluded from actual lots.</p>}
               </div>
 
               {/* Chevron Arrow to next gate (visible on desktop between cards) */}

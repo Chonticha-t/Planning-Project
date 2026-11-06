@@ -5,6 +5,7 @@ import { GateFlowCards } from "../components/GateFlowCards";
 import { GateMatrixTable } from "../components/GateMatrixTable";
 import { GateMustOutChart } from "../components/GateMustOutChart";
 import { GateActionTable } from "../components/GateActionTable";
+import type { GateUnit } from "../types";
 import "../gateTheme.css";
 
 const Planning_Summary_Gate: React.FC = () => {
@@ -19,7 +20,10 @@ const Planning_Summary_Gate: React.FC = () => {
     availableProducts,
     gateFlowList,
     matrixRows,
-    chartData,
+    chartDataByUnit,
+    unitMode,
+    setUnitMode,
+    summaryUnit,
     filteredTableRows,
     tableStats,
     statusFilter,
@@ -88,6 +92,7 @@ const Planning_Summary_Gate: React.FC = () => {
         <>
           {/* 2. Section 1: Gate WIP Overview */}
           <GateFlowCards
+            unit={summaryUnit}
             gateFlowList={gateFlowList}
             selectedGate={filters.selectedGate}
             onSelectGate={selectGate}
@@ -96,6 +101,9 @@ const Planning_Summary_Gate: React.FC = () => {
           {/* 3. Section 2: Gate Arrival Schedule */}
           <div className="flex min-w-0 flex-col gap-3" onScrollCapture={syncArrivalScroll}>
             <GateMatrixTable
+              unitMode={unitMode}
+              unit={summaryUnit}
+              onUnitModeChange={setUnitMode}
               matrixRows={matrixRows}
               selectedGate={filters.selectedGate}
               selectedDate={filters.selectedDate}
@@ -103,16 +111,19 @@ const Planning_Summary_Gate: React.FC = () => {
             />
 
             {/* 4. Section 2 (Bottom): Stacked Bar Chart for Selected Gate */}
-            <GateMustOutChart
-              gateName={filters.selectedGate}
-              chartData={chartData}
-              selectedDate={filters.selectedDate}
-              onSelectDate={selectDate}
-            />
+            {(unitMode === "all" ? ["piece", "sheet", "lot"] as GateUnit[] : [summaryUnit]).map((unit) => (
+              <GateMustOutChart key={unit} unit={unit}
+                gateName={filters.selectedGate}
+                chartData={chartDataByUnit[unit]}
+                selectedDate={filters.selectedDate}
+                onSelectDate={selectDate}
+              />
+            ))}
           </div>
 
           {/* 5. Section 3: Action & Task Table */}
           <GateActionTable
+            unit={summaryUnit}
             todayStr={todayStr}
             gateName={filters.selectedGate}
             rows={filteredTableRows}
