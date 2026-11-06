@@ -756,7 +756,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
           <colgroup>
             <col style={{ width: 176 }} />
             <col style={{ width: 110 }} />
-            <col style={{ width: 132 }} />
+            <col style={{ width: 164 }} />
             <col style={{ width: 121 }} />
             <col style={{ width: 110 }} />
             <col style={{ width: 154 }} />
@@ -790,6 +790,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                   row.lot_no === "NEED WIP" || row.gate_state === "need_wip" || row.status === "need wip";
                 const currentProcess = row.proc_disp?.trim() ?? "";
                 const currentGate = row.current_gate?.trim() ?? "";
+                const lotStatus = row.lot_status?.trim() ?? "";
                 const netRequired = row.cal_net_required == null
                   ? null
                   : Number(row.cal_net_required);
@@ -833,9 +834,16 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                           NEED WIP
                         </span>
                       ) : (
-                        <span className="font-mono font-bold text-[15px] tracking-wide tabular-nums text-base-content select-all">
-                          {row.lot_no}
-                        </span>
+                        <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                          <span className="font-mono font-bold text-[15px] tracking-wide tabular-nums text-base-content select-all">
+                            {row.lot_no}
+                          </span>
+                          {lotStatus && (
+                            <span className="inline-flex items-center shrink-0 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-slate-600 text-[10.5px] font-semibold tracking-wide uppercase leading-none">
+                              {lotStatus}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
 
