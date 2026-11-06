@@ -140,37 +140,38 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
             />
             <YAxis
               width={ARRIVAL_GATE_WIDTH}
-              allowDecimals={unit !== "lot"}
-              tickFormatter={(value: number) => value.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 })}
+              allowDecimals={unit === "piece"}
+              tickFormatter={(value: number) => unit === "sheet" ? formatGateQuantity(value, unit) : value.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 })}
               tickLine={false}
               axisLine={false}
               tick={{ fontSize: 10, fill: "var(--color-base-content, #666)" }}
             />
             <Tooltip
               cursor={false}
+              wrapperStyle={{ zIndex: 50, opacity: 1 }}
               content={({ active, payload, label }) => {
                 if (!active || !payload || !payload.length) return null;
                 const d = payload[0].payload as GateDailyChartData;
                 return (
-                  <div className="p-2.5 rounded-xl border border-base-300 bg-base-100 shadow-xl text-xs flex flex-col gap-1 min-w-[140px]">
+                  <div style={{ backgroundColor: "var(--color-base-100, #fff)", opacity: 1 }} className="p-3 rounded-xl border border-base-300 bg-base-100 shadow-xl text-xs leading-5 flex flex-col gap-1 min-w-[200px]">
                     <div className="font-bold text-base-content pb-1 border-b border-base-200">
                       {label} ({d.fullDate})
                       {d.isHoliday && <span className="ml-2 text-base-content/60 font-medium">OFF</span>}
                     </div>
-                    <div className="flex items-center justify-between text-blue-600">
+                    <div className="flex items-center justify-between gap-4 whitespace-nowrap text-blue-600">
                       <span>In gate:</span>
                       <strong className="tabular-nums">{formatGateQuantity(d.in_gate, unit)} {GATE_UNIT_LABELS[unit]}</strong>
                     </div>
-                    <div className="flex items-center justify-between text-cyan-600">
+                    <div className="flex items-center justify-between gap-4 whitespace-nowrap text-cyan-600">
                       <span>Coming:</span>
                       <strong className="tabular-nums">{formatGateQuantity(d.coming, unit)} {GATE_UNIT_LABELS[unit]}</strong>
                     </div>
-                    <div className="flex items-center justify-between text-orange-600">
+                    <div className="flex items-center justify-between gap-4 whitespace-nowrap text-orange-600">
                       <span>Need WIP:</span>
-                      <strong className="tabular-nums">{unit === "lot" ? `${d.needCount} requests (excluded)` : `${formatGateQuantity(d.need_wip, unit)} ${GATE_UNIT_LABELS[unit]}`}</strong>
+                      <strong className="tabular-nums">{unit === "lot" ? `${d.needCount} lots` : `${formatGateQuantity(d.need_wip, unit)} ${GATE_UNIT_LABELS[unit]}`}</strong>
                     </div>
-                    {hasOther && <div className="flex items-center justify-between"><span>Other:</span><strong>{formatGateQuantity(d.other, unit)} {GATE_UNIT_LABELS[unit]}</strong></div>}
-                    <div className="flex items-center justify-between font-black pt-1 border-t border-base-200 text-base-content">
+                    {hasOther && <div className="flex items-center justify-between gap-4 whitespace-nowrap"><span>Other:</span><strong className="tabular-nums">{formatGateQuantity(d.other, unit)} {GATE_UNIT_LABELS[unit]}</strong></div>}
+                    <div className="flex items-center justify-between gap-4 whitespace-nowrap font-black pt-1 border-t border-base-200 text-base-content">
                       <span>Total:</span>
                       <strong className="tabular-nums">{formatGateQuantity(d.total, unit)} {GATE_UNIT_LABELS[unit]}</strong>
                     </div>
@@ -199,7 +200,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
       </div>
       {(hasUnavailable || unit === "sheet" || unit === "lot") && <p className="text-[11px] text-base-content/60">
         {hasUnavailable ? "N/A: quantity or conversion data is missing; incomplete dates are not plotted. " : ""}
-        {unit === "sheet" ? "Sheet equivalent is calculated from planned pieces, not a physical sheet count." : unit === "lot" ? "Distinct actual lots per day; period totals count each lot once. Need WIP is excluded." : ""}
+        {unit === "sheet" ? "Sheets = pieces / pieces per sheet." : unit === "lot" ? "Distinct actual lots per day; period totals count each lot once. Need WIP is excluded." : ""}
       </p>}
       </div>
     </div>

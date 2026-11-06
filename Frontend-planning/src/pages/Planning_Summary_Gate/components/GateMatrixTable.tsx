@@ -51,12 +51,12 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
           aria-label={`${gate} ${cell.dateStr}: ${formatGateQuantity(value, unit)} ${GATE_UNIT_LABELS[unit]}, ${cell.needCount} Need WIP requests`}
           onClick={() => onSelectCell(gate, cell.dateStr)}
           title={value === null ? "Quantity unavailable: missing or invalid quantity/conversion data." : `${GATE_UNIT_TITLES[unit]}${cell.needCount ? `; ${cell.needCount} Need WIP requests (not actual lots)` : ""}`}
-          className={`w-full min-h-[42px] rounded-[6px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${selected ? "ring-2 ring-[#4f46e5]" : "hover:brightness-95"} ${populated ? shading(value) : `border border-dashed border-slate-200/80 ${cell.isHoliday ? "bg-slate-50/80 text-slate-400" : "text-slate-300"}`}`}
+          className={`w-full h-[48px] min-h-[48px] rounded-[6px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${selected ? "ring-2 ring-[#4f46e5]" : "hover:brightness-95"} ${populated ? shading(value) : `border border-dashed border-slate-200/80 ${cell.isHoliday ? "bg-slate-50/80 text-slate-400" : "text-slate-300"}`}`}
         >
           {populated ? <>
-            <span className="text-[11px] font-extrabold tabular-nums leading-tight break-all">{formatGateQuantity(value, unit)}</span>
-            <span className="text-[9px] font-medium opacity-75 leading-tight">{unit === "sheet" ? "sheets eq." : GATE_UNIT_LABELS[unit]}</span>
-            {cell.needCount > 0 && <span className="text-[9px] leading-tight opacity-80">{cell.needCount} need</span>}
+            <span className="text-[11px] font-extrabold tabular-nums leading-none whitespace-nowrap">{formatGateQuantity(value, unit)}</span>
+            <span className="text-[9px] font-medium opacity-75 leading-none">{GATE_UNIT_LABELS[unit]}</span>
+            <span aria-hidden={cell.needCount === 0} className={`text-[9px] leading-none opacity-80 ${cell.needCount === 0 ? "invisible" : ""}`}>{cell.needCount} need</span>
           </> : <span className="text-[10px] font-bold">{cell.isHoliday ? "OFF" : "-"}</span>}
         </button>
       </td>
@@ -70,7 +70,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
         <div role="group" aria-label="Display units" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5">
           {MODES.map(({ mode, label }) => (
             <button key={mode} type="button" aria-pressed={unitMode === mode} onClick={() => onUnitModeChange(mode)}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary ${unitMode === mode ? "bg-neutral text-neutral-content shadow-xs" : "text-base-content/70 hover:bg-base-200"}`}
+              className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary ${unitMode === mode ? "bg-primary text-primary-content shadow-xs" : "text-base-content/70 hover:bg-base-200"}`}
             >{label}</button>
           ))}
         </div>
@@ -116,7 +116,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
           <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-md bg-[#c8e0fc] border border-blue-300" />Low to High ({GATE_UNIT_TITLES[unit]})</span>
           <span>OFF: non-working day</span>
         </div>
-        <span>{unitMode === "all" ? "All Units: schedule and summaries use Piece." : unit === "sheet" ? "Sheet equivalent = pieces / pieces per sheet." : unit === "lot" ? "Distinct actual lots; Need WIP is excluded." : "Planned pieces."}</span>
+        <span>{unitMode === "all" ? "All Units: schedule and summaries use Piece." : unit === "sheet" ? "Sheets = pieces / pieces per sheet." : unit === "lot" ? "Distinct actual lots; Need WIP is excluded." : "Planned pieces."}</span>
       </div>
     </div>
   );

@@ -290,7 +290,7 @@ test("overdue pending arrivals stay in details without changing schedule cards o
   const h = hookHarness();
   h.render();
   const makeRow = (lot, state, arrival, departure, extra = {}) => ({
-    prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+    prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1,
     lot_no: lot, gate_state: state, arrive_by: arrival, must_out: departure,
     qty: 10, pri: 1, ...extra,
   });
@@ -353,7 +353,7 @@ test("overview cards reconcile with schedule and trend across inclusive arrival 
     h.render();
     const arrivals = ["2025-12-31", "2026-01-01", "2026-01-15", "2026-01-16", "2026-01-29", "2026-01-30", null];
     const rows = arrivals.flatMap((arrive_by, index) => ["in_gate", "coming", "need_wip"].map(gate_state => ({
-      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+      prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1,
       lot_no: `ROW-${index}-${gate_state}`, due_date: ["2025-12-31", "2026-02-01", null][index % 3], gate_state,
       arrive_by, must_out: "2026-01-01", qty: 10, pri: 1,
       is_coming_3d: false, is_hold: true,
@@ -362,7 +362,7 @@ test("overview cards reconcile with schedule and trend across inclusive arrival 
       { ...rows[3], lot_no: "PASSED", gate_state: "passed" },
       { ...rows[3], lot_no: "OVERDUE-EXIT", must_out: "2025-12-31" },
       { ...rows[4], lot_no: "STATE-TAKES-PRIORITY", status: "need wip" },
-      { ...rows[3], lot_no: "OTHER-CATEGORY", prd_category: "SMT" },
+      { ...rows[3], lot_no: "OTHER-CATEGORY", prd_category: "SMT", process_group: "SMT" },
       { ...rows[3], lot_no: "OTHER-GATE", gate_name: "FIN" },
     );
     await h.succeed(h.requests.slice(), rows);
@@ -457,7 +457,7 @@ test("arrival dates keep a gate visible even when the summary API omits that gat
       data: { status: "OK", data: [{ gate_name: "FFPC", gate_order: 1, in_gate_count: 999 }] },
     });
     await h.succeed(h.requests.slice(), [{
-      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FVAC", gate_order: 2, lot_no: "SAMPLE-ARRIVAL",
+      prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FVAC", gate_order: 2, lot_no: "SAMPLE-ARRIVAL",
       gate_state: "coming", arrive_by: "2026-01-02", must_out: "2025-12-31", qty: 10,
     }]);
     let value = h.render();
@@ -478,7 +478,7 @@ test("date drilldown includes every counted arrival even with an unknown state a
   try {
     h.render();
     await h.succeed(h.requests.slice(), [{
-      prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, lot_no: "SAMPLE-UNKNOWN",
+      prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1, lot_no: "SAMPLE-UNKNOWN",
       gate_state: "unknown", arrive_by: "2026-01-01", must_out: "2025-12-31", qty: 10,
     }]);
     const value = h.render();
@@ -494,7 +494,7 @@ test("in-gate lots survive past plan dates until passed and remain discoverable"
   const h = hookHarness();
   h.render();
   const makeRow = (lot, arrival, departure) => ({
-    prd_name: lot, prd_category: "FPC", gate_name: "FFPC", gate_order: 1,
+    prd_name: lot, prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1,
     lot_no: lot, gate_state: "in_gate", arrive_by: arrival, must_out: departure,
     proc_disp: `PROCESS-${lot}`, qty: 10, pri: 1,
   });
@@ -618,7 +618,7 @@ test("one physical lot cannot be counted twice through conflicting product label
 test("sheet equivalents preserve fractions and missing factors never become false zero totals", () => {
   const base = { prd_name: "SAMPLE", gate_name: "FFPC", gate_state: "in_gate", lot_no: "LOT-A", qty: 1, pcs_per_sheet: 3 };
   assert.equal(gateUnits.summarizeGateQuantities([base]).total.sheet, 1 / 3);
-  assert.equal(gateUnits.formatGateQuantity(0.001, "sheet"), "<0.01");
+  assert.equal(gateUnits.formatGateQuantity(0.001, "sheet"), "1");
   for (const rate of [null, undefined, 0, -2, "", "invalid", Infinity]) {
     const result = gateUnits.summarizeGateQuantities([base, { ...base, lot_no: "LOT-B", pcs_per_sheet: rate }]);
     assert.equal(result.total.sheet, null);
@@ -630,11 +630,26 @@ test("sheet equivalents preserve fractions and missing factors never become fals
   assert.equal(gateUnits.summarizeGateQuantities([base, { ...base, pcs_per_sheet: 4 }]).total.sheet, null);
 });
 
+test("sheet display rounds up without rounding lot quantities or changing raw totals", () => {
+  const base = { prd_name: "SAMPLE", gate_name: "FFPC", gate_state: "coming", lot_no: "LOT-A", qty: 1, pcs_per_sheet: 4 };
+  const result = gateUnits.summarizeGateQuantities([base, { ...base, lot_no: "LOT-B", pcs_per_sheet: 2 }]);
+  assert.equal(result.total.sheet, 0.75);
+  assert.equal(gateUnits.formatGateQuantity(result.total.sheet, "sheet"), "1");
+  assert.equal(result.total.sheet, 0.75);
+  assert.equal(result.total.piece, 2);
+  assert.equal(result.total.lot, 2);
+  for (const [value, expected] of [[0, "0"], [12, "12"], [12.01, "13"], [12.99, "13"], [1234.1, "1,235"], [null, "N/A"], [NaN, "N/A"], [Infinity, "N/A"]]) {
+    assert.equal(gateUnits.formatGateQuantity(value, "sheet"), expected);
+  }
+  assert.equal(gateUnits.formatGateQuantity(12.34, "piece"), "12.34");
+  assert.equal(gateUnits.formatGateQuantity(0.001, "piece"), "<0.01");
+});
+
 test("unit switching uses cached quantities, keeps drilldown, and survives live refresh", async () => {
   const h = hookHarness();
   try {
     h.render();
-    const base = { prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, gate_state: "coming", lot_no: "LOT-A", qty: 900, pcs_per_sheet: 30, pri: 1, arrive_by: "2026-01-01", must_out: "2026-01-02" };
+    const base = { prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1, gate_state: "coming", lot_no: "LOT-A", qty: 900, pcs_per_sheet: 30, pri: 1, arrive_by: "2026-01-01", must_out: "2026-01-02" };
     const rows = [base, { ...base, due_date: "2026-02-01" }, { ...base, lot_no: "NEED WIP", gate_state: "need_wip", qty: 60 }];
     await h.succeed(h.requests.slice(), rows);
     let value = h.render();
@@ -666,11 +681,154 @@ test("unit switching uses cached quantities, keeps drilldown, and survives live 
 });
 
 
+test("process groups filter all gate sections using stored classification without extra requests", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const base = {
+      prd_name: "SAMPLE", prd_category: "FULL", gate_name: "FFPC", gate_order: 1,
+      gate_state: "coming", arrive_by: "2026-01-01", must_out: "2026-01-02",
+      pcs_per_sheet: 10, pri: 1,
+    };
+    const rows = [
+      { ...base, lot_no: "GEN", process_group: "EFPC_GEN", proc_disp: "AT-SYNTHETIC", qty: 10 },
+      { ...base, lot_no: "AUTO", process_group: "EFPC_AUTO", proc_disp: "SYNTHETIC", qty: 20 },
+      { ...base, gate_name: "MFPC", lot_no: "SMT", process_group: "SMT", proc_disp: "SYNTHETIC", qty: 30 },
+      { ...base, lot_no: "NULL", process_group: null, qty: 40 },
+      { ...base, lot_no: "MISSING", qty: 50 },
+      { ...base, lot_no: "UNRECOGNIZED", process_group: "UNKNOWN", qty: 60 },
+    ];
+    await h.succeed(h.requests.slice(), rows);
+    assert.equal(h.render().filters.category, "EFPC_GEN");
+    assert.equal(h.requests.find(request => request.url === "summary").options.params.prd_category, undefined);
+    for (const [group, total, lots] of [["EFPC_GEN", 10, 1], ["EFPC_AUTO", 20, 1], ["SMT", 30, 1], ["ALL", 180, 5]]) {
+      h.render().setCategory(group);
+      const value = h.render();
+      const gate = group === "SMT" ? "MFPC" : "FFPC";
+      assert.equal(value.gateFlowList.find(row => row.gate_name === gate).quantities.total.piece, total);
+      assert.equal(value.matrixRows.find(row => row.gate_name === gate).todayCell.quantities.total.piece, total);
+      assert.equal(value.chartDataByUnit.piece[0].total, total);
+      assert.equal(value.tableStats.quantities.total.piece, total);
+      assert.equal(value.filteredTableRows.length, lots);
+      assert.equal(h.requests.length, 3);
+    }
+    h.render().setCategory("EFPC_AUTO");
+    h.render().setSelectedProduct("NO-MATCH");
+    assert.equal(h.render().filteredTableRows.length, 0);
+    h.render().setSelectedProduct("");
+    h.render().setSearch("GEN");
+    assert.equal(h.render().tableStats.quantities.total.piece, 0);
+    h.render().setSearch("");
+    h.render().selectDate("2026-01-02");
+    h.render().setCurrentProcessFilter("SYNTHETIC");
+    h.render().setSelectedProduct("SAMPLE");
+    h.render().setCategory("EFPC_GEN");
+    let value = h.render();
+    assert.equal(value.filters.selectedDate, null);
+    assert.equal(value.filters.selectedProduct, "");
+    assert.equal(value.currentProcessFilter, "");
+    assert.deepEqual(Array.from(value.availableProducts), ["SAMPLE"]);
+    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    await h.succeed(h.requests.slice(3), rows.map(row => ({ ...row, qty: row.qty * 2 })));
+    value = h.render();
+    assert.equal(value.filters.category, "EFPC_GEN");
+    assert.equal(value.tableStats.quantities.total.piece, 20);
+  } finally { h.unmount(); }
+});
+
+test("overview and schedule share the same established gate list in every group", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    await h.succeed(h.requests.slice(), [
+      { gate_name: "FFPC", gate_order: 1, process_group: "EFPC_GEN" },
+      { gate_name: "FVAC", gate_order: 2, process_group: "EFPC_AUTO" },
+      { gate_name: "SMT", gate_order: 3, process_group: "SMT" },
+    ]);
+    const fpc = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
+    const smt = ["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"];
+    for (const [group, gates] of [["EFPC_GEN", fpc], ["EFPC_AUTO", fpc], ["SMT", smt], ["ALL", [...fpc, ...smt]]]) {
+      h.render().setCategory(group);
+      h.render();
+      const value = h.render();
+      assert.deepEqual(Array.from(value.availableGates), gates);
+      assert.deepEqual(Array.from(value.gateFlowList, row => row.gate_name), gates);
+      assert.deepEqual(Array.from(value.matrixRows, row => row.gate_name), gates);
+      assert.ok(gates.includes(value.filters.selectedGate));
+    }
+  } finally { h.unmount(); }
+});
+
+test("arrival schedule keeps the established FPC and SMT rows in every group", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const base = { prd_name: "SAMPLE", prd_category: "FPC", gate_order: 1, gate_state: "coming", arrive_by: "2026-01-01", must_out: "2026-01-02", qty: 10 };
+    await h.succeed(h.requests.slice(), [
+      { ...base, gate_name: "SHIP", process_group: "EFPC_GEN", lot_no: "EXTRA-GATE" },
+      { ...base, gate_name: "FFPC", process_group: "EFPC_AUTO", lot_no: "AUTO" },
+      { ...base, prd_category: "SMT", gate_name: "MMOT", process_group: "SMT", lot_no: "SMT" },
+    ]);
+    const fpc = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
+    const smt = ["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"];
+    for (const [group, expected] of [["EFPC_GEN", fpc], ["EFPC_AUTO", fpc], ["SMT", smt], ["ALL", [...fpc, ...smt]]]) {
+      h.render().setCategory(group);
+      h.render();
+      let value = h.render();
+      assert.deepEqual(Array.from(value.matrixRows, row => row.gate_name), expected);
+      assert.equal(value.filters.selectedGate, group === "SMT" ? "MFPC" : "FFPC");
+      assert.equal(value.matrixRows[0].todayCell.quantities.total.piece, group === "EFPC_AUTO" || group === "ALL" ? 10 : 0);
+      assert.ok(value.matrixRows.every(row => row.days.length === 14));
+      value.selectGate(expected.at(-1));
+      h.render();
+      value = h.render();
+      assert.equal(value.filters.selectedGate, expected.at(-1));
+      assert.equal(value.chartDataByUnit.piece.length, 15);
+      assert.ok(value.chartDataByUnit.piece.every(day => day.total === 0));
+      assert.equal(value.filteredTableRows.length, 0);
+    }
+    h.render().setCategory("EFPC_GEN");
+    h.render().selectGate("SHIP");
+    h.render();
+    assert.equal(h.render().filters.selectedGate, "FFPC");
+    assert.equal(h.render().chartDataByUnit.piece[0].total, 0);
+    h.render().setSearch("NO-MATCH");
+    assert.deepEqual(Array.from(h.render().matrixRows, row => row.gate_name), fpc);
+    assert.ok(h.render().matrixRows.every(row => row.todayCell.quantities.total.piece === 0));
+    assert.equal(h.requests.length, 3);
+  } finally { h.unmount(); }
+});
+
+test("table API returns the stored process group including null values", async () => {
+  const routes = new Map();
+  const expectedRows = [{ process_group: "EFPC_GEN" }, { process_group: "EFPC_AUTO" }, { process_group: "SMT" }, { process_group: null }];
+  let queryText;
+  const context = {
+    module: { exports: {} },
+    require(name) {
+      if (name === "express") return { Router: () => ({ get: (url, handler) => routes.set(url, handler) }) };
+      if (name.endsWith("/config")) return { pool_smart: { query: async (sql, params) => {
+        queryText = sql;
+        assert.deepEqual(Array.from(params), []);
+        return { rows: expectedRows };
+      } } };
+      if (name.endsWith("/workingCalendar")) return {};
+      throw new Error("Unexpected dependency");
+    },
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(routesRoot, routePath), "utf8"), context);
+  const res = { set() {}, json(body) { this.body = body; } };
+  await routes.get("/table")({ query: {} }, res);
+  assert.match(queryText, /proc_disp,\s+process_group,\s+seq,/);
+  assert.equal(res.body.status, "OK");
+  assert.deepEqual(res.body.data, expectedRows);
+});
+
 test("period counts deduplicate a physical lot across dates without changing daily drilldown", async () => {
   const h = hookHarness();
   try {
     h.render();
-    const base = { prd_name: "SAMPLE", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, gate_state: "coming", lot_no: "LOT-A", qty: 90, pcs_per_sheet: 30, pri: 1, arrive_by: "2026-01-01", must_out: "2026-01-03" };
+    const base = { prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1, gate_state: "coming", lot_no: "LOT-A", qty: 90, pcs_per_sheet: 30, pri: 1, arrive_by: "2026-01-01", must_out: "2026-01-03" };
     await h.succeed(h.requests.slice(), [base, { ...base, arrive_by: "2026-01-02", due_date: "2026-02-01" }]);
     const value = h.render();
     assert.equal(value.gateFlowList[0].quantities.total.lot, 1);

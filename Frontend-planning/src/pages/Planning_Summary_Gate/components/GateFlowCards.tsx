@@ -1,5 +1,4 @@
 import React from "react";
-import { ChevronRight } from "lucide-react";
 import type { GateFlowSummary, GateUnit } from "../types";
 import { formatGateQuantity, GATE_UNIT_LABELS } from "../gateUnits";
 
@@ -19,9 +18,9 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
   return (
     <div className="flex flex-col gap-2.5">
       <p className="text-[11px] text-base-content/60">Summary for selected arrival period</p>
-      {/* Connected Gate Cards */}
+      {/* Gate Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {gateFlowList.map((g, idx) => {
+        {gateFlowList.map((g) => {
           const isSelected = selectedGate === g.gate_name;
           const hasHold = g.hold_count > 0;
 
@@ -120,13 +119,6 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                 </div>
                 {g.quantities.unidentifiedCount > 0 && <p className="mt-1 text-[10px] opacity-80">Some rows have no lot number and are excluded from actual lots.</p>}
               </div>
-
-              {/* Chevron Arrow to next gate (visible on desktop between cards) */}
-              {idx < gateFlowList.length - 1 && (
-                <div className="hidden lg:flex absolute -right-2 z-10 p-0.5 rounded-full bg-base-200 text-base-content/40 border border-base-300">
-                  <ChevronRight size={12} />
-                </div>
-              )}
             </div>
           );
         })}

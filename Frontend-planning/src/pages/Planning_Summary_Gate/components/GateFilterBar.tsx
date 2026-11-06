@@ -8,12 +8,19 @@ import {
   X,
   Check,
 } from "lucide-react";
-import type { PrdCategory, PlanWindow } from "../types";
+import type { ProcessGroupFilter, PlanWindow } from "../types";
+
+const PROCESS_GROUP_OPTIONS: { value: ProcessGroupFilter; label: string }[] = [
+  { value: "ALL", label: "ALL" },
+  { value: "EFPC_GEN", label: "FPC-GEN" },
+  { value: "EFPC_AUTO", label: "FPC-AUTO" },
+  { value: "SMT", label: "SMT" },
+];
 
 interface GateFilterBarProps {
   todayStr: string;
-  category: PrdCategory;
-  onCategoryChange: (cat: PrdCategory) => void;
+  category: ProcessGroupFilter;
+  onCategoryChange: (cat: ProcessGroupFilter) => void;
   planWindow: PlanWindow;
   onPlanWindowChange: (pw: PlanWindow) => void;
   products?: string[];
@@ -70,22 +77,23 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
-      {/* Left controls: Category, Plan window, Date range, Product Dropdown, Search */}
+      {/* Left controls: Process group, Plan window, Date range, Product Dropdown, Search */}
       <div className="flex flex-wrap items-center gap-2.5">
-        {/* Category Pill Switcher */}
-        <div className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
-          {(["ALL", "FPC", "SMT"] as PrdCategory[]).map((cat) => (
+        {/* Process Group Pill Switcher */}
+        <div role="group" aria-label="Process group" className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+          {PROCESS_GROUP_OPTIONS.map(({ value, label }) => (
             <button
-              key={cat}
+              key={value}
               type="button"
-              onClick={() => onCategoryChange(cat)}
-              className={`btn btn-xs h-full min-h-0 rounded-md px-3 font-bold transition-all ${
-                category === cat
+              aria-pressed={category === value}
+              onClick={() => onCategoryChange(value)}
+              className={`btn btn-xs h-full min-h-0 rounded-md px-3 whitespace-nowrap font-bold transition-all ${
+                category === value
                   ? "btn-primary shadow-xs"
                   : "btn-ghost text-base-content/70 hover:bg-base-300/50"
               }`}
             >
-              {cat}
+              {label}
             </button>
           ))}
         </div>

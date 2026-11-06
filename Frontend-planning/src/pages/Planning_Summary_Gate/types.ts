@@ -16,6 +16,7 @@ export interface PlanningSummaryGateRow {
   net_wip_qty?: number | null;
   rem_wip_qty?: number | null;
   prd_category?: string | null;
+  process_group?: string | null;
   routing_case?: string | null;
   first_gate?: string | null;
   current_gate?: string | null;
@@ -84,12 +85,12 @@ export interface GateQuantitySummary {
   unidentifiedCount: number;
 }
 
-export type PrdCategory = "FPC" | "SMT" | "ALL";
+export type ProcessGroupFilter = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 export type PlanWindow = "2w" | "1m";
 export type GateStatusFilter = "all" | "in_gate" | "coming" | "need_wip";
 
 export interface GateFilterState {
-  category: PrdCategory;
+  category: ProcessGroupFilter;
   planWindow: PlanWindow;
   skipHolidays: boolean;
   selectedProduct?: string;

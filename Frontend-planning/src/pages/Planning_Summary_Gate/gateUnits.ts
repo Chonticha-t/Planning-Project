@@ -1,10 +1,11 @@
 import type { GateQuantitySummary, GateUnit, GateUnitValues, PlanningSummaryGateRow } from "./types";
 
-export const GATE_UNIT_LABELS: Record<GateUnit, string> = { piece: "pcs", sheet: "sheets equiv.", lot: "lots" };
-export const GATE_UNIT_TITLES: Record<GateUnit, string> = { piece: "Piece", sheet: "Sheet equivalent", lot: "Actual Lot" };
+export const GATE_UNIT_LABELS: Record<GateUnit, string> = { piece: "pcs", sheet: "sheets", lot: "lots" };
+export const GATE_UNIT_TITLES: Record<GateUnit, string> = { piece: "Piece", sheet: "Sheet", lot: "Actual Lot" };
 
 export const formatGateQuantity = (value: number | null, unit: GateUnit): string => {
   if (value === null || !Number.isFinite(value)) return "N/A";
+  if (unit === "sheet") return Math.ceil(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
   if (value > 0 && value < 0.01 && unit !== "lot") return "<0.01";
   return value.toLocaleString("en-US", { maximumFractionDigits: unit === "lot" ? 0 : 2 });
 };

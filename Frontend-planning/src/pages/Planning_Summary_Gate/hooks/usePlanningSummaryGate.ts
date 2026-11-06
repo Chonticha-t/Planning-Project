@@ -18,7 +18,7 @@ import type {
   MatrixGateRow,
   MatrixDayCell,
   GateDailyChartData,
-  PrdCategory,
+  ProcessGroupFilter,
   PlanWindow,
   GateStatusFilter,
   GateUnit,
@@ -26,7 +26,7 @@ import type {
 } from "../types";
 
 const DEFAULT_GATES_FPC = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
-const DEFAULT_GATES_SMT = ["SMT", "FADL", "FIN", "W/H"];
+const DEFAULT_GATES_SMT = ["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"];
 
 const isPendingArrival = (row: PlanningSummaryGateRow): boolean =>
   row.gate_state === "coming" || row.gate_state === "need_wip";
@@ -62,7 +62,7 @@ export const usePlanningSummaryGate = () => {
   const summaryUnit: GateUnit = unitMode === "all" ? "piece" : unitMode;
 
   const [filters, setFilters] = useState<GateFilterState>({
-    category: "FPC",
+    category: "EFPC_GEN",
     planWindow: "2w",
     skipHolidays: true,
     selectedProduct: "",
@@ -118,7 +118,6 @@ export const usePlanningSummaryGate = () => {
           PLANNING_SUMMARY_GATE_SUMMARY_API,
           {
             params: {
-              prd_category: filters.category === "ALL" ? undefined : filters.category,
               skip_holidays: filters.skipHolidays,
             },
             signal: controller.signal,
@@ -178,7 +177,7 @@ export const usePlanningSummaryGate = () => {
         }
       }
     }
-  }, [filters.category, filters.skipHolidays, todayStr]);
+  }, [filters.skipHolidays, todayStr]);
 
   useEffect(() => {
     void fetchData();
@@ -243,39 +242,11 @@ export const usePlanningSummaryGate = () => {
 
   const refreshData = useCallback(() => { void fetchData(); }, [fetchData]);
 
-  // Distinct gates based on category and data (deduplicated & canonical ordered)
-  const availableGates = useMemo(() => {
-    const defaultGates =
-      filters.category === "SMT"
-        ? DEFAULT_GATES_SMT
-        : filters.category === "ALL"
-          ? [...DEFAULT_GATES_FPC, ...DEFAULT_GATES_SMT.filter((g) => !DEFAULT_GATES_FPC.includes(g))]
-          : DEFAULT_GATES_FPC;
-    const gateSources = [...kpis, ...sourceRows.filter((row) =>
-      filters.category === "ALL" || row.prd_category === filters.category
-    )];
-    if (gateSources.length > 0) {
-      // Deduplicate gate names while preserving lowest gate_order
-      const map = new Map<string, number>();
-      gateSources.forEach((k) => {
-        if (!map.has(k.gate_name) || (k.gate_order < (map.get(k.gate_name) ?? 999))) {
-          map.set(k.gate_name, k.gate_order);
-        }
-      });
-      const distinct = Array.from(map.keys());
-
-      // Canonical sort matching default sequence first
-      return distinct.sort((a, b) => {
-        const idxA = defaultGates.indexOf(a);
-        const idxB = defaultGates.indexOf(b);
-        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-        if (idxA !== -1) return -1;
-        if (idxB !== -1) return 1;
-        return (map.get(a) || 0) - (map.get(b) || 0);
-      });
-    }
-    return defaultGates;
-  }, [kpis, sourceRows, filters.category]);
+  // Overview and schedule share the established gate sequence, including empty gates.
+  const availableGates = useMemo(() => filters.category === "ALL"
+    ? [...DEFAULT_GATES_FPC, ...DEFAULT_GATES_SMT]
+    : filters.category === "SMT" ? DEFAULT_GATES_SMT : DEFAULT_GATES_FPC,
+  [filters.category]);
 
   // Select the source schedule without inventing dates when one variant is missing.
   // Contains ALL categories and ALL stage dates for the Gate Stage timeline.
@@ -286,10 +257,10 @@ export const usePlanningSummaryGate = () => {
     must_out: row.must_out_no_skip ?? row.must_out,
   })), [sourceRows, filters.skipHolidays]);
 
-  // Rows filtered by the top category switcher (ALL | FPC | SMT)
+  // Use the stored process group for every section; unknown groups appear in ALL.
   const categoryRows = useMemo(() => {
     if (filters.category === "ALL") return baseRows;
-    return baseRows.filter((r) => r.prd_category === filters.category);
+    return baseRows.filter((r) => r.process_group === filters.category);
   }, [baseRows, filters.category]);
 
   // Distinct sorted product names for the dropdown filter
@@ -304,7 +275,7 @@ export const usePlanningSummaryGate = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [categoryRows, todayStr]);
 
-  // Ensure selectedGate is valid when availableGates change
+  // Empty schedule gates must remain selectable for chart and detail drilldown.
   useEffect(() => {
     if (!availableGates.includes(filters.selectedGate) && availableGates.length > 0) {
       setFilters((prev) => ({ ...prev, selectedGate: availableGates[0] }));
@@ -420,6 +391,7 @@ export const usePlanningSummaryGate = () => {
     };
   }), [availableGates, rowsByGate, todayStr]);
 
+  // Use the same gate rows and arrival data as the overview.
   const matrixRows = useMemo<MatrixGateRow[]>(() => availableGates.map((gate, index) => {
     const buckets = new Map<string, PlanningSummaryGateRow[]>();
     for (const row of rowsByGate.get(gate) || []) {
@@ -503,13 +475,13 @@ export const usePlanningSummaryGate = () => {
   }, [filteredTableRows]);
 
   // Handlers
-  const setCategory = useCallback((cat: PrdCategory) => {
+  const setCategory = useCallback((cat: ProcessGroupFilter) => {
     setCurrentProcessFilter("");
     setFilters((prev) => ({
       ...prev,
       category: cat,
       selectedProduct: "",
-      selectedGate: cat === "SMT" ? "SMT" : "FFPC",
+      selectedGate: cat === "SMT" ? "MFPC" : "FFPC",
       selectedDate: null,
     }));
   }, []);

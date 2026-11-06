@@ -196,6 +196,7 @@ router.get("/table", async (req, res) => {
         first_gate,
         current_gate,
         proc_disp,
+        process_group,
         seq,
         step_in_gate,
         total_proc_in_gate,
