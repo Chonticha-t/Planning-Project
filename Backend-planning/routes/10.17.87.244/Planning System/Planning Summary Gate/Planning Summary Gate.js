@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const { pool_smart } = require("../../config");
 const { createCalendarIndex, loadCalendar } = require("../../../../utils/workingCalendar");
+const { createGateCalendarCache } = require("../../../../utils/gateCalendarCache");
+const loadGateCalendar = createGateCalendarCache(loadCalendar);
+const { createGateTableProfiler } = require("../../../../utils/gateTablePerformance");
+const profileGateTable = createGateTableProfiler(pool_smart);
 
 // Share one read-only monitor per process, and only while this gate has viewers.
 const gateClients = new Set();
@@ -123,13 +127,13 @@ router.get("/calendar", async (req, res) => {
     return res.status(400).json({ status: "ERROR", data: [], message: "A valid calendar range of up to 32 days is required." });
   }
   try {
-    const calendar = await loadCalendar(start, end);
+    const { calendar, maxAgeMs } = await loadGateCalendar(start, end, { force: asStr(req.query.refresh) === "true" });
     const days = [];
     for (let date = first; date <= last; date += 86400000) {
       const dateStr = new Date(date).toISOString().slice(0, 10);
       days.push({ date: dateStr, is_working: calendar.isWorking(dateStr) });
     }
-    return res.json({ status: "OK", data: days });
+    return res.json({ status: "OK", data: days, cache_ttl_ms: maxAgeMs });
   } catch {
     return res.status(503).json({ status: "ERROR", data: [], message: "Unable to load the working-day calendar. Please try again." });
   }
@@ -138,6 +142,7 @@ router.get("/calendar", async (req, res) => {
 // 1. GET /table: Planning Summary Gate Table Data
 router.get("/table", async (req, res) => {
   setNoCache(res);
+  const profile = profileGateTable(res);
 
   const prd_category = asStr(req.query.prd_category);
   const mustOutColumn = asStr(req.query.skip_holidays) === "false"
@@ -229,14 +234,15 @@ router.get("/table", async (req, res) => {
       ORDER BY gate_order ASC, pri ASC
     `;
 
-    const result = await pool_smart.query(sql, params);
-    return res.json({
+    const result = await profile.query(sql, params);
+    return profile.json({
       status: "OK",
       data: result.rows,
       message: "Data retrieved successfully",
     });
   } catch {
-    return res.status(503).json({
+    res.status(503);
+    return profile.json({
       status: "ERROR",
       data: [],
       message: "Unable to load planning gate data. Please try again.",

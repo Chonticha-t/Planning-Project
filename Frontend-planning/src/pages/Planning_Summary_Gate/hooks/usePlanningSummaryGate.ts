@@ -6,13 +6,11 @@ import { formatGateName, formatGateTransition } from "../gatePresentation";
 import { summarizeGateQuantities } from "../gateUnits";
 import {
   PLANNING_SUMMARY_GATE_TABLE_API,
-  PLANNING_SUMMARY_GATE_SUMMARY_API,
   PLANNING_SUMMARY_GATE_CALENDAR_API,
   PLANNING_SUMMARY_GATE_STREAM_API,
 } from "./api";
 import type {
   PlanningSummaryGateRow,
-  GateKpiSummary,
   GateFlowSummary,
   GateFilterState,
   MatrixGateRow,
@@ -27,6 +25,94 @@ import type {
 
 const DEFAULT_GATES_FPC = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
 const DEFAULT_GATES_SMT = ["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"];
+
+const CALENDAR_TTL_MS = 60000;
+
+// Calendar validity and retries are independent of gate-row refreshes.
+const useGateCalendar = (today: string) => {
+  const [holidaySet, setHolidaySet] = useState<Set<string>>(() => new Set());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const cacheRef = useRef<{ start: string; expiresAt: number } | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refresh = useCallback(async function load(force = false) {
+    if (!force && controllerRef.current) return;
+    if (!force && cacheRef.current?.start === today && cacheRef.current.expiresAt > Date.now()) return;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    if (cacheRef.current?.start !== today) {
+      setLoading(true);
+      setHolidaySet(new Set());
+      setError(null);
+      setWarning(null);
+    }
+    let nextDelay = CALENDAR_TTL_MS;
+    try {
+      const response = await axios.get<{ status: string; data: { date: string; is_working: boolean }[]; cache_ttl_ms?: number }>(
+        PLANNING_SUMMARY_GATE_CALENDAR_API,
+        {
+          params: { startdate: today, stopdate: dayjs(today).add(28, "day").format("YYYY-MM-DD"), refresh: force },
+          signal: controller.signal,
+          timeout: 15000,
+        }
+      );
+      if (controller.signal.aborted || controllerRef.current !== controller) return;
+      if (response.data?.status !== "OK" || !Array.isArray(response.data.data)) {
+        throw new Error("Invalid working-day calendar response");
+      }
+      const calendar = new Map(response.data.data.map(day => [day.date, day.is_working]));
+      if (response.data.data.length !== 29 || calendar.size !== 29 || Array.from({ length: 29 }, (_, i) =>
+        dayjs(today).add(i, "day").format("YYYY-MM-DD")
+      ).some(date => typeof calendar.get(date) !== "boolean")) {
+        throw new Error("Incomplete working-day calendar response");
+      }
+      // Honor the server's remaining lifetime instead of extending an older cache.
+      const remaining = response.data.cache_ttl_ms;
+      nextDelay = typeof remaining === "number" && Number.isFinite(remaining)
+        ? Math.max(1000, Math.min(CALENDAR_TTL_MS, remaining)) : CALENDAR_TTL_MS;
+      cacheRef.current = { start: today, expiresAt: Date.now() + nextDelay };
+      setHolidaySet(new Set([...calendar].filter(([, working]) => !working).map(([date]) => date)));
+      setError(null);
+      setWarning(null);
+    } catch {
+      if (controller.signal.aborted || controllerRef.current !== controller) return;
+      if (cacheRef.current?.start === today) {
+        // Never replace a known calendar with invented working days on failure.
+        cacheRef.current.expiresAt = 0;
+        setWarning("Working-day calendar refresh failed. Calendar markings may be out of date. Retrying automatically.");
+      } else {
+        setError("Unable to load the working-day calendar. Retrying automatically, or select Refresh to try again.");
+      }
+      nextDelay = 5000;
+    } finally {
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+        setLoading(false);
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null;
+          if (document.visibilityState === "visible" && navigator.onLine) void load();
+        }, nextDelay);
+      }
+    }
+  }, [today]);
+
+  useEffect(() => {
+    void refresh();
+    return () => {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [refresh]);
+
+  return { holidaySet, loading, error, warning, refresh };
+};
 
 const isPendingArrival = (row: PlanningSummaryGateRow): boolean =>
   row.gate_state === "coming" || row.gate_state === "need_wip";
@@ -49,9 +135,9 @@ const getCurrentProcess = (row: PlanningSummaryGateRow): string => {
 export const usePlanningSummaryGate = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [sourceRows, setRows] = useState<PlanningSummaryGateRow[]>([]);
-  const [holidaySet, setHolidaySet] = useState<Set<string>>(() => new Set());
   const todayStr = useGateToday();
-  const [kpis, setKpis] = useState<GateKpiSummary[]>([]);
+  const calendar = useGateCalendar(todayStr);
+  const { holidaySet, refresh: refreshCalendar } = calendar;
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
@@ -97,60 +183,26 @@ export const usePlanningSummaryGate = () => {
       setError(null);
       setRefreshWarning(null);
       setRows([]);
-      setKpis([]);
-      setHolidaySet(new Set());
       setLastUpdated("");
     }
 
     try {
-      const [tableRes, summaryRes, calendarRes] = await Promise.all([
-        axios.get<{ status: string; data: PlanningSummaryGateRow[] }>(
-          PLANNING_SUMMARY_GATE_TABLE_API,
-          {
-            params: {
-              skip_holidays: filters.skipHolidays,
-            },
-            signal: controller.signal,
-            timeout: 10000,
-          }
-        ),
-        axios.get<{ status: string; data: GateKpiSummary[] }>(
-          PLANNING_SUMMARY_GATE_SUMMARY_API,
-          {
-            params: {
-              skip_holidays: filters.skipHolidays,
-            },
-            signal: controller.signal,
-            timeout: 6000,
-          }
-        ),
-        axios.get<{ status: string; data: { date: string; is_working: boolean }[] }>(
-          PLANNING_SUMMARY_GATE_CALENDAR_API,
-          {
-            params: { startdate: todayStr, stopdate: dayjs(todayStr).add(28, "day").format("YYYY-MM-DD") },
-            signal: controller.signal,
-            timeout: 15000,
-          }
-        ),
-      ]);
+      const tableRes = await axios.get<{ status: string; data: PlanningSummaryGateRow[] }>(
+        PLANNING_SUMMARY_GATE_TABLE_API,
+        {
+          params: { skip_holidays: filters.skipHolidays },
+          signal: controller.signal,
+          timeout: 10000,
+        }
+      );
 
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
       if (
-        tableRes.data?.status !== "OK" || !Array.isArray(tableRes.data.data) ||
-        summaryRes.data?.status !== "OK" || !Array.isArray(summaryRes.data.data) ||
-        calendarRes.data?.status !== "OK" || !Array.isArray(calendarRes.data.data)
+        tableRes.data?.status !== "OK" || !Array.isArray(tableRes.data.data)
       ) {
         throw new Error("Invalid planning gate response");
       }
-      const calendar = new Map(calendarRes.data.data.map((day) => [day.date, day.is_working]));
-      if (calendar.size !== 29 || Array.from({ length: 29 }, (_, i) =>
-        dayjs(todayStr).add(i, "day").format("YYYY-MM-DD")
-      ).some((date) => typeof calendar.get(date) !== "boolean")) {
-        throw new Error("Incomplete working-day calendar response");
-      }
-      setHolidaySet(new Set([...calendar].filter(([, working]) => !working).map(([date]) => date)));
       setRows(tableRes.data.data);
-      setKpis(summaryRes.data.data);
       hasLoadedRef.current = true;
       setError(null);
       setRefreshWarning(null);
@@ -177,25 +229,26 @@ export const usePlanningSummaryGate = () => {
         }
       }
     }
-  }, [filters.skipHolidays, todayStr]);
-
-  useEffect(() => {
-    void fetchData();
-    return () => {
-      pendingRefreshRef.current = false;
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-    };
-  }, [fetchData]);
+  }, [filters.skipHolidays]);
 
   useEffect(() => {
     let active = true;
     let monitorUnavailable = false;
+    let initialFetchStarted = false;
     let stream: EventSource | null = null;
+    // Subscribe before reading rows so the first connection needs only one read.
+    // A slow or unavailable stream must never block the page indefinitely.
+    const startInitialFetch = () => {
+      if (!active || initialFetchStarted) return;
+      initialFetchStarted = true;
+      void fetchData();
+    };
+    const initialTimer = setTimeout(startInitialFetch, 1000);
     const refresh = () => {
       if (active && document.visibilityState === "visible" && navigator.onLine) {
-        void fetchData({ silent: true });
+        if (!initialFetchStarted) startInitialFetch();
+        else void fetchData({ silent: true });
+        void refreshCalendar();
       }
     };
     try {
@@ -203,8 +256,10 @@ export const usePlanningSummaryGate = () => {
       stream.onopen = () => {
         if (!active) return;
         setStreamDisconnected(false);
-        // Re-fetch on every connection, including reconnection after missed events.
-        refresh();
+        clearTimeout(initialTimer);
+        if (!initialFetchStarted) startInitialFetch();
+        // A reconnect or late first connection may have missed change events.
+        else refresh();
       };
       stream.onmessage = (event) => {
         if (!active) return;
@@ -224,23 +279,37 @@ export const usePlanningSummaryGate = () => {
         }
       };
       stream.onerror = () => {
-        if (active) setStreamDisconnected(true);
+        if (active) {
+          setStreamDisconnected(true);
+          clearTimeout(initialTimer);
+          startInitialFetch();
+        }
         // EventSource reconnects automatically using the server retry interval.
       };
     } catch {
       setStreamDisconnected(true);
+      clearTimeout(initialTimer);
+      startInitialFetch();
     }
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
     return () => {
       active = false;
+      clearTimeout(initialTimer);
       stream?.close();
+      pendingRefreshRef.current = false;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("online", refresh);
     };
-  }, [fetchData]);
+  }, [fetchData, refreshCalendar, todayStr]);
 
-  const refreshData = useCallback(() => { void fetchData(); }, [fetchData]);
+  const refreshData = useCallback(() => {
+    void fetchData();
+    void refreshCalendar(true);
+  }, [fetchData, refreshCalendar]);
 
   // Overview and schedule share the established gate sequence, including empty gates.
   const availableGates = useMemo(() => filters.category === "ALL"
@@ -512,13 +581,12 @@ export const usePlanningSummaryGate = () => {
   }, []);
 
   return {
-    loading,
-    error,
-    refreshWarning: refreshWarning || (streamDisconnected
+    loading: loading || calendar.loading,
+    error: error || calendar.error,
+    refreshWarning: refreshWarning || calendar.warning || (streamDisconnected
       ? "Live connection interrupted. Displayed data may be out of date. Reconnecting automatically."
       : null),
     rows: baseRows,
-    kpis,
     lastUpdated,
     filters,
     todayStr,

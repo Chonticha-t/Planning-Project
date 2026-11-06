@@ -29,6 +29,10 @@ function monitorHarness(router = null) {
         return query();
       } } };
       if (name.endsWith("/workingCalendar")) return {};
+      if (name.endsWith("/gateCalendarCache")) return require("../utils/gateCalendarCache");
+      if (name.endsWith("/gateTablePerformance")) return {
+        createGateTableProfiler: pool => require("../utils/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
+      };
       throw new Error("Unexpected dependency");
     },
     setInterval(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; },
@@ -181,7 +185,7 @@ const unitModule = ts.transpileModule(fs.readFileSync(path.join(frontendRoot, "s
 });
 vm.runInNewContext(unitModule.outputText, { exports: gateUnits });
 
-function hookHarness(today = "2026-01-01") {
+function hookHarness(today = "2026-01-01", { autoOpen = true } = {}) {
   const slots = [];
   const effects = [];
   const pendingEffects = [];
@@ -189,6 +193,8 @@ function hookHarness(today = "2026-01-01") {
   const streams = [];
   const timers = new Map();
   const listeners = new Map();
+  const timerDelays = new Map();
+  let clock = Date.now();
   let cursor = 0;
   let timerId = 0;
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
@@ -229,10 +235,11 @@ function hookHarness(today = "2026-01-01") {
   };
   const context = {
     exports: {}, AbortController,
+    Date: class extends Date { static now() { return clock; } },
     document: { ...eventTarget, visibilityState: "visible" },
     window: eventTarget, navigator: { onLine: true },
-    setTimeout(callback) { timers.set(++timerId, callback); return timerId; },
-    clearTimeout(id) { timers.delete(id); },
+    setTimeout(callback, delay) { timers.set(++timerId, callback); timerDelays.set(timerId, delay); return timerId; },
+    clearTimeout(id) { timers.delete(id); timerDelays.delete(id); },
     EventSource: class {
       constructor() { streams.push(this); }
       close() { this.closed = true; }
@@ -265,6 +272,9 @@ function hookHarness(today = "2026-01-01") {
     cursor = 0;
     const value = context.exports.usePlanningSummaryGate();
     while (pendingEffects.length) pendingEffects.shift()();
+    if (autoOpen) for (const stream of streams) {
+      if (!stream.opened && !stream.closed) { stream.opened = true; stream.onopen(); }
+    }
     return value;
   };
   const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -280,7 +290,15 @@ function hookHarness(today = "2026-01-01") {
     await flush();
   };
   return {
-    render, requests, streams, timers, listeners, succeed, flush,
+    render, requests, streams, timers, timerDelays, listeners, succeed, flush, context,
+    setToday: value => { today = value; },
+    advanceTime: milliseconds => { clock += milliseconds; },
+    runTimer: delay => {
+      const found = [...timers].find(([id]) => timerDelays.get(id) === delay);
+      assert.ok(found, `Missing ${delay}ms timer`);
+      const [id, callback] = found;
+      timers.delete(id); timerDelays.delete(id); callback();
+    },
     event: type => streams.at(-1).onmessage({ data: JSON.stringify({ type }) }),
     unmount: () => effects.forEach(effect => effect.cleanup?.()),
   };
@@ -303,7 +321,7 @@ test("overdue pending arrivals stay in details without changing schedule cards o
   const baseline = h.render();
   const schedule = JSON.stringify([baseline.gateFlowList, baseline.matrixRows, baseline.chartData]);
   baseline.refreshData();
-  await h.succeed(h.requests.slice(3), [...active,
+  await h.succeed(h.requests.slice(2), [...active,
     makeRow("LATE-COMING", "coming", "2025-12-30", "2025-12-31", {
       prd_name: "OVERDUE-ONLY", proc_disp: "SAMPLE-PROCESS", is_coming_3d: true,
     }),
@@ -403,7 +421,7 @@ test("overview cards reconcile with schedule and trend across inclusive arrival 
     assertReconciled();
     assert.equal(JSON.stringify(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell), todayCell);
     assert.equal(JSON.stringify(value.filteredTableRows), details);
-    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.length, 2);
     value.selectDate("2026-01-29");
     assert.equal(h.render().filteredTableRows.length, 3);
     h.render().setPlanWindow("2w");
@@ -425,7 +443,7 @@ test("overview cards reconcile with schedule and trend across inclusive arrival 
     assertReconciled();
     h.render().setSelectedProduct("");
     h.render().setCategory("ALL");
-    await h.succeed(h.requests.slice(3), rows);
+    await h.succeed(h.requests.slice(2), rows);
     assert.equal(card().in_gate_count, 4);
     assertReconciled();
   } finally {
@@ -437,9 +455,7 @@ test("overview cards never fall back to summary totals without arrival-date filt
   const h = hookHarness();
   try {
     h.render();
-    h.requests.find(request => request.url === "summary").resolve({
-      data: { status: "OK", data: [{ gate_name: "FFPC", gate_order: 1, in_gate_count: 999, in_gate_qty: 9990 }] },
-    });
+    assert.ok(!h.requests.some(request => request.url === "summary"));
     await h.succeed(h.requests.slice(), []);
     const card = h.render().gateFlowList.find(row => row.gate_name === "FFPC");
     assert.equal(card.in_gate_count, 0);
@@ -449,13 +465,11 @@ test("overview cards never fall back to summary totals without arrival-date filt
   }
 });
 
-test("arrival dates keep a gate visible even when the summary API omits that gate", async () => {
+test("arrival dates keep a gate visible without a summary API request", async () => {
   const h = hookHarness();
   try {
     h.render();
-    h.requests.find(request => request.url === "summary").resolve({
-      data: { status: "OK", data: [{ gate_name: "FFPC", gate_order: 1, in_gate_count: 999 }] },
-    });
+    assert.ok(!h.requests.some(request => request.url === "summary"));
     await h.succeed(h.requests.slice(), [{
       prd_name: "SAMPLE", prd_category: "FPC", process_group: "EFPC_GEN", gate_name: "FVAC", gate_order: 2, lot_no: "SAMPLE-ARRIVAL",
       gate_state: "coming", arrive_by: "2026-01-02", must_out: "2025-12-31", qty: 10,
@@ -515,7 +529,7 @@ test("in-gate lots survive past plan dates until passed and remain discoverable"
   assert.equal(h.render().filteredTableRows[0].lot_no, "PAST-DEPARTURE");
   h.render().setSelectedProduct("");
   h.render().refreshData();
-  await h.succeed(h.requests.slice(3), rows.map(row => row.lot_no === "PAST-DEPARTURE"
+  await h.succeed(h.requests.slice(2), rows.map(row => row.lot_no === "PAST-DEPARTURE"
     ? { ...row, gate_state: "passed" } : row));
   value = h.render();
   assert.equal(value.filteredTableRows.length, 2);
@@ -533,16 +547,16 @@ test("bursts coalesce into one trailing refresh and background failures retain d
   h.event("PLANNING_SUMMARY_GATE_UPDATED");
   h.event("PLANNING_SUMMARY_GATE_UPDATED");
   h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  assert.equal(h.requests.length, 6);
+  assert.equal(h.requests.length, 3);
   assert.equal(h.render().loading, false);
   assert.equal(h.render().rows.length, 1);
-  await h.succeed(h.requests.slice(3), rows);
-  assert.equal(h.requests.length, 9);
-  h.requests[6].reject(new Error("Synthetic network outage"));
+  await h.succeed(h.requests.slice(2), rows);
+  assert.equal(h.requests.length, 4);
+  h.requests[3].reject(new Error("Synthetic network outage"));
   await h.flush();
   assert.equal(h.render().rows.length, 1);
   assert.match(h.render().refreshWarning, /out of date/);
-  assert.equal(h.timers.size, 1);
+  assert.equal(h.timers.size, 2);
   h.unmount();
   assert.equal(h.timers.size, 0);
   assert.equal(h.streams[0].closed, true);
@@ -561,7 +575,7 @@ test("reconnect, visibility, online and monitor recovery request fresh gate data
   ]) {
     const start = h.requests.length;
     trigger();
-    assert.equal(h.requests.length, start + 3);
+    assert.equal(h.requests.length, start + 1);
     await h.succeed(h.requests.slice(start));
   }
   h.streams[0].onerror();
@@ -575,16 +589,284 @@ test("manual refresh cancels stale requests; unmount prevents trailing work", as
   h.event("PLANNING_SUMMARY_GATE_UPDATED");
   h.render().refreshData();
   assert.equal(h.requests[0].options.signal.aborted, true);
-  await h.succeed(h.requests.slice(0, 3), [{ prd_name: "OLD" }]);
+  await h.succeed(h.requests.slice(0, 2), [{ prd_name: "OLD" }]);
   assert.equal(h.render().rows.length, 0);
-  await h.succeed(h.requests.slice(3, 6));
+  await h.succeed(h.requests.slice(2, 4));
   assert.equal(h.render().loading, false);
   h.event("PLANNING_SUMMARY_GATE_UPDATED");
   h.event("PLANNING_SUMMARY_GATE_UPDATED");
   h.unmount();
-  await h.succeed(h.requests.slice(6));
-  assert.equal(h.requests.length, 9);
+  await h.succeed(h.requests.slice(4));
+  assert.equal(h.requests.length, 5);
   assert.equal(h.timers.size, 0);
+});
+
+test("initial SSE connection performs one table read and no summary request", async () => {
+  const h = hookHarness("2026-01-01", { autoOpen: false });
+  try {
+    h.render();
+    assert.deepEqual(h.requests.map(request => request.url), ["calendar"]);
+    h.streams[0].onopen();
+    assert.deepEqual(h.requests.map(request => request.url), ["calendar", "table"]);
+    await h.succeed(h.requests.slice());
+    assert.equal(h.render().loading, false);
+    assert.equal(h.requests.length, 2);
+    assert.ok(![...h.timerDelays.values()].includes(1000));
+    h.streams[0].onopen();
+    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.at(-1).url, "table");
+  } finally { h.unmount(); }
+});
+
+test("slow and failed SSE connections cannot block initial load and late opens catch up", async () => {
+  for (const fail of [false, true]) {
+    const h = hookHarness("2026-01-01", { autoOpen: false });
+    try {
+      h.render();
+      if (fail) h.streams[0].onerror();
+      else h.runTimer(1000);
+      assert.deepEqual(h.requests.map(request => request.url), ["calendar", "table"]);
+      await h.succeed(h.requests.slice());
+      assert.equal(h.render().loading, false);
+      h.streams[0].onopen();
+      assert.equal(h.requests.at(-1).url, "table");
+      assert.equal(h.requests.length, 3);
+    } finally { h.unmount(); }
+  }
+});
+
+test("calendar expires independently and manual refresh bypasses its cache", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    await h.succeed(h.requests.slice());
+    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    await h.succeed(h.requests.slice(2));
+    assert.equal(h.requests.filter(request => request.url === "calendar").length, 1);
+    h.advanceTime(60000);
+    h.runTimer(60000);
+    assert.equal(h.requests.at(-1).url, "calendar");
+    assert.equal(h.requests.filter(request => request.url === "table").length, 2);
+    await h.succeed([h.requests.at(-1)]);
+    const start = h.requests.length;
+    h.render().refreshData();
+    const batch = h.requests.slice(start);
+    assert.deepEqual(batch.map(request => request.url), ["table", "calendar"]);
+    assert.equal(batch[1].options.params.refresh, true);
+    await h.succeed(batch);
+    assert.equal(h.render().refreshWarning, null);
+  } finally { h.unmount(); }
+});
+
+test("calendar failures retain validated holidays while gate data continues to refresh", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const initial = h.requests.slice();
+    const calendar = initial.find(request => request.url === "calendar");
+    calendar.resolve({ data: { status: "OK", data: Array.from({ length: 29 }, (_, i) => ({
+      date: dayjs("2026-01-01").add(i, "day").format("YYYY-MM-DD"), is_working: i !== 1,
+    })) } });
+    await h.succeed(initial.filter(request => request !== calendar));
+    assert.equal(h.render().calendarDays[0].isHoliday, true);
+    h.render().refreshData();
+    const batch = h.requests.slice(2);
+    batch.find(request => request.url === "calendar").reject(new Error("Synthetic calendar outage"));
+    await h.succeed(batch.filter(request => request.url === "table"), [{ prd_name: "NEW" }]);
+    assert.equal(h.render().rows[0].prd_name, "NEW");
+    assert.equal(h.render().error, null);
+    assert.equal(h.render().calendarDays[0].isHoliday, true);
+    assert.match(h.render().refreshWarning, /calendar refresh failed/);
+    h.runTimer(5000);
+    assert.equal(h.requests.at(-1).url, "calendar");
+    await h.succeed([h.requests.at(-1)]);
+    assert.equal(h.render().refreshWarning, null);
+    assert.equal(h.render().calendarDays[0].isHoliday, false);
+  } finally { h.unmount(); }
+});
+
+test("invalid initial calendars block presentation and retry without refetching gate rows", async () => {
+  for (const malformed of [[], Array(29).fill({ date: "2026-01-01", is_working: true })]) {
+    const h = hookHarness();
+    try {
+      h.render();
+      h.requests.find(request => request.url === "calendar").resolve({ data: { status: "OK", data: malformed } });
+      await h.succeed(h.requests.filter(request => request.url === "table"));
+      assert.match(h.render().error, /working-day calendar/);
+      h.runTimer(5000);
+      assert.equal(h.requests.length, 3);
+      assert.equal(h.requests.at(-1).url, "calendar");
+      await h.succeed([h.requests.at(-1)]);
+      assert.equal(h.render().error, null);
+      assert.equal(h.render().loading, false);
+    } finally { h.unmount(); }
+  }
+});
+
+test("calendar revalidation pauses while hidden and resumes when visible", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    await h.succeed(h.requests.slice());
+    h.context.document.visibilityState = "hidden";
+    h.advanceTime(60000);
+    h.runTimer(60000);
+    assert.equal(h.requests.length, 2);
+    h.context.document.visibilityState = "visible";
+    h.listeners.get("visibilitychange")();
+    assert.deepEqual(h.requests.slice(2).map(request => request.url), ["table", "calendar"]);
+    await h.succeed(h.requests.slice(2));
+    assert.equal(h.render().error, null);
+  } finally { h.unmount(); }
+});
+
+test("day rollover cancels old requests and loads the new calendar range", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const old = h.requests.slice();
+    h.setToday("2026-01-02");
+    h.render();
+    assert.ok(old.every(request => request.options.signal.aborted));
+    assert.equal(h.streams[0].closed, true);
+    const fresh = h.requests.slice(2);
+    assert.equal(fresh.find(request => request.url === "calendar").options.params.startdate, "2026-01-02");
+    await h.succeed(fresh, [{ prd_name: "NEW" }]);
+    await h.succeed(old, [{ prd_name: "STALE" }]);
+    assert.equal(h.render().rows[0].prd_name, "NEW");
+    assert.equal(h.render().todayStr, "2026-01-02");
+    assert.equal(h.render().error, null);
+  } finally { h.unmount(); }
+});
+
+test("unmount before SSE opens prevents fallback work", async () => {
+  const h = hookHarness("2026-01-01", { autoOpen: false });
+  h.render();
+  h.unmount();
+  await h.succeed(h.requests.slice());
+  h.streams[0].onopen();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.timers.size, 0);
+});
+
+test("calendar cache shares reads, expires, forces refresh and does not cache failures", async () => {
+  const { createGateCalendarCache } = require("../utils/gateCalendarCache");
+  let calls = 0;
+  let clock = 0;
+  let fail = false;
+  const load = createGateCalendarCache(async (start, end) => {
+    calls++;
+    if (fail) throw new Error("Synthetic calendar outage");
+    return { start, end, revision: calls };
+  }, { now: () => clock });
+  const [first, concurrent] = await Promise.all([
+    load("2026-01-01", "2026-01-29"), load("2026-01-01", "2026-01-29", { force: true }),
+  ]);
+  assert.equal(first.calendar, concurrent.calendar);
+  assert.equal(first.maxAgeMs, 60000);
+  assert.equal(calls, 1);
+  clock = 20000;
+  const cached = await load("2026-01-01", "2026-01-29");
+  assert.equal(cached.calendar, first.calendar);
+  assert.equal(cached.maxAgeMs, 40000);
+  assert.equal(calls, 1);
+  clock = 60000;
+  assert.equal((await load("2026-01-01", "2026-01-29")).calendar.revision, 2);
+  assert.equal((await load("2026-01-01", "2026-01-29", { force: true })).calendar.revision, 3);
+  fail = true;
+  await assert.rejects(load("2026-01-01", "2026-01-29", { force: true }), /Synthetic calendar outage/);
+  fail = false;
+  assert.equal((await load("2026-01-01", "2026-01-29")).calendar.revision, 5);
+});
+
+test("calendar cache bounds range entries without reviving evicted pending reads", async () => {
+  const { createGateCalendarCache } = require("../utils/gateCalendarCache");
+  let calls = 0;
+  const resolvers = [];
+  const load = createGateCalendarCache(() => {
+    calls++;
+    return new Promise(resolve => resolvers.push(resolve));
+  }, { maxEntries: 1 });
+  const first = load("2026-01-01", "2026-01-29");
+  const second = load("2026-01-02", "2026-01-30");
+  await Promise.resolve();
+  resolvers[0]({ revision: 1 });
+  resolvers[1]({ revision: 2 });
+  await Promise.all([first, second]);
+  assert.equal((await load("2026-01-02", "2026-01-30")).calendar.revision, 2);
+  const third = load("2026-01-01", "2026-01-29");
+  await Promise.resolve();
+  assert.equal(calls, 3);
+  resolvers[2]({ revision: 3 });
+  await third;
+});
+
+test("frontend honors the server's remaining calendar lifetime", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const calendar = h.requests.find(request => request.url === "calendar");
+    calendar.resolve({ data: { status: "OK", cache_ttl_ms: 10000, data: Array.from({ length: 29 }, (_, i) => ({
+      date: dayjs("2026-01-01").add(i, "day").format("YYYY-MM-DD"), is_working: true,
+    })) } });
+    await h.succeed(h.requests.filter(request => request !== calendar));
+    h.advanceTime(10000);
+    h.runTimer(10000);
+    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.at(-1).url, "calendar");
+  } finally { h.unmount(); }
+});
+
+test("calendar endpoint shares cached ranges, supports forced reads and rejects invalid dates", async () => {
+  const routes = new Map();
+  let reads = 0;
+  let holiday = false;
+  let fail = false;
+  const context = {
+    module: { exports: {} },
+    require(name) {
+      if (name === "express") return { Router: () => ({ get: (url, handler) => routes.set(url, handler) }) };
+      if (name.endsWith("/config")) return {};
+      if (name.endsWith("/gateCalendarCache")) return require("../utils/gateCalendarCache");
+      if (name.endsWith("/gateTablePerformance")) return {
+        createGateTableProfiler: pool => require("../utils/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
+      };
+      if (name.endsWith("/workingCalendar")) return {
+        createCalendarIndex: require("../utils/workingCalendar").createCalendarIndex,
+        loadCalendar: async () => {
+          reads++;
+          if (fail) throw new Error("Synthetic calendar outage");
+          const working = !holiday;
+          return { isWorking: () => working };
+        },
+      };
+      throw new Error("Unexpected dependency");
+    },
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(routesRoot, routePath), "utf8"), context);
+  const get = async query => {
+    const response = { statusCode: 200, set() {}, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; } };
+    await routes.get("/calendar")({ query }, response);
+    return response;
+  };
+  const query = { startdate: "2026-01-01", stopdate: "2026-01-29" };
+  const [first, second] = await Promise.all([get(query), get(query)]);
+  assert.equal(reads, 1);
+  assert.equal(first.body.data.length, 29);
+  assert.equal(second.body.data[0].is_working, true);
+  assert.ok(first.body.cache_ttl_ms > 0 && first.body.cache_ttl_ms <= 60000);
+  holiday = true;
+  assert.equal((await get(query)).body.data[0].is_working, true);
+  assert.equal((await get({ ...query, refresh: "true" })).body.data[0].is_working, false);
+  assert.equal(reads, 2);
+  fail = true;
+  assert.equal((await get({ ...query, refresh: "true" })).statusCode, 503);
+  fail = false;
+  assert.equal((await get(query)).statusCode, 200);
+  assert.equal(reads, 4);
+  assert.equal((await get({ ...query, startdate: "invalid" })).statusCode, 400);
+  assert.equal((await get({ ...query, startdate: "2026-02-30", stopdate: "2026-03-01" })).statusCode, 400);
+  assert.equal(reads, 4);
 });
 
 
@@ -668,11 +950,11 @@ test("unit switching uses cached quantities, keeps drilldown, and survives live 
       assert.equal(value.tableStats.quantities.total[unit], total);
       assert.equal(value.filters.selectedDate, "2026-01-01");
       assert.equal(value.filteredTableRows.length, 3);
-      assert.equal(h.requests.length, 3);
+      assert.equal(h.requests.length, 2);
     }
     value.setUnitMode("sheet");
     h.event("PLANNING_SUMMARY_GATE_UPDATED");
-    await h.succeed(h.requests.slice(3), rows.map(row => ({ ...row, qty: row.qty * 2 })));
+    await h.succeed(h.requests.slice(2), rows.map(row => ({ ...row, qty: row.qty * 2 })));
     value = h.render();
     assert.equal(value.unitMode, "sheet");
     assert.equal(value.chartData[0].total, 64);
@@ -700,7 +982,7 @@ test("process groups filter all gate sections using stored classification withou
     ];
     await h.succeed(h.requests.slice(), rows);
     assert.equal(h.render().filters.category, "EFPC_GEN");
-    assert.equal(h.requests.find(request => request.url === "summary").options.params.prd_category, undefined);
+    assert.ok(!h.requests.some(request => request.url === "summary"));
     for (const [group, total, lots] of [["EFPC_GEN", 10, 1], ["EFPC_AUTO", 20, 1], ["SMT", 30, 1], ["ALL", 180, 5]]) {
       h.render().setCategory(group);
       const value = h.render();
@@ -710,7 +992,7 @@ test("process groups filter all gate sections using stored classification withou
       assert.equal(value.chartDataByUnit.piece[0].total, total);
       assert.equal(value.tableStats.quantities.total.piece, total);
       assert.equal(value.filteredTableRows.length, lots);
-      assert.equal(h.requests.length, 3);
+      assert.equal(h.requests.length, 2);
     }
     h.render().setCategory("EFPC_AUTO");
     h.render().setSelectedProduct("NO-MATCH");
@@ -729,7 +1011,7 @@ test("process groups filter all gate sections using stored classification withou
     assert.equal(value.currentProcessFilter, "");
     assert.deepEqual(Array.from(value.availableProducts), ["SAMPLE"]);
     h.event("PLANNING_SUMMARY_GATE_UPDATED");
-    await h.succeed(h.requests.slice(3), rows.map(row => ({ ...row, qty: row.qty * 2 })));
+    await h.succeed(h.requests.slice(2), rows.map(row => ({ ...row, qty: row.qty * 2 })));
     value = h.render();
     assert.equal(value.filters.category, "EFPC_GEN");
     assert.equal(value.tableStats.quantities.total.piece, 20);
@@ -795,7 +1077,7 @@ test("arrival schedule keeps the established FPC and SMT rows in every group", a
     h.render().setSearch("NO-MATCH");
     assert.deepEqual(Array.from(h.render().matrixRows, row => row.gate_name), fpc);
     assert.ok(h.render().matrixRows.every(row => row.todayCell.quantities.total.piece === 0));
-    assert.equal(h.requests.length, 3);
+    assert.equal(h.requests.length, 2);
   } finally { h.unmount(); }
 });
 
@@ -813,6 +1095,10 @@ test("table API returns the stored process group including null values", async (
         return { rows: expectedRows };
       } } };
       if (name.endsWith("/workingCalendar")) return {};
+      if (name.endsWith("/gateCalendarCache")) return require("../utils/gateCalendarCache");
+      if (name.endsWith("/gateTablePerformance")) return {
+        createGateTableProfiler: pool => require("../utils/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
+      };
       throw new Error("Unexpected dependency");
     },
   };
