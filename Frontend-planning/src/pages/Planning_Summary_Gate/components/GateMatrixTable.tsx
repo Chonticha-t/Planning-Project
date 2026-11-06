@@ -50,7 +50,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
         <button type="button" aria-pressed={selected}
           aria-label={`${gate} ${cell.dateStr}: ${formatGateQuantity(value, unit)} ${GATE_UNIT_LABELS[unit]}, ${cell.needCount} Need WIP requests`}
           onClick={() => onSelectCell(gate, cell.dateStr)}
-          title={value === null ? "Quantity unavailable: missing or invalid quantity/conversion data." : `${GATE_UNIT_TITLES[unit]}${cell.needCount ? `; ${cell.needCount} Need WIP requests (not actual lots)` : ""}`}
+          title={value === null ? "Quantity unavailable: missing or invalid quantity/conversion data." : `${GATE_UNIT_TITLES[unit]}${cell.needCount ? `; ${cell.needCount} Need WIP requests` : ""}`}
           className={`w-full h-[48px] min-h-[48px] rounded-[6px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${selected ? "ring-2 ring-[#4f46e5]" : "hover:brightness-95"} ${populated ? shading(value) : `border border-dashed border-slate-200/80 ${cell.isHoliday ? "bg-slate-50/80 text-slate-400" : "text-slate-300"}`}`}
         >
           {populated ? <>
