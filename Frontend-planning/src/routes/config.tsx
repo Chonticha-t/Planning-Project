@@ -1,5 +1,5 @@
 import React from "react";
-import { ClipboardList, Cog, LayoutDashboard, DoorOpen } from "lucide-react";
+import { ClipboardList, Cog, LayoutDashboard, DoorOpen, SlidersHorizontal } from "lucide-react";
 
 // 🟧 Internal ICONS
 import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
@@ -16,6 +16,9 @@ const Planning_Summary = React.lazy(
 );
 const Planning_Summary_Gate = React.lazy(
   () => import("@/pages/Planning_Summary_Gate/main/Planning_Summary_Gate")
+);
+const Capacity_Leveling = React.lazy(
+  () => import("@/pages/Capacity_Leveling/main/Capacity_Leveling")
 );
 
 // =========================================
@@ -34,7 +37,7 @@ export type AppRoute = {
 };
 
 // =========================================
-// 🟦 PLANNING ROUTES
+// 🟦 PLANNING ROUTES (Left Drawer Menu)
 // =========================================
 export const routes_planning: AppRoute[] = [
   {
@@ -44,7 +47,7 @@ export const routes_planning: AppRoute[] = [
     Title: "PO BALANCE",
     isDefault: true,
     icon: ClipboardList,
-  },     
+  },
   {
     path: `${BASE}/planning_summary`,
     element: <Planning_Summary />,
@@ -68,6 +71,24 @@ export const routes_planning: AppRoute[] = [
   },
 ];
 
+// Sub-routes not shown in the left Drawer menu (accessed from inside pages)
+export const routes_hidden: AppRoute[] = [
+  {
+    path: `${BASE}/planning_summary_gate/capacity_leveling`,
+    element: <Capacity_Leveling />,
+    label: "CAPACITY LEVELING",
+    Title: "PLANNING SUMMARY GATE",
+    icon: SlidersHorizontal,
+  },
+  {
+    path: `${BASE}/capacity_leveling`,
+    element: <Capacity_Leveling />,
+    label: "CAPACITY LEVELING",
+    Title: "PLANNING SUMMARY GATE",
+    icon: SlidersHorizontal,
+  },
+];
+
 export const routes_External: AppRoute[] = [
   {
     path: `http://10.17.66.242/Smart-Upload/dashboardhub`,
@@ -78,4 +99,4 @@ export const routes_External: AppRoute[] = [
   },
 ];
 
-export const allRoutes: AppRoute[] = [...routes_planning];
+export const allRoutes: AppRoute[] = [...routes_planning, ...routes_hidden];
