@@ -10,7 +10,7 @@ import {
   Check,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
-import type { GateStatusFilter, PlanningSummaryGateRow, GateQuantitySummary, GateUnit } from "../types";
+import type { GateStatusFilter, LotStatusFilter, PlanningSummaryGateRow, GateQuantitySummary, GateUnit } from "../types";
 import { formatGateName } from "../gatePresentation";
 import { formatGateQuantity, GATE_UNIT_LABELS } from "../gateUnits";
 
@@ -24,6 +24,8 @@ interface GateActionTableProps {
   onTabChange: (tab: "all" | "today" | "in_gate" | "need_wip") => void;
   statusFilter: GateStatusFilter;
   onStatusFilterChange: (status: GateStatusFilter) => void;
+  lotStatusFilter: LotStatusFilter;
+  onLotStatusFilterChange: (status: LotStatusFilter) => void;
   currentProcessFilter: string;
   onCurrentProcessFilterChange: (process: string) => void;
   availableCurrentProcesses: string[];
@@ -552,6 +554,8 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   onTabChange,
   statusFilter,
   onStatusFilterChange,
+  lotStatusFilter,
+  onLotStatusFilterChange,
   currentProcessFilter,
   onCurrentProcessFilterChange,
   availableCurrentProcesses,
@@ -572,7 +576,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
   useEffect(() => {
     setPage(1);
     setActivePopover(null);
-  }, [gateName, actionTab, statusFilter, currentProcessFilter, rows.length]);
+  }, [gateName, actionTab, statusFilter, lotStatusFilter, currentProcessFilter, rows.length]);
 
   // Close floating popover on outside click, Escape, scroll, or resize
   useEffect(() => {
@@ -691,6 +695,25 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                 }
               }}
             />
+
+          <GateFilterDropdown
+            label="Lot Status (applies to all sections)"
+            width="w-36"
+            active={lotStatusFilter !== "ALL"}
+            value={lotStatusFilter}
+            options={[
+              { value: "ALL", label: "Lot Status: ALL" },
+              { value: "WIP", label: "Lot Status: WIP" },
+              { value: "PENDING", label: "Lot Status: PENDING" },
+            ]}
+            onChange={(value) => {
+              if (value === "ALL" || value === "WIP" || value === "PENDING") {
+                setPage(1);
+                setActivePopover(null);
+                onLotStatusFilterChange(value);
+              }
+            }}
+          />
 
           <GateFilterDropdown
             label="Filter by current process"

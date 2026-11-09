@@ -386,7 +386,7 @@ router.get("/history", async (req, res) => {
 
   try {
     const queryStr = `
-      SELECT
+      SELECT DISTINCT ON (h.prd_name, h.due_date, h.source_rev)
         run_id,
         to_char(calculated_at, 'YYYY-MM-DD HH24:MI:SS') AS calculated_at,
         source_rev::int                                 AS source_rev,
@@ -404,9 +404,14 @@ router.get("/history", async (req, res) => {
         sheet_per_lot::int                              AS sheet_per_lot,
         pcs_per_lot::int                                AS pcs_per_lot,
         pcs_per_sheet::float8                           AS pcs_per_sheet
-      FROM planning.po_balance_history
-      WHERE prd_name = $1 AND due_date = $2
-      ORDER BY po_bal DESC, calculated_at DESC
+      FROM planning.po_balance_history h
+      WHERE h.prd_name = $1 AND h.due_date = CAST($2 AS date)
+      ORDER BY
+        h.prd_name,
+        h.due_date,
+        h.source_rev DESC,
+        h.calculated_at DESC,
+        h.run_id DESC
     `;
 
     const { rows } = await query(queryStr, [prd_name, due_date]);

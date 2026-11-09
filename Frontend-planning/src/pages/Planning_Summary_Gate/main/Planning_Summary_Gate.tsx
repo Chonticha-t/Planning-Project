@@ -28,6 +28,8 @@ const Planning_Summary_Gate: React.FC = () => {
     tableStats,
     statusFilter,
     setStatusFilter,
+    lotStatusFilter,
+    setLotStatusFilter,
     currentProcessFilter,
     setCurrentProcessFilter,
     availableCurrentProcesses,
@@ -133,6 +135,8 @@ const Planning_Summary_Gate: React.FC = () => {
             stats={tableStats}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
+            lotStatusFilter={lotStatusFilter}
+            onLotStatusFilterChange={setLotStatusFilter}
             currentProcessFilter={currentProcessFilter}
             onCurrentProcessFilterChange={setCurrentProcessFilter}
             availableCurrentProcesses={availableCurrentProcesses}

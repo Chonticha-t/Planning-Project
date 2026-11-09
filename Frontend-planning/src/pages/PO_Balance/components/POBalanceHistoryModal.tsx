@@ -63,13 +63,16 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
         );
 
         if (res.data?.status === "OK") {
-          setHistory(res.data.data || []);
+          const sortedHistory = [...(res.data.data || [])].sort(
+            (a, b) => (a.source_rev ?? -1) - (b.source_rev ?? -1)
+          );
+          setHistory(sortedHistory);
         } else {
-          setError(res.data?.message || "ไม่สามารถโหลดข้อมูลประวัติได้");
+          setError(res.data?.message || "Unable to load history.");
         }
       } catch (err: unknown) {
         console.error("Failed to fetch PO balance history:", err);
-        setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อดึงประวัติได้");
+        setError("Unable to connect to the server to load history.");
       } finally {
         setLoading(false);
       }
@@ -80,10 +83,14 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
 
   if (typeof document === "undefined") return null;
 
-  // คำนวณค่าสถิติคร่าวๆ เมื่อมีข้อมูล
+  // Calculate summary statistics from the available history.
   const maxPoBal = history.length > 0 ? Math.max(...history.map((h) => h.po_bal ?? 0)) : row?.po_bal ?? 0;
   const currentPoBal = row?.po_bal ?? 0;
   const diff = maxPoBal - currentPoBal;
+  const highestRev = history.reduce(
+    (maxRev, item) => Math.max(maxRev, item.source_rev ?? -Infinity),
+    -Infinity
+  );
 
   return createPortal(
     <AnimatePresence>
@@ -120,7 +127,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                       PO Balance History
                     </h2>
                     <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70">
-                      {history.length} Revisions
+                      {history.length} {history.length === 1 ? "Revision" : "Revisions"}
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-base-content/70">
@@ -155,14 +162,14 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
             {history.length > 0 && (
               <div className="grid grid-cols-3 gap-3 p-4 bg-base-200/40 border-b border-base-300/60 text-xs">
                 <div className="flex flex-col p-2.5 rounded-xl bg-base-100 border border-base-300/70">
-                  <span className="text-base-content/60 font-medium">Initial PO Bal (มากสุด)</span>
+                  <span className="text-base-content/60 font-medium">Initial PO Bal (Highest)</span>
                   <span className="text-base font-bold text-base-content tabular-nums mt-0.5">
                     {num(maxPoBal)} <span className="text-[11px] font-normal text-base-content/50">pcs</span>
                   </span>
                 </div>
                 <div className="flex flex-col p-2.5 rounded-xl bg-base-100 border border-base-300/70">
                   <span className="text-base-content/60 font-medium flex items-center gap-1">
-                    Current PO Bal (ในตาราง)
+                    Current PO Bal (Table)
                     <span className="badge badge-xs badge-success py-0 px-1 text-[10px]">Active</span>
                   </span>
                   <span className="text-base font-bold text-primary tabular-nums mt-0.5">
@@ -172,7 +179,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                 <div className="flex flex-col p-2.5 rounded-xl bg-base-100 border border-base-300/70">
                   <span className="text-base-content/60 font-medium flex items-center gap-1">
                     <TrendingDown size={13} className="text-emerald-500" />
-                    ยอดที่ถูกตัด/ลดลงไป
+                    PO Bal Reduction
                   </span>
                   <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
                     {diff > 0 ? `-${num(diff)}` : "0"}{" "}
@@ -189,7 +196,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-base-content/60">
                   <Loader2 size={28} className="animate-spin text-primary" />
-                  <span className="text-sm">กำลังโหลดประวัติ PO Balance...</span>
+                  <span className="text-sm">Loading PO Balance history...</span>
                 </div>
               ) : error ? (
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
@@ -202,13 +209,13 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                     <Layers size={28} />
                   </div>
                   <h3 className="font-bold text-base text-base-content mb-1">
-                    ยังไม่มีข้อมูลในประวัติ (po_balance_history)
+                    No history available
                   </h3>
                   <p className="text-xs text-base-content/60 max-w-sm mb-4">
-                    ยังไม่มีรอบการคำนวณที่บันทึกไว้ในตารางประวัติสำหรับสินค้าและ Due Date นี้
+                    No calculation history has been recorded for this product and due date.
                   </p>
                   <div className="p-3 rounded-xl bg-base-200/70 border border-base-300/80 text-xs inline-flex items-center gap-2">
-                    <span className="text-base-content/60">ยอดคงเหลือปัจจุบันในตารางหลัก:</span>
+                    <span className="text-base-content/60">Current PO balance in the main table:</span>
                     <strong className="text-primary tabular-nums font-bold text-sm">
                       {num(row.po_bal)} pcs
                     </strong>
@@ -231,7 +238,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-base-300/50 text-[13px]">
                       {history.map((item, idx) => {
-                        const isCurrentRow = idx === history.length - 1; // ลำดับท้ายสุดคือน้อยสุดในตารางที่เรียง DESC
+                        const isCurrentRow = item.source_rev === highestRev;
                         const prevItem = idx > 0 ? history[idx - 1] : null;
                         const changeFromPrev = prevItem ? (item.po_bal ?? 0) - (prevItem.po_bal ?? 0) : 0;
 
@@ -245,13 +252,13 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                             }`}
                           >
                             {/* Source Rev */}
-                            <td className="py-2.5 px-3">
-                              <span className="inline-flex items-center gap-1.5 font-bold text-base-content">
-                                <span className="badge badge-sm badge-outline font-mono text-[11px]">
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              <span className="inline-flex w-max flex-nowrap items-center gap-1.5 font-bold text-base-content">
+                                <span className="badge badge-sm badge-outline shrink-0 whitespace-nowrap font-mono text-[11px]">
                                   Rev {item.source_rev}
                                 </span>
                                 {isCurrentRow && (
-                                  <span className="badge badge-xs badge-primary text-[10px] font-semibold">
+                                  <span className="badge badge-xs badge-primary shrink-0 whitespace-nowrap text-[10px] font-semibold">
                                     Current
                                   </span>
                                 )}
@@ -277,7 +284,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                             {/* Change */}
                             <td className="py-2.5 px-3 whitespace-nowrap text-xs">
                               {idx === 0 ? (
-                                <span className="text-base-content/40 italic">ยอดเริ่มต้น</span>
+                                <span className="text-base-content/40 italic">Initial balance</span>
                               ) : changeFromPrev < 0 ? (
                                 <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
                                   <ArrowDownRight size={13} />
@@ -337,14 +344,14 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
             <div className="flex items-center justify-between px-5 py-3 border-t border-base-300/80 bg-base-100 text-xs text-base-content/60">
               <span className="flex items-center gap-1.5">
                 <Info size={14} className="text-primary" />
-                ข้อมูลเรียงจาก PO Bal มากไปหาน้อย (โดยยอดน้อยสุดคือยอดปัจจุบันในตาราง)
+                Revisions are sorted from lowest to highest. The highest revision is marked Current.
               </span>
               <button
                 type="button"
                 onClick={onClose}
                 className="btn btn-sm btn-ghost px-4 rounded-lg font-medium"
               >
-                ปิดหน้าต่าง
+                Close
               </button>
             </div>
           </motion.div>

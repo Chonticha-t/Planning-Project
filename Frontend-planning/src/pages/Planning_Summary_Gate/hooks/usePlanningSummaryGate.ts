@@ -19,6 +19,7 @@ import type {
   ProcessGroupFilter,
   PlanWindow,
   GateStatusFilter,
+  LotStatusFilter,
   GateUnit,
   GateUnitMode,
 } from "../types";
@@ -143,6 +144,7 @@ export const usePlanningSummaryGate = () => {
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const [streamDisconnected, setStreamDisconnected] = useState(false);
   const [statusFilter, setStatusFilter] = useState<GateStatusFilter>("all");
+  const [lotStatusFilter, setLotStatusFilter] = useState<LotStatusFilter>("ALL");
   const [currentProcessFilter, setCurrentProcessFilter] = useState("");
   const [unitMode, setUnitMode] = useState<GateUnitMode>("all");
   const summaryUnit: GateUnit = unitMode === "all" ? "piece" : unitMode;
@@ -381,15 +383,18 @@ export const usePlanningSummaryGate = () => {
   // Deferred search value to keep typing smooth even with 10,000+ rows
   const deferredSearch = useDeferredValue(filters.search);
 
-  // Globally filtered rows by Product Dropdown + Search Box so ALL 4 sections update together
+  // Product, search and lot status apply to all four sections.
   const globallyFilteredRows = useMemo(() => {
     const prodFilter = filters.selectedProduct?.trim() || "";
     const q = deferredSearch.toLowerCase().trim();
     const normalizedQ = q.replace(/\s*(?:->|\u2192)\s*/g, " \u2192 ");
 
-    if (!prodFilter && !q) return categoryRows;
+    if (!prodFilter && !q && lotStatusFilter === "ALL") return categoryRows;
 
     return categoryRows.filter((r) => {
+      if (lotStatusFilter !== "ALL" && r.lot_status?.trim().toUpperCase() !== lotStatusFilter) {
+        return false;
+      }
       if (prodFilter && r.prd_name !== prodFilter) {
         return false;
       }
@@ -411,7 +416,7 @@ export const usePlanningSummaryGate = () => {
       }
       return true;
     });
-  }, [categoryRows, filters.selectedProduct, deferredSearch]);
+  }, [categoryRows, filters.selectedProduct, deferredSearch, lotStatusFilter]);
 
   // Cards, schedule and trend share exactly the visible planned-arrival dates.
   // Exit deadlines remain available for warnings, never for excluding arrivals.
@@ -604,6 +609,8 @@ export const usePlanningSummaryGate = () => {
     tableStats,
     statusFilter,
     setStatusFilter,
+    lotStatusFilter,
+    setLotStatusFilter,
     currentProcessFilter,
     setCurrentProcessFilter,
     availableCurrentProcesses,

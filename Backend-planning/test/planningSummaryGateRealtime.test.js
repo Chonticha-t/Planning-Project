@@ -963,6 +963,57 @@ test("unit switching uses cached quantities, keeps drilldown, and survives live 
 });
 
 
+test("lot status filters all sections, composes with other filters and survives live refresh", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const base = {
+      prd_name: "SAMPLE", process_group: "EFPC_GEN", gate_name: "FFPC", gate_order: 1,
+      gate_state: "coming", arrive_by: "2026-01-01", must_out: "2026-01-02",
+      pcs_per_sheet: 10, pri: 1,
+    };
+    const rows = [
+      { ...base, lot_no: "LOT-W", lot_status: " wip ", qty: 10 },
+      { ...base, lot_no: "LOT-P", lot_status: " pending ", qty: 20 },
+      { ...base, lot_no: "LOT-N", lot_status: null, qty: 30 },
+      { ...base, lot_no: "LOT-U", lot_status: "HOLD", qty: 40 },
+      { ...base, lot_no: "NEED WIP", lot_status: null, gate_state: "need_wip", qty: 50 },
+    ];
+    await h.succeed(h.requests.slice(), rows);
+    const check = (total, count) => {
+      const value = h.render();
+      assert.equal(value.gateFlowList.find(row => row.gate_name === "FFPC").quantities.total.piece, total);
+      assert.equal(value.matrixRows.find(row => row.gate_name === "FFPC").todayCell.quantities.total.piece, total);
+      assert.equal(value.chartDataByUnit.piece[0].total, total);
+      assert.equal(value.tableStats.quantities.total.piece, total);
+      assert.equal(value.filteredTableRows.length, count);
+    };
+    assert.equal(h.render().lotStatusFilter, "ALL");
+    check(150, 5);
+    h.render().setLotStatusFilter("WIP");
+    check(10, 1);
+    h.render().setLotStatusFilter("PENDING");
+    check(20, 1);
+    h.render().setSelectedProduct("NO-MATCH");
+    check(0, 0);
+    h.render().setSelectedProduct("");
+    h.render().setSearch("LOT-W");
+    check(0, 0);
+    h.render().setSearch("");
+    h.render().setStatusFilter("in_gate");
+    assert.equal(h.render().filteredTableRows.length, 0);
+    assert.equal(h.render().chartDataByUnit.piece[0].total, 20);
+    h.render().setStatusFilter("all");
+    assert.equal(h.requests.length, 2);
+    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    await h.succeed(h.requests.slice(2), rows.map(row => ({ ...row, qty: row.qty * 2 })));
+    assert.equal(h.render().lotStatusFilter, "PENDING");
+    check(40, 1);
+    h.render().setLotStatusFilter("ALL");
+    check(300, 5);
+  } finally { h.unmount(); }
+});
+
 test("process groups filter all gate sections using stored classification without extra requests", async () => {
   const h = hookHarness();
   try {

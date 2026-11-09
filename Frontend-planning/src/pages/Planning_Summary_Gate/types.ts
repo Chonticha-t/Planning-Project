@@ -88,6 +88,7 @@ export interface GateQuantitySummary {
 export type ProcessGroupFilter = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 export type PlanWindow = "2w" | "1m";
 export type GateStatusFilter = "all" | "in_gate" | "coming" | "need_wip";
+export type LotStatusFilter = "ALL" | "WIP" | "PENDING";
 
 export interface GateFilterState {
   category: ProcessGroupFilter;

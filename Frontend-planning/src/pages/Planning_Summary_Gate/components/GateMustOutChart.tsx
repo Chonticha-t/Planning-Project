@@ -78,10 +78,10 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
             <span className="w-2.5 h-2.5 rounded-sm bg-[#06b6d4]" />
             <span className="text-base-content/80">Coming</span>
           </div>
-          {unit !== "lot" && <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-[#f97316]" />
             <span className="text-base-content/80">Need WIP</span>
-          </div>}
+          </div>
           {hasOther && <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-slate-400" /><span>Other</span></div>}
         </div>
       </div>
@@ -168,11 +168,11 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
                     </div>
                     <div className="flex items-center justify-between gap-4 whitespace-nowrap text-orange-600">
                       <span>Need WIP:</span>
-                      <strong className="tabular-nums">{unit === "lot" ? `${d.needCount} lots` : `${formatGateQuantity(d.need_wip, unit)} ${GATE_UNIT_LABELS[unit]}`}</strong>
+                      <strong className="tabular-nums">{unit === "lot" ? `${d.needCount.toLocaleString("en-US")} requests` : `${formatGateQuantity(d.need_wip, unit)} ${GATE_UNIT_LABELS[unit]}`}</strong>
                     </div>
                     {hasOther && <div className="flex items-center justify-between gap-4 whitespace-nowrap"><span>Other:</span><strong className="tabular-nums">{formatGateQuantity(d.other, unit)} {GATE_UNIT_LABELS[unit]}</strong></div>}
                     <div className="flex items-center justify-between gap-4 whitespace-nowrap font-black pt-1 border-t border-base-200 text-base-content">
-                      <span>Total:</span>
+                      <span>{unit === "lot" ? "Total lots:" : "Total:"}</span>
                       <strong className="tabular-nums">{formatGateQuantity(d.total, unit)} {GATE_UNIT_LABELS[unit]}</strong>
                     </div>
                   </div>
@@ -189,18 +189,18 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
                 <Cell key={item.fullDate} fillOpacity={!selectedBar || item.fullDate === selectedDate ? 1 : 0.5} style={{ transition: "fill-opacity 160ms ease" }} />
               ))}
             </Bar>
-            {unit !== "lot" && <Bar dataKey="need_wip" stackId="a" fill="#f97316" radius={[3, 3, 0, 0]} cursor="pointer">
+            <Bar dataKey={unit === "lot" ? "needCount" : "need_wip"} stackId="a" fill="#f97316" radius={[3, 3, 0, 0]} cursor="pointer">
               {chartData.map((item) => (
                 <Cell key={item.fullDate} fillOpacity={!selectedBar || item.fullDate === selectedDate ? 1 : 0.5} style={{ transition: "fill-opacity 160ms ease" }} />
               ))}
-            </Bar>}
+            </Bar>
             {hasOther && <Bar dataKey="other" stackId="a" fill="#94a3b8" radius={[3, 3, 0, 0]} cursor="pointer" />}
           </BarChart>
         </ResponsiveContainer>
       </div>
       {(hasUnavailable || unit === "sheet" || unit === "lot") && <p className="text-[11px] text-base-content/60">
         {hasUnavailable ? "N/A: quantity or conversion data is missing; incomplete dates are not plotted. " : ""}
-        {unit === "sheet" ? "Sheets = pieces / pieces per sheet." : unit === "lot" ? "Distinct actual lots per day; period totals count each lot once. Need WIP is excluded." : ""}
+        {unit === "sheet" ? "Sheets = pieces / pieces per sheet." : unit === "lot" ? "Lots are counted once per day. Need WIP requests are stacked above lots and are excluded from total lots." : ""}
       </p>}
       </div>
     </div>

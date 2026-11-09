@@ -1,7 +1,7 @@
 import type { GateQuantitySummary, GateUnit, GateUnitValues, PlanningSummaryGateRow } from "./types";
 
 export const GATE_UNIT_LABELS: Record<GateUnit, string> = { piece: "pcs", sheet: "sheets", lot: "lots" };
-export const GATE_UNIT_TITLES: Record<GateUnit, string> = { piece: "Piece", sheet: "Sheet", lot: "Actual Lot" };
+export const GATE_UNIT_TITLES: Record<GateUnit, string> = { piece: "Piece", sheet: "Sheet", lot: "Lot" };
 
 export const formatGateQuantity = (value: number | null, unit: GateUnit): string => {
   if (value === null || !Number.isFinite(value)) return "N/A";
