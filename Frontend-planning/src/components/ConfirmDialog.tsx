@@ -10,6 +10,8 @@ export interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   hideCancel?: boolean;
+  /** Optional classes for the confirm button (overrides the variant colour) */
+  confirmClassName?: string;
   leftAction?: React.ReactNode;
   variant?: ConfirmVariant;
   from?: "top" | "bottom" | "left" | "right";
@@ -153,7 +155,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                       type="button"
                       autoFocus
                       onClick={() => close(true)}
-                      className={`btn btn-sm ${variant.button} rounded-full px-5 font-semibold`}
+                      className={`btn btn-sm ${options.confirmClassName ?? variant.button} rounded-full px-5 font-semibold`}
                     >
                       {options.confirmText ?? variant.confirmText}
                     </button>

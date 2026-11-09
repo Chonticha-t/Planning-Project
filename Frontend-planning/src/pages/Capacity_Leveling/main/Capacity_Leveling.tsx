@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
 import "../../Planning_Summary_Gate/gateTheme.css";
 import type {
@@ -25,8 +26,15 @@ import { LotDetailSidePanel } from "../components/LotDetailSidePanel";
 import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
 import { CapacityModal } from "../components/CapacityModal";
 import { SavePlanModal } from "../components/SavePlanModal";
+import { useAuth } from "@/context/AuthContext";
+import {
+  groupsForCategory,
+  savePlanForGroups,
+} from "../../Planning_In_Gate/planStore";
 
 const Capacity_Leveling: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [category, setCategory] = useState<ProcessCategory>("EFPC_GEN");
   const [frozenDays] = useState<number>(0);
   const [planVersion, setPlanVersion] = useState<number>(3);
@@ -240,15 +248,27 @@ const Capacity_Leveling: React.FC = () => {
   }, []);
 
   const handleConfirmSave = useCallback(
-    (_reason: string) => {
-      setPlanVersion((v) => v + 1);
+    (reason: string) => {
+      const nextVersion = planVersion + 1;
+      const groups = groupsForCategory(category);
+      // Send the plan to Planning In Gate (FPC and/or SMT)
+      savePlanForGroups(groups, {
+        version: nextVersion,
+        savedAt: new Date().toISOString(),
+        savedBy: user?.full_name || user?.username || "Planner",
+        reason: reason || undefined,
+        sourceCategory: category,
+      });
+      setPlanVersion(nextVersion);
       setIsDraftModified(false);
       setSaveModalOpen(false);
-      toast.success("Plan saved and sent to Planning In Gate.", {
-        duration: 3500,
-      });
+      toast.success(
+        `Plan v${nextVersion} saved and sent to Planning In Gate (${groups.join(" + ")}).`,
+        { duration: 3500 }
+      );
+      navigate(`/planning/planning_in_gate?cat=${category}`);
     },
-    []
+    [planVersion, category, user, navigate]
   );
 
   return (
