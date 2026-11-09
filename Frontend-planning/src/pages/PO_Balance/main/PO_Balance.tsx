@@ -2,12 +2,13 @@ import { useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import type { GridSortModel } from "@mui/x-data-grid";
 
-import type { PlanningFilter } from "../types";
+import type { PlanningFilter, PlanningRow } from "../types";
 import usePOBalance, { EMPTY_FILTER } from "../hooks/usePOBalance";
 import SummaryCards from "../components/SummaryCards";
 import FilterBar from "../components/FilterBar";
 import ExchangeRateModal from "../components/ExchangeRateModal";
 import POBalanceTable from "../components/POBalanceTable";
+import POBalanceHistoryModal from "../components/POBalanceHistoryModal";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import { toDMY } from "../utils";
 
@@ -15,6 +16,7 @@ const PO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const [isExchangeRateModalOpen, setIsExchangeRateModalOpen] = useState(false);
+  const [selectedHistoryRow, setSelectedHistoryRow] = useState<PlanningRow | null>(null);
   const { rows, summary, products, lastUpdatedAt, loading, fetchData, dbVersion } = usePOBalance();
 
   const handleReset = useCallback(() => {
@@ -86,11 +88,22 @@ const PO_Balance = () => {
         onOpenExchangeRate={handleOpenExchangeRate}
         loading={loading}
       />
-      <POBalanceTable rows={rows} loading={loading} sortModel={sortModel} onSortModelChange={setSortModel} />
+      <POBalanceTable
+        rows={rows}
+        loading={loading}
+        sortModel={sortModel}
+        onSortModelChange={setSortModel}
+        onViewHistory={setSelectedHistoryRow}
+      />
       <ExchangeRateModal
         isOpen={isExchangeRateModalOpen}
         onClose={handleCloseExchangeRate}
         dbVersion={dbVersion}
+      />
+      <POBalanceHistoryModal
+        isOpen={Boolean(selectedHistoryRow)}
+        row={selectedHistoryRow}
+        onClose={() => setSelectedHistoryRow(null)}
       />
     </div>
   );

@@ -63,3 +63,23 @@ export interface ApiResponse<T> {
   data: T;
   message: string;
 }
+
+export interface POBalanceHistoryRow {
+  run_id: string;
+  calculated_at: string;
+  source_rev: number;
+  prd_name: string;
+  item?: string;
+  due_date: string;
+  po_bal: number;
+  unmovement: number;
+  f_g: number;
+  net_required_pcs: number;
+  rem_unmovement?: number;
+  rem_fg?: number;
+  status?: string;
+  updated_at?: string;
+  sheet_per_lot?: number;
+  pcs_per_lot?: number;
+  pcs_per_sheet?: number;
+}

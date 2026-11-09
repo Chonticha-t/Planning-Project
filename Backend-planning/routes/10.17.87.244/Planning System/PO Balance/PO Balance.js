@@ -370,6 +370,62 @@ router.get("/last_updated", async (req, res) => {
   }
 });
 
+// GET /api_p1/planning/history — ดึงประวัติการคำนวณ PO Balance จากตาราง planning.po_balance_history
+router.get("/history", async (req, res) => {
+  setNoCache(res);
+  const prd_name = asStr(req.query.prd_name);
+  const due_date = asStr(req.query.due_date);
+
+  if (!prd_name || !due_date) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "prd_name and due_date are required parameters.",
+      data: [],
+    });
+  }
+
+  try {
+    const queryStr = `
+      SELECT
+        run_id,
+        to_char(calculated_at, 'YYYY-MM-DD HH24:MI:SS') AS calculated_at,
+        source_rev::int                                 AS source_rev,
+        prd_name,
+        item,
+        to_char(due_date, 'YYYY-MM-DD')                 AS due_date,
+        po_bal::float8                                  AS po_bal,
+        unmovement::float8                              AS unmovement,
+        f_g::float8                                     AS f_g,
+        net_required_pcs::float8                        AS net_required_pcs,
+        rem_unmovement::float8                          AS rem_unmovement,
+        rem_fg::float8                                  AS rem_fg,
+        status,
+        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS')   AS updated_at,
+        sheet_per_lot::int                              AS sheet_per_lot,
+        pcs_per_lot::int                                AS pcs_per_lot,
+        pcs_per_sheet::float8                           AS pcs_per_sheet
+      FROM planning.po_balance_history
+      WHERE prd_name = $1 AND due_date = $2
+      ORDER BY po_bal DESC, calculated_at DESC
+    `;
+
+    const { rows } = await query(queryStr, [prd_name, due_date]);
+
+    return res.json({
+      status: "OK",
+      data: rows,
+      message: rows.length > 0 ? "History data found." : "No history data found.",
+    });
+  } catch (err) {
+    console.error("Database error in /history:", err);
+    return res.status(500).json({
+      status: "ERROR",
+      data: [],
+      message: "Internal Server Error",
+    });
+  }
+});
+
 const MONTH_NAME_TO_NO = {
   January: 1, February: 2, March: 3, April: 4,
   May: 5, June: 6, July: 7, August: 8,

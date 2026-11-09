@@ -1,11 +1,11 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   DataGrid,
   GridColDef,
   GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, History } from "lucide-react";
 import { SORT_OPTIONS, type PlanningRow, type PlanningStatus } from "../types";
 import { toDMY } from "../utils";
 
@@ -16,6 +16,7 @@ interface POBalanceTableProps {
   loading?: boolean;
   sortModel: GridSortModel;
   onSortModelChange: (model: GridSortModel) => void;
+  onViewHistory?: (row: PlanningRow) => void;
 }
 
 const num = (value: number, decimals = 0) =>
@@ -122,7 +123,9 @@ const StatusPill = ({ value }: { value: PlanningStatus }) => {
   );
 };
 
-const columns: GridColDef<PlanningRow>[] = [
+const getColumns = (
+  onViewHistory?: (row: PlanningRow) => void
+): GridColDef<PlanningRow>[] => [
   {
     field: "prd_name",
     headerName: "Product",
@@ -146,7 +149,38 @@ const columns: GridColDef<PlanningRow>[] = [
       </span>
     ),
   },
-  numberCol("po_bal", "PO Bal"),
+  {
+    field: "po_bal",
+    headerName: "PO Bal",
+    type: "number",
+    flex: 1,
+    minWidth: 120,
+    align: "center",
+    headerAlign: "center",
+    renderCell: ({ row, value }) => {
+      const val = value == null ? "" : Number(value).toLocaleString("en-US");
+      if (!val) {
+        return <span className="tabular-nums text-[14px] text-base-content/30">-</span>;
+      }
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewHistory?.(row);
+          }}
+          className="group inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-md text-[14px] tabular-nums font-semibold text-base-content/85 hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
+          title="คลิกดูประวัติการคำนวณ (History)"
+        >
+          <span>{val}</span>
+          <History
+            size={12}
+            className="opacity-0 group-hover:opacity-75 transition-opacity duration-150 shrink-0 text-primary"
+          />
+        </button>
+      );
+    },
+  },
   // ── Inventory group (แนวเดิมตามภาพที่ชอบ) ────
   invCol("unmovement", "Unmovement", "inv-first"),
   invCol("rem_unmovement", "Rem Unmove"),
@@ -194,7 +228,9 @@ const POBalanceTable = ({
   loading: _loading,
   sortModel,
   onSortModelChange,
+  onViewHistory,
 }: POBalanceTableProps) => {
+  const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
     <div className="rounded-2xl border border-base-300/80 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-base-300/80 bg-base-100">
