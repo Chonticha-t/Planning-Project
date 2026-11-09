@@ -28,8 +28,11 @@ const getCellMetrics = (
   return { pcs: 0, sheets: 0, lots: 0 };
 };
 
+
 interface GateLoadGridProps {
   gridData: DayGateLoad[];
+  /** Same grid with lots on their original system dates (Required) — compared in "required" mode */
+  requiredGridData?: DayGateLoad[];
   planMode: PlanMode;
   onPlanModeChange: (mode: PlanMode) => void;
   kpis: LevelingKpiData;
@@ -41,6 +44,7 @@ interface GateLoadGridProps {
 
 export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
   gridData,
+  requiredGridData,
   planMode,
   onPlanModeChange,
   kpis,
@@ -49,6 +53,23 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
   onSelectCell,
 }) => {
   const [unitMode, setUnitMode] = useState<GridUnitMode>("pct");
+  const isCompare = planMode === "required" && Boolean(requiredGridData);
+
+  // Keep the two tables (Required / Planned) scrolled together horizontally
+  const scrollRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const syncingRef = React.useRef(false);
+  const handleScroll = (idx: number) => {
+    if (syncingRef.current) return;
+    const src = scrollRefs.current[idx];
+    if (!src) return;
+    syncingRef.current = true;
+    scrollRefs.current.forEach((el, i) => {
+      if (el && i !== idx) el.scrollLeft = src.scrollLeft;
+    });
+    requestAnimationFrame(() => {
+      syncingRef.current = false;
+    });
+  };
 
   const handleCellClick = (gateId: string | null, dateStr: string | null) => {
     if (!onSelectCell) return;
@@ -75,164 +96,22 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
     };
   }, [gridData, selectedGate, selectedDate, planMode]);
 
-  return (
-    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
-      {/* Header Row with Unit Switcher & Compact Summary Badges */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
-            Gate Load by Day
-          </h3>
-
-          {/* Display Units Switcher matching GateMatrixTable (Load % | Piece | Sheet | Lot) */}
-          <div
-            role="group"
-            aria-label="Display units"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5"
-          >
-            {UNIT_MODES.map(({ mode, label }) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={unitMode === mode}
-                onClick={() => setUnitMode(mode)}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${
-                  unitMode === mode
-                    ? "bg-primary text-primary-content shadow-xs"
-                    : "text-base-content/70 hover:bg-base-200"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Redesigned Status Summary Chips (Clean & Scannable) */}
-          <div className="inline-flex flex-wrap items-center gap-1.5 tabular-nums">
-            {/* 1. Overload Cells */}
-            <div
-              title={kpis.redCellPlanningDetail}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  kpis.redCellsPlanningAfter > 0
-                    ? "bg-rose-500"
-                    : "bg-emerald-500"
-                }`}
-              />
-              <span className="text-base-content/60 font-medium">Overload</span>
-              <span className="font-bold text-base-content">
-                {kpis.redCellsPlanningAfter}
-              </span>
-              {kpis.redCellsPlanningBefore !== kpis.redCellsPlanningAfter && (
-                <span className="text-[10.5px] text-base-content/40">
-                  (was {kpis.redCellsPlanningBefore})
-                </span>
-              )}
-            </div>
-
-            {/* 2. Late / At Risk Lots */}
-            <div
-              title={kpis.posAtRiskDetail}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  kpis.posAtRiskAfter > 0 ? "bg-amber-500" : "bg-emerald-500"
-                }`}
-              />
-              <span className="text-base-content/60 font-medium">
-                Late Lots
-              </span>
-              <span className="font-bold text-base-content">
-                {kpis.posAtRiskAfter}
-              </span>
-            </div>
-
-            {/* 3. Moved Lots */}
-            <div
-              title={`${kpis.releasesMovedEarlier} earlier · ${kpis.releasesMovedLater} later`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
-            >
-              <span className="w-2 h-2 rounded-full bg-[#4f46e5]" />
-              <span className="text-base-content/60 font-medium">Moved</span>
-              <span className="font-bold text-base-content">
-                {kpis.releasesMovedCount}
-                <span className="text-base-content/40 font-normal">
-                  /{kpis.releasesTotalCount}
-                </span>
-              </span>
-            </div>
-          </div>
-
-          {/* Active Selection Pill showing Gate · Date + % / Pcs / Sheet / Lot when clicked */}
-          {(selectedGate || selectedDate) && (
-            <button
-              type="button"
-              onClick={() => onSelectCell?.(null, null)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eef2ff] border border-indigo-200 text-xs font-semibold text-[#4f46e5] hover:bg-indigo-100/80 transition-colors cursor-pointer tabular-nums"
-              title="Click to clear selection"
-            >
-              <span>
-                {[
-                  selectedGate
-                    ? GATES_CONFIG.find((g) => g.id === selectedGate)?.name ||
-                      selectedGate
-                    : null,
-                  selectedDate ? dayjs(selectedDate).format("DD/MM") : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-                {selectedCellSummary
-                  ? ` — ${selectedCellSummary.pct}% · ${selectedCellSummary.pcs.toLocaleString()} pcs · ${selectedCellSummary.sheets.toLocaleString()} sheets · ${selectedCellSummary.lots} lots`
-                  : ""}
-              </span>
-              <X size={12} />
-            </button>
-          )}
-        </div>
-
-        {/* Required / Planned Toggle matching GateMatrixTable */}
-        <div
-          role="group"
-          aria-label="Plan mode"
-          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5"
-        >
-          <button
-            type="button"
-            onClick={() => onPlanModeChange("required")}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-              planMode === "required"
-                ? "bg-primary text-primary-content shadow-xs"
-                : "text-base-content/70 hover:bg-base-200"
-            }`}
-          >
-            Required
-          </button>
-          <button
-            type="button"
-            onClick={() => onPlanModeChange("planned")}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-              planMode === "planned"
-                ? "bg-primary text-primary-content shadow-xs"
-                : "text-base-content/70 hover:bg-base-200"
-            }`}
-          >
-            Planned
-          </button>
-        </div>
-      </div>
-
-      {/* Table matching GateMatrixTable with spacious cells (88px per day column) */}
-      <div className="overflow-x-auto pb-1">
+  // One Gate Load table (used once in Planned mode, twice in Required mode)
+  const renderTable = (data: DayGateLoad[], idx: number, allowPreview: boolean) => (
+      <div
+        ref={(el) => {
+          scrollRefs.current[idx] = el;
+        }}
+        onScroll={() => handleScroll(idx)}
+        className="overflow-x-auto pb-1"
+      >
         <table
           className="w-full table-fixed text-center border-collapse select-none"
-          style={{ minWidth: `${72 + gridData.length * 88}px` }}
+          style={{ minWidth: `${72 + data.length * 88}px` }}
         >
           <colgroup>
             <col style={{ width: "72px" }} />
-            {gridData.map((col) => (
+            {data.map((col) => (
               <col key={col.date} style={{ width: "88px" }} />
             ))}
           </colgroup>
@@ -241,7 +120,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               <th className="text-left font-bold text-[11px] text-slate-400 tracking-wider px-2.5 py-1.5 sticky left-0 bg-base-100 z-10">
                 GATE
               </th>
-              {gridData.map((col, idx) => {
+              {data.map((col, idx) => {
                 const isToday = idx === 0;
                 const isSun = col.isSunday;
                 const isDaySelected = selectedDate === col.date;
@@ -308,7 +187,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                       {gate.name}
                     </button>
                   </td>
-                  {gridData.map((col) => {
+                  {data.map((col) => {
                     const gInfo = col.gates[gate.id];
 
                     if (!gInfo || col.isSunday) {
@@ -322,7 +201,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                     }
 
                     const hasPreview =
-                      planMode === "planned" &&
+                      allowPreview &&
                       gInfo.previewPct !== undefined &&
                       gInfo.previewPct !== gInfo.pct;
 
@@ -460,6 +339,179 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
           </tbody>
         </table>
       </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+      {/* Header Row with Unit Switcher & Compact Summary Badges */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
+            Gate Load by Day
+          </h3>
+
+          {/* Display Units Switcher matching GateMatrixTable (Load % | Piece | Sheet | Lot) */}
+          <div
+            role="group"
+            aria-label="Display units"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5"
+          >
+            {UNIT_MODES.map(({ mode, label }) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={unitMode === mode}
+                onClick={() => setUnitMode(mode)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${
+                  unitMode === mode
+                    ? "bg-primary text-primary-content shadow-xs"
+                    : "text-base-content/70 hover:bg-base-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Redesigned Status Summary Chips (Clean & Scannable) */}
+          <div className="inline-flex flex-wrap items-center gap-1.5 tabular-nums">
+            {/* 1. Overload Cells */}
+            <div
+              title={kpis.redCellPlanningDetail}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  kpis.redCellsPlanningAfter > 0
+                    ? "bg-rose-500"
+                    : "bg-emerald-500"
+                }`}
+              />
+              <span className="text-base-content/60 font-medium">Overload</span>
+              <span className="font-bold text-base-content">
+                {kpis.redCellsPlanningAfter}
+              </span>
+              {kpis.redCellsPlanningBefore !== kpis.redCellsPlanningAfter && (
+                <span className="text-[10.5px] text-base-content/40">
+                  (was {kpis.redCellsPlanningBefore})
+                </span>
+              )}
+            </div>
+
+            {/* 2. Late / At Risk Lots */}
+            <div
+              title={kpis.posAtRiskDetail}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  kpis.posAtRiskAfter > 0 ? "bg-amber-500" : "bg-emerald-500"
+                }`}
+              />
+              <span className="text-base-content/60 font-medium">
+                Late Lots
+              </span>
+              <span className="font-bold text-base-content">
+                {kpis.posAtRiskAfter}
+              </span>
+            </div>
+
+            {/* 3. Moved Lots */}
+            <div
+              title={`${kpis.releasesMovedEarlier} earlier · ${kpis.releasesMovedLater} later`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
+            >
+              <span className="w-2 h-2 rounded-full bg-[#4f46e5]" />
+              <span className="text-base-content/60 font-medium">Moved</span>
+              <span className="font-bold text-base-content">
+                {kpis.releasesMovedCount}
+                <span className="text-base-content/40 font-normal">
+                  /{kpis.releasesTotalCount}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* Active Selection Pill showing Gate · Date + % / Pcs / Sheet / Lot when clicked */}
+          {(selectedGate || selectedDate) && (
+            <button
+              type="button"
+              onClick={() => onSelectCell?.(null, null)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#eef2ff] border border-indigo-200 text-xs font-semibold text-[#4f46e5] hover:bg-indigo-100/80 transition-colors cursor-pointer tabular-nums"
+              title="Click to clear selection"
+            >
+              <span>
+                {[
+                  selectedGate
+                    ? GATES_CONFIG.find((g) => g.id === selectedGate)?.name ||
+                      selectedGate
+                    : null,
+                  selectedDate ? dayjs(selectedDate).format("DD/MM") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {selectedCellSummary
+                  ? ` — ${selectedCellSummary.pct}% · ${selectedCellSummary.pcs.toLocaleString()} pcs · ${selectedCellSummary.sheets.toLocaleString()} sheets · ${selectedCellSummary.lots} lots`
+                  : ""}
+              </span>
+              <X size={12} />
+            </button>
+          )}
+        </div>
+
+        {/* Required / Planned Toggle matching GateMatrixTable */}
+        <div
+          role="group"
+          aria-label="Plan mode"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5"
+        >
+          <button
+            type="button"
+            onClick={() => onPlanModeChange("planned")}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+              planMode === "planned"
+                ? "bg-primary text-primary-content shadow-xs"
+                : "text-base-content/70 hover:bg-base-200"
+            }`}
+          >
+            Planned
+          </button>
+          <button
+            type="button"
+            onClick={() => onPlanModeChange("required")}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+              planMode === "required"
+                ? "bg-primary text-primary-content shadow-xs"
+                : "text-base-content/70 hover:bg-base-200"
+            }`}
+          >
+            Required
+          </button>
+        </div>
+      </div>
+
+      {isCompare ? (
+        <div className="flex flex-col gap-3">
+          <div>
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold tracking-wide text-base-content/70">
+              <span className="h-2 w-2 rounded-full bg-base-content/40" />
+              REQUIRED
+              <span className="font-normal text-base-content/50">· lots on system dates</span>
+            </div>
+            {renderTable(requiredGridData ?? [], 0, false)}
+          </div>
+          <div>
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold tracking-wide text-[#4f46e5]">
+              <span className="h-2 w-2 rounded-full bg-[#4f46e5]" />
+              PLANNED
+              <span className="font-normal text-base-content/50">· after leveling</span>
+            </div>
+            {renderTable(gridData, 1, false)}
+          </div>
+        </div>
+      ) : (
+        renderTable(gridData, 0, true)
+      )}
     </div>
   );
 };

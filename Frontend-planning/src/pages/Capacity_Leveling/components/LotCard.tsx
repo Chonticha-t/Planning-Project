@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import {
@@ -43,6 +43,31 @@ export const LotCard: React.FC<LotCardProps> = ({
   const chipBtnRef = useRef<HTMLButtonElement>(null);
   const noteBtnRef = useRef<HTMLButtonElement>(null);
 
+  // Lifted (tilted) card while moving: rendered in a portal on top of the page,
+  // positioned over the ghost so the column's overflow can't clip it and
+  // neighbouring day columns can't cover it.
+  const isLifted = (isBeingDragged || isMovingPreview) && Boolean(previewTargetDate);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const [liftPos, setLiftPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isLifted) {
+      setLiftPos(null);
+      return;
+    }
+    const update = () => {
+      const r = ghostRef.current?.getBoundingClientRect();
+      if (r) setLiftPos({ top: r.top + 10, left: r.left + 6 });
+    };
+    update();
+    window.addEventListener("scroll", update, true); // board + column scrolls
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [isLifted]);
+
   useEffect(() => {
     if (!noteOpen) return;
     const handleOutside = (e: MouseEvent) => {
@@ -74,8 +99,9 @@ export const LotCard: React.FC<LotCardProps> = ({
     const targetDisplay = dayjs(previewTargetDate).format("DD/MM/YYYY");
     return (
       <div className="relative">
-        {/* Ghost placeholder */}
+        {/* Ghost placeholder (keeps the card's place in the column) */}
         <div
+          ref={ghostRef}
           draggable
           onDragStart={(e) => onDragStart(e, lot)}
           onDragEnd={onDragEnd}
@@ -88,29 +114,32 @@ export const LotCard: React.FC<LotCardProps> = ({
           <div className="text-[10.5px] italic mt-1">dragging...</div>
         </div>
 
-        {/* Lifted tilted card */}
-        <div
-          draggable
-          onDragStart={(e) => onDragStart(e, lot)}
-          onDragEnd={onDragEnd}
-          onClick={() => onSelect(lot)}
-          className="absolute top-2.5 left-1.5 z-30 w-[160px] -rotate-2 rounded-xl p-2.5 bg-base-100 border-[1.5px] border-primary shadow-lg cursor-grab select-none transition-transform"
-        >
-          <div className="flex items-start justify-between gap-1">
-            <span className="text-xs font-bold text-base-content leading-snug">
-              {lot.id} · {lot.product}
-            </span>
-            <GripVertical size={13} className="text-base-content/30 shrink-0" />
-          </div>
-          <div className="mt-1.5">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tabular-nums bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
-              <CalendarIcon size={11} className="text-primary" />
-              <span>
-                {releaseDisplay} → {targetDisplay}
-              </span>
-            </span>
-          </div>
-        </div>
+        {/* Lifted tilted card — portal so it floats over the next day column.
+            pointer-events-none: drag-over / drop still reach the day columns underneath. */}
+        {liftPos &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              style={{ top: liftPos.top, left: liftPos.left }}
+              className="planning-summary-gate pointer-events-none fixed z-[60] w-[160px] -rotate-2 rounded-xl p-2.5 bg-base-100 border-[1.5px] border-primary shadow-lg select-none"
+            >
+              <div className="flex items-start justify-between gap-1">
+                <span className="text-xs font-bold text-base-content leading-snug">
+                  {lot.id} · {lot.product}
+                </span>
+                <GripVertical size={13} className="text-base-content/30 shrink-0" />
+              </div>
+              <div className="mt-1.5">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tabular-nums bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
+                  <CalendarIcon size={11} className="text-primary" />
+                  <span>
+                    {releaseDisplay} → {targetDisplay}
+                  </span>
+                </span>
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
     );
   }

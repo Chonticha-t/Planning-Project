@@ -69,14 +69,15 @@ const Capacity_Leveling: React.FC = () => {
     return dayjs("2026-11-03").add(frozenDays - 1, "day").format("YYYY-MM-DD");
   }, [frozenDays]);
 
+  // Planned = lots on their current (leveled) release dates
   const gridWithCurrentLots = useMemo(() => {
-    return recalculateGridLoads(
-      baseGrid,
-      lots,
-      frozenUntilDate,
-      planMode === "required"
-    );
-  }, [baseGrid, lots, frozenUntilDate, planMode]);
+    return recalculateGridLoads(baseGrid, lots, frozenUntilDate, false);
+  }, [baseGrid, lots, frozenUntilDate]);
+
+  // Required = lots on their original system dates (shown side-by-side in "Required" mode)
+  const requiredGrid = useMemo(() => {
+    return recalculateGridLoads(baseGrid, lots, frozenUntilDate, true);
+  }, [baseGrid, lots, frozenUntilDate]);
 
   const activeMovingLot = draggedLot || pendingMove?.lot || null;
   const activePreviewTargetDate =
@@ -294,8 +295,12 @@ const Capacity_Leveling: React.FC = () => {
       {/* 2. Gate Load Grid matching GateMatrixTable (with inline KPI badges) */}
       <GateLoadGrid
         gridData={displayGrid}
+        requiredGridData={requiredGrid}
         planMode={planMode}
-        onPlanModeChange={setPlanMode}
+        onPlanModeChange={(mode) => {
+          setPlanMode(mode);
+          if (mode === "required") setSelectedLot(null);
+        }}
         kpis={kpis}
         isDragging={Boolean(draggedLot)}
         selectedGate={selectedGridGate}
@@ -303,7 +308,8 @@ const Capacity_Leveling: React.FC = () => {
         onSelectCell={handleSelectGridCell}
       />
 
-      {/* 4. Release Board / List (Full width 100%) + Floating Side Popup when a Lot is selected */}
+      {/* 4. Release Board / List (Full width 100%) — Planned mode only; Required mode is a read-only comparison */}
+      {planMode === "planned" && (
       <div className="w-full min-w-0">
         <ReleaseBoard
           lots={lots}
@@ -332,6 +338,7 @@ const Capacity_Leveling: React.FC = () => {
           focusedDate={focusedBoardDate}
         />
       </div>
+      )}
 
       {/* 5. Right Navigation Drawer (Details & Edit Capacity only) */}
       <LotDetailSidePanel
