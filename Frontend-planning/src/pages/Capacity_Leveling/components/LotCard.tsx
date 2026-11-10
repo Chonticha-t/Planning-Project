@@ -13,6 +13,9 @@ import { DatePickerPopover } from "./DatePickerPopover";
 interface LotCardProps {
   lot: LotItem;
   isSelected: boolean;
+  isBatchSelected: boolean;
+  showSelection: boolean;
+  onToggleSelection: (lot: LotItem) => void;
   isBeingDragged: boolean;
   isMovingPreview?: boolean;
   previewTargetDate?: string | null;
@@ -26,6 +29,9 @@ interface LotCardProps {
 export const LotCard: React.FC<LotCardProps> = ({
   lot,
   isSelected,
+  isBatchSelected,
+  showSelection,
+  onToggleSelection,
   isBeingDragged,
   isMovingPreview = false,
   previewTargetDate,
@@ -98,7 +104,7 @@ export const LotCard: React.FC<LotCardProps> = ({
   if ((isBeingDragged || isMovingPreview) && previewTargetDate) {
     const targetDisplay = dayjs(previewTargetDate).format("DD/MM/YYYY");
     return (
-      <div className="relative">
+      <div className="relative" data-lot-id={lot.id}>
         {/* Ghost placeholder (keeps the card's place in the column) */}
         <div
           ref={ghostRef}
@@ -157,16 +163,23 @@ export const LotCard: React.FC<LotCardProps> = ({
 
   return (
     <div
-      draggable
+      data-lot-id={lot.id}
+      draggable={dayjs(lot.releaseDate).isAfter(dayjs(frozenUntilDate))}
       onDragStart={(e) => onDragStart(e, lot)}
       onDragEnd={onDragEnd}
       onClick={() => onSelect(lot)}
-      className={`relative group rounded-xl p-2.5 shadow-2xs transition-all cursor-grab active:cursor-grabbing select-none ${borderClass}`}
+      className={`relative group rounded-xl p-2.5 shadow-2xs transition-all cursor-grab active:cursor-grabbing select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
     >
       {/* Top Row: PO · Product & Drag Grip */}
       <div className="flex items-start justify-between gap-1">
+        {showSelection && <input type="checkbox" aria-label={`Select lot ${lot.id}`}
+          checked={isBatchSelected}
+          disabled={!dayjs(lot.releaseDate).isAfter(dayjs(frozenUntilDate))}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => onToggleSelection(lot)}
+          className="checkbox checkbox-xs checkbox-primary mt-0.5 shrink-0 cursor-pointer" />}
         <div
-          className={`text-xs font-bold leading-snug ${
+          className={`min-w-0 flex-1 text-xs font-bold leading-snug ${
             isSelected ? "text-white" : "text-base-content"
           }`}
         >

@@ -16,7 +16,7 @@ import { INITIAL_LOTS, BASELINE_GRID_DATA } from "../mock/levelingMockData";
 import {
   recalculateGridLoads,
   calculateKpis,
-  computeDragPreview,
+  computeBatchMovePreview,
 } from "../utils/levelingCalculations";
 
 import { LevelingHeader } from "../components/LevelingHeader";
@@ -48,6 +48,7 @@ const Capacity_Leveling: React.FC = () => {
 
   // Start with no lot selected so Release Board spans 100% full width; opens as side popup when a lot is clicked
   const [selectedLot, setSelectedLot] = useState<LotItem | null>(null);
+  const [selectedLotIds, setSelectedLotIds] = useState<Set<string>>(new Set());
   const [previewDate, setPreviewDate] = useState<string>("2026-11-13");
 
   const [draggedLot, setDraggedLot] = useState<LotItem | null>(null);
@@ -60,7 +61,7 @@ const Capacity_Leveling: React.FC = () => {
   const [capacityModalOpen, setCapacityModalOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<{
-    lot: LotItem;
+    lots: LotItem[];
     targetDate: string;
   } | null>(null);
 
@@ -79,21 +80,30 @@ const Capacity_Leveling: React.FC = () => {
     return recalculateGridLoads(baseGrid, lots, frozenUntilDate, true);
   }, [baseGrid, lots, frozenUntilDate]);
 
-  const activeMovingLot = draggedLot || pendingMove?.lot || null;
+  const activeMovingLots = useMemo(() => {
+    if (draggedLot) {
+      return selectedLotIds.has(draggedLot.id)
+        ? lots.filter((lot) => selectedLotIds.has(lot.id))
+        : [draggedLot];
+    }
+    return pendingMove?.lots || [];
+  }, [draggedLot, selectedLotIds, lots, pendingMove]);
   const activePreviewTargetDate =
     hoverTargetDate || pendingMove?.targetDate || null;
 
   const displayGrid = useMemo(() => {
-    if (activeMovingLot && activePreviewTargetDate) {
-      const preview = computeDragPreview(
+    if (activeMovingLots.length > 0 && activePreviewTargetDate) {
+      const preview = computeBatchMovePreview(
         gridWithCurrentLots,
-        activeMovingLot,
-        activePreviewTargetDate
+        lots,
+        activeMovingLots,
+        activePreviewTargetDate,
+        frozenUntilDate
       );
       return preview.previewGrid;
     }
     return gridWithCurrentLots;
-  }, [activeMovingLot, activePreviewTargetDate, gridWithCurrentLots]);
+  }, [activeMovingLots, activePreviewTargetDate, gridWithCurrentLots, lots, frozenUntilDate]);
 
   const kpis = useMemo(() => {
     return calculateKpis(gridWithCurrentLots, lots, 5, 3);
@@ -110,17 +120,34 @@ const Capacity_Leveling: React.FC = () => {
     setPreviewDate(lot.releaseDate);
   }, []);
 
-  // Open separate ConfirmMoveModal popup when user drops a card onto a new day or picks a new date
-  const handleStageMoveLot = useCallback(
-    (lotToStage: LotItem, targetDate: string) => {
+  const isValidMoveTarget = useCallback((targetDate: string) => {
+    const day = baseGrid.find((entry) => entry.date === targetDate);
+    return Boolean(day && !day.isSunday && dayjs(targetDate).isAfter(dayjs(frozenUntilDate)));
+  }, [baseGrid, frozenUntilDate]);
+
+  // Stage the whole group without changing dates until the confirmation succeeds.
+  const handleStageMoveLots = useCallback(
+    (lotsToStage: LotItem[], targetDate: string) => {
       setDraggedLot(null);
       setHoverTargetDate(null);
-      if (targetDate === lotToStage.releaseDate) return;
+      const ids = new Set(lotsToStage.map((lot) => lot.id));
+      const currentLots = lots.filter((lot) => ids.has(lot.id));
+      if (!isValidMoveTarget(targetDate) || currentLots.length !== ids.size || currentLots.some((lot) =>
+        !dayjs(lot.releaseDate).isAfter(dayjs(frozenUntilDate)))) {
+        toast.error("Choose a working day outside the frozen zone.");
+        return;
+      }
+      const changedLots = currentLots.filter((lot) => lot.releaseDate !== targetDate);
+      if (changedLots.length === 0) return;
       setSelectedLot(null);
-      setPendingMove({ lot: lotToStage, targetDate });
+      setPendingMove({ lots: changedLots, targetDate });
     },
-    []
+    [lots, frozenUntilDate, isValidMoveTarget]
   );
+
+  const handleStageMoveLot = useCallback((lot: LotItem, targetDate: string) => {
+    handleStageMoveLots([lot], targetDate);
+  }, [handleStageMoveLots]);
 
   const handleSelectGridCell = useCallback(
     (gateId: string | null, dateStr: string | null) => {
@@ -170,62 +197,47 @@ const Capacity_Leveling: React.FC = () => {
     };
   }, [selectedGridGate, selectedGridDate, focusedBoardDate]);
 
-  const handleMoveLot = useCallback(
-    (lotToMove: LotItem, targetDate: string) => {
-      const shiftDays = dayjs(targetDate).diff(
-        dayjs(lotToMove.releaseDate),
-        "day"
-      );
-      const newEntry = {
-        id: `mh-${Date.now()}`,
-        fromDate: lotToMove.releaseDate,
-        toDate: targetDate,
-        changedAt: dayjs().format("DD/MM/YYYY HH:mm"),
-        changedBy: `Planner · Draft v${planVersion}`,
-        note:
-          shiftDays < 0
-            ? `Pulled ${Math.abs(shiftDays)}d earlier`
-            : `Pushed +${shiftDays}d later`,
+  const handleMoveLots = useCallback(
+    (lotsToMove: LotItem[], targetDate: string) => {
+      const ids = new Set(lotsToMove.map((lot) => lot.id));
+      const stagedDates = new Map(lotsToMove.map((lot) => [lot.id, lot.releaseDate]));
+      const currentLots = lots.filter((lot) => ids.has(lot.id));
+      if (!isValidMoveTarget(targetDate) || currentLots.length !== ids.size || currentLots.some((lot) =>
+        lot.releaseDate !== stagedDates.get(lot.id) || !dayjs(lot.releaseDate).isAfter(dayjs(frozenUntilDate)))) {
+        toast.error("The selected lots or target date are no longer available.");
+        return;
+      }
+      const moveTimestamp = Date.now();
+      const changedAt = dayjs().format("DD/MM/YYYY HH:mm");
+      const moveLot = (lot: LotItem): LotItem => {
+        if (!ids.has(lot.id) || lot.releaseDate === targetDate) return lot;
+        const shiftDays = dayjs(targetDate).diff(dayjs(lot.releaseDate), "day");
+        const newEntry = {
+          id: `mh-${moveTimestamp}-${lot.id}`,
+          fromDate: lot.releaseDate,
+          toDate: targetDate,
+          changedAt,
+          changedBy: `Planner · Draft v${planVersion}`,
+          note: shiftDays < 0
+              ? `Pulled ${Math.abs(shiftDays)}d earlier`
+              : `Pushed +${shiftDays}d later`,
+        };
+        return { ...lot, releaseDate: targetDate,
+          wasDate: dayjs(lot.releaseDate).format("DD/MM"),
+          moveHistory: [newEntry, ...(lot.moveHistory || [])] };
       };
-
-      setLots((prevLots) =>
-        prevLots.map((l) => {
-          if (l.id === lotToMove.id) {
-            const was =
-              l.releaseDate !== targetDate
-                ? dayjs(l.releaseDate).format("DD/MM")
-                : l.wasDate;
-            return {
-              ...l,
-              releaseDate: targetDate,
-              wasDate: was,
-              moveHistory: [newEntry, ...(l.moveHistory || [])],
-            };
-          }
-          return l;
-        })
-      );
-      setSelectedLot((prev) =>
-        prev?.id === lotToMove.id
-          ? {
-              ...prev,
-              releaseDate: targetDate,
-              wasDate:
-                prev.releaseDate !== targetDate
-                  ? dayjs(prev.releaseDate).format("DD/MM")
-                  : prev.wasDate,
-              moveHistory: [newEntry, ...(prev.moveHistory || [])],
-            }
-          : prev
-      );
+      setLots((prevLots) => prevLots.map(moveLot));
+      setSelectedLot((prev) => prev ? moveLot(prev) : null);
+      setSelectedLotIds(new Set());
+      setPendingMove(null);
       setPreviewDate(targetDate);
       setIsDraftModified(true);
       toast.success(
-        `Lot ${lotToMove.id} moved to ${dayjs(targetDate).format("DD/MM/YYYY")}`,
-        { id: `move-${lotToMove.id}`, duration: 2500 }
+        `${currentLots.length} lot(s) moved to ${dayjs(targetDate).format("DD/MM/YYYY")}`,
+        { id: "move-lots", duration: 2500 }
       );
     },
-    [planVersion]
+    [planVersion, lots, frozenUntilDate, isValidMoveTarget]
   );
 
   const handleAutoLevel = useCallback(() => {
@@ -299,7 +311,13 @@ const Capacity_Leveling: React.FC = () => {
         planMode={planMode}
         onPlanModeChange={(mode) => {
           setPlanMode(mode);
-          if (mode === "required") setSelectedLot(null);
+          if (mode === "required") {
+            setSelectedLot(null);
+            setSelectedLotIds(new Set());
+            setPendingMove(null);
+            setDraggedLot(null);
+            setHoverTargetDate(null);
+          }
         }}
         kpis={kpis}
         isDragging={Boolean(draggedLot)}
@@ -321,6 +339,9 @@ const Capacity_Leveling: React.FC = () => {
           selectedLot={selectedLot}
           onSelectLot={handleSelectLot}
           onMoveLot={handleStageMoveLot}
+          selectedLotIds={selectedLotIds}
+          onSelectionChange={(ids) => setSelectedLotIds(new Set(ids))}
+          onMoveLots={handleStageMoveLots}
           draggedLot={draggedLot}
           onDragStart={(lot) => {
             setDraggedLot(lot);
@@ -331,7 +352,7 @@ const Capacity_Leveling: React.FC = () => {
             if (d) setPreviewDate(d);
           }}
           hoverTargetDate={hoverTargetDate}
-          activeMovingLot={activeMovingLot}
+          activeMovingLots={activeMovingLots}
           activePreviewTargetDate={activePreviewTargetDate}
           frozenUntilDate={frozenUntilDate}
           frozenDays={frozenDays}
@@ -363,13 +384,12 @@ const Capacity_Leveling: React.FC = () => {
       {/* Separate Confirm Move Popup Modal when dragging/moving to another date */}
       <ConfirmMoveModal
         isOpen={Boolean(pendingMove)}
-        lot={pendingMove?.lot || null}
+        lots={pendingMove?.lots || []}
+        allLots={lots}
+        frozenUntilDate={frozenUntilDate}
         targetDate={pendingMove?.targetDate || null}
         gridData={gridWithCurrentLots}
-        onConfirm={(lotToMove, targetDate) => {
-          handleMoveLot(lotToMove, targetDate);
-          setPendingMove(null);
-        }}
+        onConfirm={handleMoveLots}
         onCancel={() => setPendingMove(null)}
       />
 

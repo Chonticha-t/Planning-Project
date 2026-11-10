@@ -181,6 +181,41 @@ export const calculateKpis = (
   };
 };
 
+// Recalculate the entire proposed move so shared gates accumulate all selected lots.
+export const computeBatchMovePreview = (
+  currentGrid: DayGateLoad[],
+  allLots: LotItem[],
+  movingLots: LotItem[],
+  targetReleaseDate: string,
+  frozenUntilDate: string
+) => {
+  const movingIds = new Set(movingLots.map((lot) => lot.id));
+  const projectedLots = allLots.map((lot) => movingIds.has(lot.id)
+    ? { ...lot, releaseDate: targetReleaseDate }
+    : lot);
+  const projectedGrid = recalculateGridLoads(currentGrid, projectedLots, frozenUntilDate);
+  const projectedByDate = new Map(projectedGrid.map((day) => [day.date, day]));
+  const previewGrid = currentGrid.map((day) => ({
+    ...day,
+    gates: Object.fromEntries(Object.entries(day.gates).map(([gateId, gate]) => {
+      const nextPct = projectedByDate.get(day.date)?.gates[gateId]?.pct ?? gate.pct;
+      return [gateId, { ...gate, previewPct: nextPct !== gate.pct ? nextPct : undefined }];
+    })),
+  }));
+  const targetBefore = currentGrid.find((day) => day.date === targetReleaseDate);
+  const targetAfter = projectedByDate.get(targetReleaseDate);
+  const gateNames = new Map(movingLots.flatMap((lot) =>
+    lot.routeSteps.map((step) => [step.gateId, step.gateName] as const)));
+  const routeTableRows = Array.from(gateNames).flatMap(([gateId, gateName]) => {
+    const before = targetBefore?.gates[gateId];
+    const after = targetAfter?.gates[gateId];
+    if (!before || !after) return [];
+    return [{ gateId, gateName, displayDate: dayjs(targetReleaseDate).format("DD/MM"),
+      beforePct: before.pct, afterPct: after.pct }];
+  });
+  return { previewGrid, routeTableRows };
+};
+
 // Preview load changes while a lot is being dragged or previewed to a target release date
 export const computeDragPreview = (
   currentGrid: DayGateLoad[],

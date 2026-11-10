@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
+  Pencil,
 } from "lucide-react";
 import type { LotItem, DayGateLoad, ViewMode, Granularity } from "../types";
 import { LotCard } from "./LotCard";
@@ -26,12 +27,15 @@ interface ReleaseBoardProps {
   selectedLot: LotItem | null;
   onSelectLot: (lot: LotItem) => void;
   onMoveLot: (lot: LotItem, targetDate: string) => void;
+  selectedLotIds: ReadonlySet<string>;
+  onSelectionChange: (ids: string[]) => void;
+  onMoveLots: (lots: LotItem[], targetDate: string) => void;
   draggedLot: LotItem | null;
   onDragStart: (lot: LotItem) => void;
   onDragEnd: () => void;
   onHoverTargetDate: (targetDate: string | null) => void;
   hoverTargetDate: string | null;
-  activeMovingLot: LotItem | null;
+  activeMovingLots: LotItem[];
   activePreviewTargetDate: string | null;
   frozenUntilDate: string;
   frozenDays: number;
@@ -58,18 +62,23 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   selectedLot,
   onSelectLot,
   onMoveLot,
+  selectedLotIds,
+  onSelectionChange,
+  onMoveLots,
   draggedLot,
   onDragStart,
   onDragEnd,
   onHoverTargetDate,
   hoverTargetDate,
-  activeMovingLot,
+  activeMovingLots,
   activePreviewTargetDate,
   frozenUntilDate,
   frozenDays,
   focusedDate = null,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [batchTargetDate, setBatchTargetDate] = useState("");
   const [listDatePicker, setListDatePicker] = useState<{
     lot: LotItem;
     anchorEl: HTMLElement;
@@ -201,7 +210,16 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     });
   }, [gridData]);
 
-  const currentMovingLot = draggedLot || activeMovingLot;
+  const selectedLots = lots.filter((lot) => selectedLotIds.has(lot.id));
+  const movingIds = new Set(activeMovingLots.map((lot) => lot.id));
+  const planningDates = new Set(planningDays.map((day) => day.date));
+  const selectableLots = lots.filter((lot) => planningDates.has(lot.releaseDate));
+  const toggleLotSelection = (lot: LotItem) => {
+    const next = new Set(selectedLotIds);
+    if (next.has(lot.id)) next.delete(lot.id);
+    else if (planningDates.has(lot.releaseDate)) next.add(lot.id);
+    onSelectionChange([...next]);
+  };
   const currentTargetDate = hoverTargetDate || activePreviewTargetDate;
 
   const scrollBoard = (dir: "left" | "right") => {
@@ -241,7 +259,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   ) => {
     e.preventDefault();
     if (draggedLot) {
-      onMoveLot(draggedLot, dayDate);
+      onMoveLots(selectedLotIds.has(draggedLot.id) ? selectedLots : [draggedLot], dayDate);
     }
     onDragEnd();
     onHoverTargetDate(null);
@@ -258,6 +276,12 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           <span className="badge badge-sm bg-base-200 text-base-content/70 border-base-300 font-semibold tabular-nums">
             {lots.length} lots
           </span>
+          {isEditMode && <button type="button"
+            onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
+            disabled={selectableLots.length === 0}
+            className="btn btn-xs btn-ghost text-xs">
+            Select all lots
+          </button>}
         </div>
 
         {/* Right Switchers & Scroll Controls */}
@@ -282,6 +306,21 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               </button>
             </div>
           )}
+
+          <button type="button" aria-pressed={isEditMode}
+            onClick={() => {
+              if (isEditMode) {
+                onSelectionChange([]);
+                setBatchTargetDate("");
+              }
+              setIsEditMode((prev) => !prev);
+            }}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer ${
+              isEditMode ? "border-primary bg-primary text-primary-content" : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+            }`}>
+            <Pencil size={13} />
+            Edit
+          </button>
 
           {/* List / Board Toggle */}
           <div
@@ -351,6 +390,30 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         </div>
       </div>
 
+      {isEditMode && selectedLots.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
+          <span className="text-xs font-bold text-primary" role="status">
+            {selectedLots.length} lot(s) selected
+          </span>
+          <span className="text-xs text-base-content/60">Drag a selected lot or choose a date:</span>
+          <select aria-label="Move selected lots to date" value={batchTargetDate}
+            onChange={(e) => setBatchTargetDate(e.target.value)}
+            className="select select-sm h-8 w-auto rounded-lg border-base-300 bg-base-100 text-xs">
+            <option value="">Select target date</option>
+            {planningDays.map((day) => <option key={day.date} value={day.date}>
+              {dayjs(day.date).format("ddd DD/MM/YYYY")}
+            </option>)}
+          </select>
+          <button type="button" disabled={!planningDates.has(batchTargetDate)}
+            onClick={() => onMoveLots(selectedLots, batchTargetDate)}
+            className="btn btn-sm btn-primary h-8 rounded-lg text-xs">
+            Move {selectedLots.length} lot(s)
+          </button>
+          <button type="button" onClick={() => onSelectionChange([])}
+            className="btn btn-sm btn-ghost h-8 rounded-lg text-xs">Clear selection</button>
+        </div>
+      )}
+
       {/* =========================================================
           VIEW 1: BOARD VIEW — DAYS (Horizontally Scrollable across ALL planning days)
          ========================================================= */}
@@ -387,12 +450,11 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             );
 
             const isTargetCol =
-              currentMovingLot &&
+              activeMovingLots.some((lot) => lot.releaseDate !== col.date) &&
               currentTargetDate === col.date &&
-              currentMovingLot.releaseDate !== col.date;
-            const isAfterMustStart =
-              currentMovingLot &&
-              dayjs(col.date).isAfter(dayjs(currentMovingLot.mustStartDate));
+              activeMovingLots.length > 0;
+            const isAfterMustStart = activeMovingLots.some((lot) =>
+              dayjs(col.date).isAfter(dayjs(lot.mustStartDate)));
 
             const isFocusedCol = focusedDate === col.date;
 
@@ -461,7 +523,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-0.5 min-h-0">
                   {visibleLots.map((lot) => {
                     const isThisMovingPreview =
-                      currentMovingLot?.id === lot.id &&
+                      movingIds.has(lot.id) &&
                       Boolean(currentTargetDate) &&
                       currentTargetDate !== lot.releaseDate;
 
@@ -469,8 +531,11 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       <LotCard
                         key={lot.id}
                         lot={lot}
+                        showSelection={isEditMode}
+                        isBatchSelected={selectedLotIds.has(lot.id)}
+                        onToggleSelection={toggleLotSelection}
                         isSelected={selectedLot?.id === lot.id}
-                        isBeingDragged={draggedLot?.id === lot.id}
+                        isBeingDragged={Boolean(draggedLot) && movingIds.has(lot.id)}
                         isMovingPreview={isThisMovingPreview}
                         previewTargetDate={
                           isThisMovingPreview ? currentTargetDate : null
@@ -511,24 +576,22 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   )}
 
                   {/* Dashed Drop Zone Placeholder */}
-                  {isTargetCol && currentMovingLot && (
-                    <div
-                      onClick={() => onMoveLot(currentMovingLot, col.date)}
+                  {isTargetCol && (
+                    <button type="button"
+                      onClick={() => onMoveLots(activeMovingLots, col.date)}
                       className="mt-0.5 rounded-xl border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff] px-2 py-3 text-center text-xs font-semibold text-[#4f46e5] leading-snug cursor-pointer hover:bg-indigo-100/80 transition-colors shrink-0"
                     >
-                      <div>Drop here</div>
+                      <div>Move {activeMovingLots.length} lot(s) here</div>
                       <div className="tabular-nums mt-0.5">
-                        FFPC{" "}
-                        {dayjs(currentMovingLot.releaseDate).format("DD/MM")}
+                        {dayjs(col.date).format("DD/MM/YYYY")}
                       </div>
-                      <div className="tabular-nums">→ 68%</div>
-                    </div>
+                    </button>
                   )}
 
                   {/* After Must Start Warning Text */}
                   {isAfterMustStart && (
                     <div className="mt-2 px-1 text-center text-[11px] font-semibold text-rose-700 leading-snug shrink-0">
-                      after Must start of the dragged lot
+                      After Must Start of one or more selected lots
                     </div>
                   )}
                 </div>
@@ -633,10 +696,13 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       <LotCard
                         key={lot.id}
                         lot={lot}
+                        showSelection={isEditMode}
+                        isBatchSelected={selectedLotIds.has(lot.id)}
+                        onToggleSelection={toggleLotSelection}
                         isSelected={selectedLot?.id === lot.id}
-                        isBeingDragged={draggedLot?.id === lot.id}
-                        isMovingPreview={false}
-                        previewTargetDate={null}
+                        isBeingDragged={Boolean(draggedLot) && movingIds.has(lot.id)}
+                        isMovingPreview={movingIds.has(lot.id) && Boolean(currentTargetDate) && currentTargetDate !== lot.releaseDate}
+                        previewTargetDate={movingIds.has(lot.id) ? currentTargetDate : null}
                         frozenUntilDate={frozenUntilDate}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
@@ -774,9 +840,16 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   >
                     {/* PRODUCT NAME */}
                     <td>
+                      <div className="flex items-center gap-2">
+                        {isEditMode && <input type="checkbox" className="checkbox checkbox-xs checkbox-primary"
+                          aria-label={`Select lot ${lot.id}`} checked={selectedLotIds.has(lot.id)}
+                          disabled={!planningDates.has(lot.releaseDate)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleLotSelection(lot)} />}
                       <span className="font-semibold text-[14px] text-base-content">
                         {lot.product}
                       </span>
+                      </div>
                     </td>
 
                     {/* LOT / PO */}
