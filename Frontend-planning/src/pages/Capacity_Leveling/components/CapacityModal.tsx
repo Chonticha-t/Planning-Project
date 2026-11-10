@@ -9,6 +9,8 @@ import {
   Table2,
   Folder,
   Users,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 interface CapacityModalProps {
@@ -35,7 +37,23 @@ interface GateCapConfig {
   specialDays: Record<number, "ot" | "off" | "work">;
 }
 
-const INITIAL_GATE_CONFIGS: Record<string, GateCapConfig> = {
+type Shift = "day" | "night";
+type ShiftConfig = Omit<GateCapConfig, "gate" | "group" | "shiftsPerDay" | "specialDays"> & {
+  enabled: boolean;
+  specialDays: Record<string, "ot" | "off" | "work">;
+};
+interface GateShiftConfig {
+  gate: string;
+  group: "FPC" | "SMT";
+  shifts: Record<Shift, ShiftConfig>;
+}
+
+const SHIFTS = [
+  { id: "day", label: "Day Shift", Icon: Sun },
+  { id: "night", label: "Night Shift", Icon: Moon },
+] as const;
+
+const INITIAL_GATE_DEFAULTS: Record<string, GateCapConfig> = {
   FFPC: {
     gate: "FFPC",
     group: "FPC",
@@ -208,17 +226,38 @@ const INITIAL_GATE_CONFIGS: Record<string, GateCapConfig> = {
   },
 };
 
-const calcGateCapacityMin = (cfg: GateCapConfig, forceOt?: boolean) => {
+const createInitialConfigs = (): Record<string, GateShiftConfig> =>
+  Object.fromEntries(Object.values(INITIAL_GATE_DEFAULTS).map((defaults) => {
+    const { gate, group, shiftsPerDay, specialDays, ...settings } = defaults;
+    const createShift = (enabled: boolean): ShiftConfig => ({
+      ...settings,
+      enabled,
+      // Legacy OT is a daily allowance; divide it across the active shifts.
+      otMinutes: settings.otMinutes / shiftsPerDay,
+      specialDays: Object.fromEntries(Object.entries(specialDays).map(([day, action]) => [
+        `2026-11-${day.padStart(2, "0")}`, action,
+      ])),
+    });
+    return [gate, { gate, group, shifts: {
+      day: createShift(true),
+      night: createShift(shiftsPerDay > 1),
+    } }];
+  }));
+
+const calcShiftCapacityMin = (cfg: ShiftConfig, forceOt?: boolean) => {
+  if (!cfg.enabled) return 0;
   const breaks =
     (cfg.break1 ? cfg.break1Min : 0) +
     (cfg.break2 ? cfg.break2Min : 0) +
     (cfg.lunch ? cfg.lunchMin : 0);
   const netShiftMin = Math.max(0, cfg.minPerShift - breaks);
   const useOt = forceOt !== undefined ? forceOt : cfg.otEnabled;
-  const lineMinPerDay =
-    netShiftMin * cfg.shiftsPerDay + (useOt ? cfg.otMinutes : 0);
-  return Math.round(lineMinPerDay * cfg.mcLines * 0.85);
+  return (netShiftMin + (useOt ? cfg.otMinutes : 0)) * cfg.mcLines * 0.85;
 };
+
+const calcGateCapacityMin = (cfg: GateShiftConfig, forceOt?: boolean) =>
+  Math.round(calcShiftCapacityMin(cfg.shifts.day, forceOt) +
+    calcShiftCapacityMin(cfg.shifts.night, forceOt));
 
 export const CapacityModal: React.FC<CapacityModalProps> = ({
   isOpen,
@@ -227,9 +266,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 }) => {
   const [selectedGate, setSelectedGate] = useState("FADL");
   const [activeTab, setActiveTab] = useState<"input" | "table">("input");
+  const [selectedShift, setSelectedShift] = useState<Shift>("day");
   const [monthOffset, setMonthOffset] = useState(0); // 0 = Nov 2026
   const [configs, setConfigs] =
-    useState<Record<string, GateCapConfig>>(INITIAL_GATE_CONFIGS);
+    useState(createInitialConfigs);
   const [selectedDays, setSelectedDays] = useState<number[]>([19, 23]);
   const [specialAction, setSpecialAction] = useState<"ot" | "off" | "work">(
     "ot"
@@ -243,29 +283,62 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   const firstDayDow = currentMonth.day(); // 0 = Sun, 1 = Mon ...
   const leadingEmptySlots = firstDayDow === 0 ? 6 : firstDayDow - 1;
 
-  const cfg = configs[selectedGate] || configs.FADL;
+  const gateCfg = configs[selectedGate] || configs.FADL;
+  const cfg = gateCfg.shifts[selectedShift];
+  const shiftLabel = selectedShift === "day" ? "Day Shift" : "Night Shift";
+  // Keep shift colors scoped below the modal header.
+  const shiftTheme = {
+    ...(selectedShift === "day" ? {
+      "--color-primary": "#facc15",
+      "--color-primary-content": "#422006",
+    } : {}),
+    "--shift-label-color": selectedShift === "day"
+      ? "color-mix(in oklab, var(--color-primary) 35%, var(--color-base-content))"
+      : "var(--color-primary)",
+    "--shift-accent-text": selectedShift === "day"
+      ? "var(--shift-label-color)" : "#4f46e5",
+    "--shift-accent-soft": selectedShift === "day"
+      ? "color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100))" : "#eef2ff",
+    "--shift-accent-border": selectedShift === "day"
+      ? "color-mix(in oklab, var(--color-primary) 45%, var(--color-base-300))" : "#c7d2fe",
+  } as React.CSSProperties;
 
-  const updateCurrentGate = (patch: Partial<GateCapConfig>) => {
+  const updateCurrentShift = (patch: Partial<ShiftConfig>) => {
+    const validatedPatch = { ...patch };
+    for (const key of ["mcLines", "minPerShift", "otMinutes", "break1Min", "break2Min", "lunchMin"] as const) {
+      const value = validatedPatch[key];
+      if (value !== undefined) {
+        if (!Number.isFinite(value)) return;
+        validatedPatch[key] = Math.max(0, key === "mcLines" ? Math.floor(value) : value);
+      }
+    }
     setConfigs((prev) => ({
       ...prev,
       [selectedGate]: {
         ...prev[selectedGate],
-        ...patch,
+        shifts: {
+          ...prev[selectedGate].shifts,
+          [selectedShift]: { ...prev[selectedGate].shifts[selectedShift], ...validatedPatch },
+        },
       },
     }));
     setIsDirty(true);
   };
 
-  const normalCapMin = calcGateCapacityMin(cfg, false);
-  const otCapMin = calcGateCapacityMin(cfg, true);
-  const activeCapMin = calcGateCapacityMin(cfg);
+  const normalCapMin = Math.round(calcShiftCapacityMin(cfg, false));
+  const otCapMin = Math.round(calcShiftCapacityMin(cfg, true));
+  const activeCapMin = calcGateCapacityMin(gateCfg);
+  const shiftCapMin = Math.round(calcShiftCapacityMin(cfg));
 
   const handleApplySpecialDays = () => {
+    if (!cfg.enabled) return;
     const nextSpecial = { ...cfg.specialDays };
     for (const d of selectedDays) {
-      nextSpecial[d] = specialAction;
+      if (d >= 1 && d <= daysInMonth) {
+        nextSpecial[currentMonth.date(d).format("YYYY-MM-DD")] = specialAction;
+      }
     }
-    updateCurrentGate({ specialDays: nextSpecial });
+    updateCurrentShift({ specialDays: nextSpecial });
   };
 
   return (
@@ -322,7 +395,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
             <div className="inline-flex items-center gap-2 bg-base-200/50 border border-base-300 px-2.5 py-1 rounded-xl tabular-nums">
               <button
                 type="button"
-                onClick={() => setMonthOffset((m) => m - 1)}
+                onClick={() => { setMonthOffset((m) => m - 1); setSelectedDays([]); }}
                 className="btn btn-xs btn-ghost btn-square h-6 w-6 rounded-md text-base-content/60 hover:text-base-content cursor-pointer"
                 title="Previous month"
               >
@@ -339,7 +412,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setMonthOffset((m) => m + 1)}
+                onClick={() => { setMonthOffset((m) => m + 1); setSelectedDays([]); }}
                 className="btn btn-xs btn-ghost btn-square h-6 w-6 rounded-md text-base-content/60 hover:text-base-content cursor-pointer"
                 title="Next month"
               >
@@ -357,6 +430,29 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
           </div>
         </div>
 
+        <div className="flex min-h-0 flex-1 flex-col" style={shiftTheme} data-capacity-shift={selectedShift}>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-2.5 border-b border-base-300 bg-base-100">
+          <div role="group" aria-label="Shift selection" className="inline-flex items-center gap-1 rounded-xl border border-base-300 bg-base-200/60 p-1">
+            {SHIFTS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={selectedShift === id}
+                onClick={() => setSelectedShift(id)}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors cursor-pointer ${selectedShift === id
+                  ? "bg-primary text-primary-content shadow-xs"
+                  : "text-base-content/65 hover:bg-base-100 hover:text-base-content"}`}
+              >
+                <Icon size={15} />
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11px] text-base-content/55">
+            Settings and date overrides apply to the selected shift
+          </span>
+        </div>
+
         {/* =========================================================
             TAB 1: GATE SETTINGS (Clean & Organized)
            ========================================================= */}
@@ -366,7 +462,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
             <div className="w-[185px] bg-base-100 border-r border-base-300 p-3 flex flex-col justify-between shrink-0 overflow-y-auto">
               <div className="space-y-3">
                 <div>
-                  <div className="text-[10px] font-bold text-primary uppercase tracking-wider px-2 mb-1">
+                  <div className="text-[10px] font-bold text-[color:var(--shift-label-color)] uppercase tracking-wider px-2 mb-1">
                     FPC GATES
                   </div>
                   <div className="space-y-0.5">
@@ -401,7 +497,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                 </div>
 
                 <div>
-                  <div className="text-[10px] font-bold text-primary uppercase tracking-wider px-2 mb-1">
+                  <div className="text-[10px] font-bold text-[color:var(--shift-label-color)] uppercase tracking-wider px-2 mb-1">
                     SMT GATES
                   </div>
                   <div className="space-y-0.5">
@@ -445,21 +541,24 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                   <div>
                     <div className="text-sm font-bold text-base-content">
                       Standard Daily Capacity ·{" "}
-                      <span className="text-primary">{selectedGate}</span>
+                      <span className="text-[color:var(--shift-label-color)]">{selectedGate}</span>
                     </div>
                     <div className="text-xs text-base-content/55">
-                      Default shift, break, and OT configuration for working days
+                      {shiftLabel} · Default break and OT configuration
                     </div>
                   </div>
 
                   {/* Clean Capacity Badge (Minutes / Day) */}
-                  <div className="flex items-center gap-2 bg-[#eef2ff] border border-indigo-200 px-3.5 py-2 rounded-xl">
+                  <div className="flex items-center gap-2 bg-[var(--shift-accent-soft)] border border-[var(--shift-accent-border)] px-3.5 py-2 rounded-xl">
                     <div className="text-right">
-                      <div className="text-[10px] font-bold uppercase text-[#4f46e5]/80">
+                      <div className="text-[10px] font-bold uppercase text-[color:var(--shift-accent-text)] opacity-80">
                         Total Gate Capacity / Day
                       </div>
-                      <div className="text-base font-extrabold text-[#4f46e5]">
+                      <div className="text-base font-extrabold text-[color:var(--shift-accent-text)]">
                         {activeCapMin.toLocaleString()} min
+                      </div>
+                      <div className="text-[10px] text-[color:var(--shift-accent-text)] opacity-80">
+                        {shiftLabel}: {shiftCapMin.toLocaleString()} min
                       </div>
                     </div>
                   </div>
@@ -472,9 +571,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
+                        aria-label="Enable overtime"
                         checked={cfg.otEnabled}
                         onChange={(e) =>
-                          updateCurrentGate({ otEnabled: e.target.checked })
+                          updateCurrentShift({ otEnabled: e.target.checked })
                         }
                         className="toggle toggle-xs toggle-primary"
                       />
@@ -492,9 +592,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-1.5 bg-base-100 border border-base-300 rounded-lg px-2.5 py-1">
                       <input
                         type="number"
+                        min={0}
+                        aria-label="OT minutes"
                         value={cfg.otMinutes}
                         onChange={(e) =>
-                          updateCurrentGate({
+                          updateCurrentShift({
                             otMinutes: Number(e.target.value),
                           })
                         }
@@ -511,9 +613,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
+                        aria-label="Enable break 1"
                         checked={cfg.break1}
                         onChange={(e) =>
-                          updateCurrentGate({ break1: e.target.checked })
+                          updateCurrentShift({ break1: e.target.checked })
                         }
                         className="toggle toggle-xs toggle-primary"
                       />
@@ -529,9 +632,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-1.5 bg-base-100 border border-base-300 rounded-lg px-2.5 py-1">
                       <input
                         type="number"
+                        min={0}
+                        aria-label="Break 1 minutes"
                         value={cfg.break1Min}
                         onChange={(e) =>
-                          updateCurrentGate({
+                          updateCurrentShift({
                             break1Min: Number(e.target.value),
                           })
                         }
@@ -548,9 +653,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
+                        aria-label="Enable break 2"
                         checked={cfg.break2}
                         onChange={(e) =>
-                          updateCurrentGate({ break2: e.target.checked })
+                          updateCurrentShift({ break2: e.target.checked })
                         }
                         className="toggle toggle-xs toggle-primary"
                       />
@@ -566,9 +672,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-1.5 bg-base-100 border border-base-300 rounded-lg px-2.5 py-1">
                       <input
                         type="number"
+                        min={0}
+                        aria-label="Break 2 minutes"
                         value={cfg.break2Min}
                         onChange={(e) =>
-                          updateCurrentGate({
+                          updateCurrentShift({
                             break2Min: Number(e.target.value),
                           })
                         }
@@ -585,9 +693,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
+                        aria-label="Enable lunch break"
                         checked={cfg.lunch}
                         onChange={(e) =>
-                          updateCurrentGate({ lunch: e.target.checked })
+                          updateCurrentShift({ lunch: e.target.checked })
                         }
                         className="toggle toggle-xs toggle-primary"
                       />
@@ -603,9 +712,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-1.5 bg-base-100 border border-base-300 rounded-lg px-2.5 py-1">
                       <input
                         type="number"
+                        min={0}
+                        aria-label="Lunch break minutes"
                         value={cfg.lunchMin}
                         onChange={(e) =>
-                          updateCurrentGate({
+                          updateCurrentShift({
                             lunchMin: Number(e.target.value),
                           })
                         }
@@ -622,14 +733,16 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
                   <div className="bg-base-200/30 border border-base-300 rounded-xl p-2.5 flex items-center justify-between">
                     <span className="text-xs font-semibold text-base-content/70 flex items-center gap-1.5">
-                      <Folder size={13} className="text-primary" />
+                      <Folder size={13} className="text-[color:var(--shift-label-color)]" />
                       MC (Lines)
                     </span>
                     <input
                       type="number"
-                      value={cfg.mcLines}
+                        min={0}
+                      aria-label="MC lines"
+                        value={cfg.mcLines}
                       onChange={(e) =>
-                        updateCurrentGate({ mcLines: Number(e.target.value) })
+                        updateCurrentShift({ mcLines: Number(e.target.value) })
                       }
                       className="w-14 bg-base-100 border border-base-300 rounded-lg px-2 py-1 text-right text-xs font-bold focus:outline-none"
                     />
@@ -637,14 +750,15 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
                   <div className="bg-base-200/30 border border-base-300 rounded-xl p-2.5 flex items-center justify-between">
                     <span className="text-xs font-semibold text-base-content/70 flex items-center gap-1.5">
-                      <Users size={13} className="text-primary" />
+                      <Users size={13} className="text-[color:var(--shift-label-color)]" />
                       Manpower
                     </span>
                     <input
                       type="text"
-                      value={cfg.manpower}
+                      aria-label="Manpower"
+                        value={cfg.manpower}
                       onChange={(e) =>
-                        updateCurrentGate({ manpower: e.target.value })
+                        updateCurrentShift({ manpower: e.target.value })
                       }
                       placeholder="-"
                       className="w-14 bg-base-100 border border-base-300 rounded-lg px-2 py-1 text-right text-xs font-bold focus:outline-none"
@@ -658,9 +772,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <div className="flex items-center gap-1 bg-base-100 border border-base-300 rounded-lg px-2 py-1">
                       <input
                         type="number"
+                        min={0}
+                        aria-label="Minutes per shift"
                         value={cfg.minPerShift}
                         onChange={(e) =>
-                          updateCurrentGate({
+                          updateCurrentShift({
                             minPerShift: Number(e.target.value),
                           })
                         }
@@ -674,21 +790,22 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
                   <div className="bg-base-200/30 border border-base-300 rounded-xl p-2.5 flex items-center justify-between">
                     <span className="text-xs font-semibold text-base-content/70">
-                      Shifts / Day
+                      Shift Active
                     </span>
                     <div className="flex items-center gap-1 bg-base-100 border border-base-300 rounded-lg px-2 py-1">
                       <input
-                        type="number"
-                        value={cfg.shiftsPerDay}
+                        type="checkbox"
+                        aria-label="Enable selected shift"
+                        checked={cfg.enabled}
                         onChange={(e) =>
-                          updateCurrentGate({
-                            shiftsPerDay: Number(e.target.value),
+                          updateCurrentShift({
+                            enabled: e.target.checked,
                           })
                         }
-                        className="w-10 text-right text-xs font-bold focus:outline-none"
+                        className="toggle toggle-xs toggle-primary"
                       />
                       <span className="text-[10.5px] text-base-content/50">
-                        shift
+                        {cfg.enabled ? "On" : "Off"}
                       </span>
                     </div>
                   </div>
@@ -704,7 +821,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                       {currentMonth.format("MMMM YYYY")}
                     </span>
                     <span className="text-xs text-base-content/50 ml-2">
-                      Select specific dates to open OT or mark as Holiday/Off
+                      {shiftLabel} · Select dates to open OT or mark as Off
                     </span>
                   </div>
                 </div>
@@ -730,12 +847,14 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                           const dateObj = currentMonth.date(d);
                           const isSun = dateObj.day() === 0;
                           const isSelected = selectedDays.includes(d);
-                          const dayOverride = cfg.specialDays[d];
+                          const dayOverride = cfg.specialDays[dateObj.format("YYYY-MM-DD")];
 
                           return (
                             <button
                               key={d}
                               type="button"
+                              aria-label={dateObj.format("YYYY-MM-DD")}
+                              aria-pressed={isSelected}
                               onClick={() => {
                                 setSelectedDays((prev) =>
                                   prev.includes(d)
@@ -792,7 +911,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-bold uppercase text-base-content/50">
-                        Action for selected dates
+                        Action for selected dates · {shiftLabel}
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         {(
@@ -816,7 +935,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                             onClick={() => setSpecialAction(item.id)}
                             className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
                               specialAction === item.id
-                                ? "border-primary bg-[#eef2ff] text-[#4f46e5]"
+                                ? "border-primary bg-[var(--shift-accent-soft)] text-[color:var(--shift-accent-text)]"
                                 : "border-base-300 bg-base-100 text-base-content/75 hover:bg-base-200/50"
                             }`}
                           >
@@ -831,11 +950,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
                     <button
                       type="button"
-                      disabled={selectedDays.length === 0}
+                      disabled={selectedDays.length === 0 || !cfg.enabled}
                       onClick={handleApplySpecialDays}
                       className="btn btn-sm h-8 btn-primary text-xs font-semibold rounded-lg w-full cursor-pointer"
                     >
-                      Apply to {selectedDays.length} selected day(s)
+                      {cfg.enabled ? `Apply to ${selectedDays.length} selected day(s)` : "Enable this shift to apply overrides"}
                     </button>
                   </div>
                 </div>
@@ -847,7 +966,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
              TAB 2: ALL GATES SUMMARY TABLE (Capacity Table)
              ========================================================= */
           <div className="flex-1 p-5 overflow-y-auto bg-base-200/30 tabular-nums">
-            <div className="bg-base-100 border border-base-300 rounded-xl overflow-hidden shadow-2xs">
+            <div className="bg-base-100 border border-base-300 rounded-xl overflow-x-auto shadow-2xs">
               <table className="table table-sm w-full text-center border-collapse [&_th]:bg-base-200/70 [&_th]:text-xs [&_th]:font-bold [&_th]:py-3 [&_td]:py-2.5 [&_td]:text-xs [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
                 <thead>
                   <tr className="border-b border-base-300">
@@ -855,42 +974,49 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     <th>GATE</th>
                     <th>MC (LINES)</th>
                     <th>MANPOWER</th>
-                    <th>SHIFTS / DAY</th>
+                    <th>SHIFT</th>
                     <th>MIN / SHIFT</th>
                     <th>BREAKS + LUNCH</th>
                     <th>DEFAULT OT</th>
-                    <th>NORMAL CAP / DAY</th>
-                    <th>WITH OT CAP / DAY</th>
+                    <th>NORMAL CAP / SHIFT</th>
+                    <th>WITH OT CAP / SHIFT</th>
+                    <th>TOTAL CAP / DAY</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.values(configs).map((gCfg) => {
+                  {Object.values(configs).map((gate) => {
+                    const gCfg = gate.shifts[selectedShift];
                     const breaks =
                       (gCfg.break1 ? gCfg.break1Min : 0) +
                       (gCfg.break2 ? gCfg.break2Min : 0) +
                       (gCfg.lunch ? gCfg.lunchMin : 0);
-                    const norm = calcGateCapacityMin(gCfg, false);
-                    const withOt = calcGateCapacityMin(gCfg, true);
+                    const norm = Math.round(calcShiftCapacityMin(gCfg, false));
+                    const withOt = Math.round(calcShiftCapacityMin(gCfg, true));
                     return (
                       <tr
-                        key={gCfg.gate}
+                        key={gate.gate}
                         onClick={() => {
-                          setSelectedGate(gCfg.gate);
+                          setSelectedGate(gate.gate);
                           setActiveTab("input");
                         }}
                         className="border-b border-base-200 hover:bg-base-200/40 cursor-pointer"
                       >
                         <td>
                           <span className="px-2 py-0.5 rounded bg-base-200 text-[11px] font-bold">
-                            {gCfg.group}
+                            {gate.group}
                           </span>
                         </td>
-                        <td className="font-bold text-primary">{gCfg.gate}</td>
+                        <td className="font-bold text-[color:var(--shift-label-color)]">{gate.gate}</td>
                         <td className="font-semibold">{gCfg.mcLines}</td>
                         <td className="font-semibold text-base-content/75">
                           {gCfg.manpower || "-"}
                         </td>
-                        <td>{gCfg.shiftsPerDay}</td>
+                        <td className="whitespace-nowrap">
+                          {shiftLabel}
+                          <div className={`text-[10px] ${gCfg.enabled ? "text-success" : "text-base-content/50"}`}>
+                            {gCfg.enabled ? "Active" : "Off"}
+                          </div>
+                        </td>
                         <td>{gCfg.minPerShift} min</td>
                         <td className="text-base-content/65">-{breaks} min</td>
                         <td>
@@ -911,6 +1037,9 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                         </td>
                         <td className="font-bold text-amber-700">
                           {withOt.toLocaleString()} min
+                        </td>
+                        <td className="font-bold text-[color:var(--shift-label-color)]">
+                          {calcGateCapacityMin(gate).toLocaleString()} min
                         </td>
                       </tr>
                     );
@@ -945,6 +1074,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
               Save
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

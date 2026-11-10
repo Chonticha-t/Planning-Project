@@ -1,8 +1,28 @@
 import React, { useMemo, useState } from "react";
-import { ArrowUp, ArrowDown, ArrowUpToLine, GripVertical, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpToLine, GripVertical, AlertTriangle, CheckCircle2, Sun, Moon } from "lucide-react";
 import type { InGateLot, OrderBy } from "../types";
 import { moveItem, splitByCapacity } from "../utils";
 
+const MOCK_DAY_SHIFT_ROWS = 10;
+
+const MOCK_SHIFT_THEMES = {
+  day: {
+    label: "Day Shift",
+    Icon: Sun,
+    background: "color-mix(in oklab, #facc15 10%, var(--color-base-100))",
+    accent: "#facc15",
+    foreground: "color-mix(in oklab, #facc15 35%, var(--color-base-content))",
+    badge: "bg-yellow-100 text-yellow-950 border-yellow-300",
+  },
+  night: {
+    label: "Night Shift",
+    Icon: Moon,
+    background: "color-mix(in oklab, #4f46e5 7%, var(--color-base-100))",
+    accent: "#4f46e5",
+    foreground: "color-mix(in oklab, #4f46e5 35%, var(--color-base-content))",
+    badge: "bg-indigo-100 text-indigo-950 border-indigo-200",
+  },
+} as const;
 
 interface WorkListTableProps {
   planOrder: InGateLot[]; // committed (draft) order
@@ -71,17 +91,25 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
     const idx = pos - 1;
     const isOver = overIds.has(lot.id);
     const highlight = !isOver && (lot.status === "top" || lot.status === "carried");
+    // Mock shifts follow planning priority, including drag previews and reordered lots.
+    const shift = pos <= MOCK_DAY_SHIFT_ROWS ? "day" : "night";
+    const theme = MOCK_SHIFT_THEMES[shift];
+    const ShiftIcon = theme.Icon;
 
     if (canReorder && lot.id === dragId) {
       return (
         <tr
           key={lot.id}
+          data-mock-shift={shift}
           onDragOver={(e) => e.preventDefault()}
           onDragEnd={resetDrag}
           className="h-14"
         >
           <td colSpan={10} className="p-0">
-            <div className="mx-0 flex h-14 items-center justify-center border-2 border-dashed border-indigo-300 bg-[#eef2ff]/60 font-bold text-[#4f46e5]">
+            <div
+              className="mx-0 flex h-14 items-center justify-center border-2 border-dashed font-bold"
+              style={{ backgroundColor: theme.background, borderColor: theme.accent, color: theme.foreground }}
+            >
               Drop {lot.id} here → becomes #{pos}
             </div>
           </td>
@@ -95,6 +123,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
     return (
       <tr
         key={lot.id}
+        data-mock-shift={shift}
         draggable={canReorder}
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = "move";
@@ -111,21 +140,18 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           e.preventDefault();
           if (overIndex !== idx) setOverIndex(idx);
         }}
-        className={`h-14 border-b border-base-200 transition-colors ${
-          isOver
-            ? "bg-rose-50/70"
-            : highlight
-              ? "bg-[#eef2ff]/50 shadow-[inset_4px_0_0_#4f46e5]"
-              : "hover:bg-base-200/40"
-        }`}
+        className={`h-14 border-b border-base-200 transition-colors hover:brightness-95 ${isOver ? "bg-rose-50/70" : ""}`}
+        style={{
+          backgroundColor: isOver ? undefined : theme.background,
+          boxShadow: `inset ${highlight ? 4 : 2}px 0 0 ${theme.accent}`,
+        }}
       >
         <td className="w-10 pl-4 text-base-content/30">
           {canReorder && <GripVertical size={16} className="cursor-grab" />}
         </td>
         <td
-          className={`w-14 text-center font-bold tabular-nums ${
-            highlight ? "text-[#4f46e5]" : "text-base-content/50"
-          }`}
+          className="w-14 text-center font-bold tabular-nums"
+          style={{ color: theme.foreground }}
         >
           {pos}
         </td>
@@ -141,7 +167,12 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
         <td className={`text-center tabular-nums ${lot.outputSheet ? "font-semibold text-emerald-700" : "text-base-content/30"}`}>
           {lot.outputSheet ? lot.outputSheet.toLocaleString() : "–"}
         </td>
-        <td />
+        <td className="px-3">
+          <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-semibold ${theme.badge}`}>
+            <ShiftIcon size={12} aria-hidden="true" />
+            {theme.label}
+          </span>
+        </td>
         <td className="pr-4">
           <div className="flex items-center gap-1">
             <button
@@ -217,8 +248,18 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
 
   return (
     <div className="overflow-x-auto">
+      <div className="flex flex-wrap items-center gap-3 border-t border-base-200 px-6 py-3 text-xs">
+        <span className="inline-flex items-center gap-1.5 text-base-content/75">
+          <Sun size={14} className="text-yellow-600" aria-hidden="true" />
+          Day Shift · PRI 1–{MOCK_DAY_SHIFT_ROWS}
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-base-content/75">
+          <Moon size={14} className="text-indigo-500" aria-hidden="true" />
+          Night Shift · PRI {MOCK_DAY_SHIFT_ROWS + 1}+
+        </span>
+      </div>
       <table className="w-full min-w-[860px] table-fixed text-sm text-base-content">
-        {/* Fixed column widths; the blank column absorbs leftover width so data stays close together */}
+        {/* Fixed column widths keep quantities, shifts, and reorder controls aligned. */}
         <colgroup>
           <col className="w-10" />
           <col className="w-14" />
@@ -228,7 +269,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           <col className="w-24" />
           <col className="w-36" />
           <col className="w-40" />
-          <col />
+          <col className="w-36" />
           <col className="w-32" />
         </colgroup>
         <thead>
@@ -241,7 +282,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
             <th className="text-right">Pcs</th>
             <th className="text-center">Output (pcs)</th>
             <th className="text-center">Output (sheet)</th>
-            <th />
+            <th className="px-3">Shift</th>
             <th className="pr-4">Order</th>
           </tr>
         </thead>
