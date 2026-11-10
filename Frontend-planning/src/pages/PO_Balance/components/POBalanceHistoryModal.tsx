@@ -227,7 +227,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                     <thead>
                       <tr className="bg-base-200/70 text-base-content/70 text-[12px] border-b border-base-300/80">
                         <th className="py-2.5 px-3 text-center">Source Rev</th>
-                        <th className="py-2.5 px-3 text-center">Calculated At</th>
+                        <th className="py-2.5 px-3 text-center">Updated At</th>
                         <th className="py-2.5 px-3 text-center">PO Bal</th>
                         <th className="py-2.5 px-3 text-center">Change</th>
                         <th className="py-2.5 px-3 text-center">Unmovement</th>
@@ -265,9 +265,9 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                               </span>
                             </td>
 
-                            {/* Calculated At */}
+                            {/* Updated At */}
                             <td className="py-2.5 px-3 font-mono text-[12px] text-base-content/80 whitespace-nowrap">
-                              {item.calculated_at || "-"}
+                              {item.source_update_at || "-"}
                             </td>
 
                             {/* PO Bal */}

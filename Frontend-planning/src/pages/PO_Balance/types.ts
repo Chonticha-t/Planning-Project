@@ -67,6 +67,7 @@ export interface ApiResponse<T> {
 export interface POBalanceHistoryRow {
   run_id: string;
   calculated_at: string;
+  source_update_at: string | null;
   source_rev: number;
   prd_name: string;
   item?: string;

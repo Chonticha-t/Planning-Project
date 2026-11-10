@@ -389,6 +389,7 @@ router.get("/history", async (req, res) => {
       SELECT DISTINCT ON (h.prd_name, h.due_date, h.source_rev)
         run_id,
         to_char(calculated_at, 'YYYY-MM-DD HH24:MI:SS') AS calculated_at,
+        to_char(h.source_update_at, 'YYYY-MM-DD HH24:MI:SS') AS source_update_at,
         source_rev::int                                 AS source_rev,
         prd_name,
         item,
