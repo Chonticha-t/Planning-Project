@@ -78,6 +78,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isCompact, setIsCompact] = useState(false);
   const [batchTargetDate, setBatchTargetDate] = useState("");
   const [listDatePicker, setListDatePicker] = useState<{
     lot: LotItem;
@@ -86,7 +87,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   const [expandedDayCols, setExpandedDayCols] = useState<
     Record<string, boolean>
   >({});
-  const MAX_VISIBLE_CARDS_PER_DAY = 5;
+  const maxVisibleCardsPerDay = isCompact ? 8 : 5;
 
   // On initial mount in Board/Days view, position scroll at 10/11 (1 week ahead)
   useEffect(() => {
@@ -285,7 +286,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         </div>
 
         {/* Right Switchers & Scroll Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {viewMode === "board" && granularity === "days" && (
             <div className="inline-flex items-center gap-1 mr-1">
               <button
@@ -356,6 +357,27 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </button>
           </div>
 
+          {viewMode === "board" && (
+            <div role="group" aria-label="Board size"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5">
+              {([
+                { label: "Normal", compact: false },
+                { label: "Compact", compact: true },
+              ] as const).map((option) => (
+                <button key={option.label} type="button"
+                  aria-pressed={isCompact === option.compact}
+                  onClick={() => setIsCompact(option.compact)}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                    isCompact === option.compact
+                      ? "bg-primary text-primary-content shadow-xs"
+                      : "text-base-content/70 hover:text-base-content hover:bg-base-100"
+                  }`}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Days / Weeks Toggle */}
           <div
             role="group"
@@ -420,7 +442,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       {viewMode === "board" && granularity === "days" && (
         <div
           ref={scrollContainerRef}
-          className="flex gap-2 overflow-x-auto pb-2 min-h-[480px] scroll-smooth"
+          className={`flex overflow-x-auto pb-2 scroll-smooth ${isCompact ? "gap-1.5 min-h-[400px]" : "gap-2 min-h-[480px]"}`}
         >
           {/* Left Edge: Frozen Striped Bar (shown when frozenDays > 0) */}
           {frozenDays > 0 && (
@@ -443,7 +465,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             const isDayExpanded = Boolean(expandedDayCols[col.date]);
             const visibleLots = isDayExpanded
               ? colLots
-              : colLots.slice(0, MAX_VISIBLE_CARDS_PER_DAY);
+              : colLots.slice(0, maxVisibleCardsPerDay);
             const hiddenLotsCount = Math.max(
               0,
               colLots.length - visibleLots.length
@@ -464,7 +486,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 data-day-col={col.date}
                 onDragOver={(e) => handleColDragOver(e, col.date)}
                 onDrop={(e) => handleColDrop(e, col.date)}
-                className={`w-[162px] shrink-0 flex flex-col max-h-[580px] rounded-xl p-2 transition-all ${
+                className={`shrink-0 flex flex-col max-h-[580px] rounded-xl transition-all ${isCompact ? "w-[140px] p-1.5" : "w-[162px] p-2"} ${
                   isTargetCol
                     ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
                     : isFocusedCol
@@ -520,7 +542,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 </div>
 
                 {/* Internally Scrollable Column Cards Body */}
-                <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-0.5 min-h-0">
+                <div className={`flex-1 flex flex-col overflow-y-auto pr-0.5 min-h-0 ${isCompact ? "gap-1.5" : "gap-2"}`}>
                   {visibleLots.map((lot) => {
                     const isThisMovingPreview =
                       movingIds.has(lot.id) &&
@@ -532,6 +554,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         key={lot.id}
                         lot={lot}
                         showSelection={isEditMode}
+                        compact={isCompact}
                         isBatchSelected={selectedLotIds.has(lot.id)}
                         onToggleSelection={toggleLotSelection}
                         isSelected={selectedLot?.id === lot.id}
@@ -549,8 +572,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     );
                   })}
 
-                  {/* Show More / Collapse Toggle Button when a day has > 3 lots */}
-                  {colLots.length > MAX_VISIBLE_CARDS_PER_DAY && (
+                  {/* Expand days that exceed the visible-card limit for the current size. */}
+                  {colLots.length > maxVisibleCardsPerDay && (
                     <button
                       type="button"
                       onClick={() =>
@@ -621,7 +644,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           )}
 
           {/* 3 Week Columns (Week 2, Week 3, Week 4) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
+          <div className={`grid grid-cols-1 gap-3 flex-1 ${isCompact ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3"}`}>
             {weekGroups.map((wg) => {
               const weekDates = new Set(wg.days.map((d) => d.date));
               const weekLots = lots.filter((l) => weekDates.has(l.releaseDate));
@@ -697,6 +720,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         key={lot.id}
                         lot={lot}
                         showSelection={isEditMode}
+                        compact={isCompact}
                         isBatchSelected={selectedLotIds.has(lot.id)}
                         onToggleSelection={toggleLotSelection}
                         isSelected={selectedLot?.id === lot.id}

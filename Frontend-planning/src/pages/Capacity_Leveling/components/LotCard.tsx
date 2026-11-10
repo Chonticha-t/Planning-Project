@@ -15,6 +15,7 @@ interface LotCardProps {
   isSelected: boolean;
   isBatchSelected: boolean;
   showSelection: boolean;
+  compact?: boolean;
   onToggleSelection: (lot: LotItem) => void;
   isBeingDragged: boolean;
   isMovingPreview?: boolean;
@@ -31,6 +32,7 @@ export const LotCard: React.FC<LotCardProps> = ({
   isSelected,
   isBatchSelected,
   showSelection,
+  compact = false,
   onToggleSelection,
   isBeingDragged,
   isMovingPreview = false,
@@ -72,7 +74,7 @@ export const LotCard: React.FC<LotCardProps> = ({
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
     };
-  }, [isLifted]);
+  }, [isLifted, compact]);
 
   useEffect(() => {
     if (!noteOpen) return;
@@ -112,7 +114,7 @@ export const LotCard: React.FC<LotCardProps> = ({
           onDragStart={(e) => onDragStart(e, lot)}
           onDragEnd={onDragEnd}
           onClick={() => onSelect(lot)}
-          className="rounded-xl p-2.5 border border-dashed border-base-300 bg-base-200/50 opacity-60 text-base-content/50 select-none cursor-grab"
+          className={`rounded-xl ${compact ? "p-2" : "p-2.5"} border border-dashed border-base-300 bg-base-200/50 opacity-60 text-base-content/50 select-none cursor-grab`}
         >
           <div className="text-xs font-semibold leading-snug">
             {lot.id} · {lot.product}
@@ -127,7 +129,7 @@ export const LotCard: React.FC<LotCardProps> = ({
           createPortal(
             <div
               style={{ top: liftPos.top, left: liftPos.left }}
-              className="planning-summary-gate pointer-events-none fixed z-[60] w-[160px] -rotate-2 rounded-xl p-2.5 bg-base-100 border-[1.5px] border-primary shadow-lg select-none"
+              className={`planning-summary-gate pointer-events-none fixed z-[60] ${compact ? "w-[132px] p-2" : "w-[160px] p-2.5"} -rotate-2 rounded-xl bg-base-100 border-[1.5px] border-primary shadow-lg select-none`}
             >
               <div className="flex items-start justify-between gap-1">
                 <span className="text-xs font-bold text-base-content leading-snug">
@@ -138,8 +140,8 @@ export const LotCard: React.FC<LotCardProps> = ({
               <div className="mt-1.5">
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tabular-nums bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
                   <CalendarIcon size={11} className="text-primary" />
-                  <span>
-                    {releaseDisplay} → {targetDisplay}
+                  <span title={`${releaseDisplay} → ${targetDisplay}`}>
+                    {compact ? dayjs(lot.releaseDate).format("DD/MM") : releaseDisplay} → {compact ? dayjs(previewTargetDate).format("DD/MM") : targetDisplay}
                   </span>
                 </span>
               </div>
@@ -168,7 +170,7 @@ export const LotCard: React.FC<LotCardProps> = ({
       onDragStart={(e) => onDragStart(e, lot)}
       onDragEnd={onDragEnd}
       onClick={() => onSelect(lot)}
-      className={`relative group rounded-xl p-2.5 shadow-2xs transition-all cursor-grab active:cursor-grabbing select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
+      className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all cursor-grab active:cursor-grabbing select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
     >
       {/* Top Row: PO · Product & Drag Grip */}
       <div className="flex items-start justify-between gap-1">
@@ -179,13 +181,14 @@ export const LotCard: React.FC<LotCardProps> = ({
           onChange={() => onToggleSelection(lot)}
           className="checkbox checkbox-xs checkbox-primary mt-0.5 shrink-0 cursor-pointer" />}
         <div
-          className={`min-w-0 flex-1 text-xs font-bold leading-snug ${
+          className={`min-w-0 flex-1 font-bold ${compact ? "text-[11px] leading-tight" : "text-xs leading-snug"} ${
             isSelected ? "text-white" : "text-base-content"
           }`}
         >
-          <div>{lot.id}</div>
+          <div className={compact ? "truncate" : undefined} title={lot.id}>{lot.id}</div>
           <div
-            className={`font-semibold ${
+            title={lot.product}
+            className={`font-semibold ${compact ? "truncate" : ""} ${
               isSelected ? "text-white/90" : "text-base-content/80"
             }`}
           >
@@ -203,10 +206,12 @@ export const LotCard: React.FC<LotCardProps> = ({
       </div>
 
       {/* Date Chip + Note Indicator Icon */}
-      <div className="mt-2 relative flex items-center gap-1">
+      <div className={`${compact ? "mt-1" : "mt-2"} relative flex items-center gap-1`}>
         <button
           ref={chipBtnRef}
           type="button"
+          title={`Release date: ${releaseDisplay}`}
+          aria-label={`Change release date for lot ${lot.id}, ${releaseDisplay}`}
           onClick={(e) => {
             e.stopPropagation();
             setPopoverOpen((prev) => !prev);
@@ -225,7 +230,7 @@ export const LotCard: React.FC<LotCardProps> = ({
             size={10}
             className={`shrink-0 ${isSelected ? "text-white" : "text-primary"}`}
           />
-          <span>{releaseDisplay}</span>
+          <span>{compact ? dayjs(lot.releaseDate).format("DD/MM") : releaseDisplay}</span>
         </button>
 
         {/* Trailing Note Button for Moved / Late */}
