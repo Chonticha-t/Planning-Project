@@ -173,7 +173,7 @@ test("load endpoint returns capacity per gate and day with cards from the latest
     [/FROM planning\.capacity_setting/, [row({ gate_name: "FADL", resource_count: 2 }), row({ setting_id: "s2", gate_name: "FADL", shift_code: "night", resource_count: 2 })]],
     [/FROM planning\.work_plan\b/, [{ plan_id: "p3", plan_group_id: "p1", version_no: 3, note: null, created_by: "planner", saved_at: "2026-11-11 15:00" }]],
     [/FROM planning\.work_plan_gate_item/, [{ work_key: arrivalWorkKey(work()), gate_name: "FADL", original_date: "2026-11-17", planned_date: "2026-11-18" }]],
-    [/planning_summary_gate/, [work()]],
+    [/planning_summary_gate/, [work({ rem_proc_in_gate: 8 })]],
   ]);
   await withApi(pool, async (api) => {
     const response = await api("/load?startdate=2026-11-14&stopdate=2026-11-16");
@@ -189,6 +189,8 @@ test("load endpoint returns capacity per gate and day with cards from the latest
     assert.equal(data.loadBasis, "summary_gate_arrivals_v1");
     assert.equal(data.arrivalRows[0].arrive_by, work().arrive_by);
     assert.equal(data.arrivalRows[0].workKey, data.cards[0].workKey);
+    assert.equal(data.arrivalRows[0].rem_proc_in_gate, 8);
+    assert.equal(data.cards[0].allocations[0].rem_proc_in_gate, 8);
     assert.deepEqual(data.gates.find((gate) => gate.gate === "FADL").standardShiftMin, { day: 475, night: 475 });
     assert.equal(data.plan.version, 3);
     assert.equal((await api("/load?startdate=2026-11-14&stopdate=2027-11-16")).status, 400);
@@ -199,6 +201,7 @@ test("load endpoint returns capacity per gate and day with cards from the latest
   assert.match(works.sql, /w\.lead_days/);
   assert.match(works.sql, /w\.pcs_per_sheet::float8 AS pcs_per_sheet/);
   assert.match(works.sql, /w\.pri/);
+  assert.match(works.sql, /w\.rem_proc_in_gate/);
   assert.doesNotMatch(works.sql, /smart_pcap_std_time|SUM\(60|uph/i);
 });
 

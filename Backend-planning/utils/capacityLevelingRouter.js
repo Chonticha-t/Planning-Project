@@ -59,6 +59,7 @@ const WORKS_SQL = `
          w.pcs_per_sheet::float8 AS pcs_per_sheet,
          w.qty::float8 AS qty, CEIL(w.qty / NULLIF(w.pcs_per_sheet, 0))::float8 AS sheets,
          w.gate_name, w.gate_state, w.process_group, w.prd_category, w.current_gate, w.proc_disp, w.is_hold,
+         w.rem_proc_in_gate,
          to_char(w.arrive_by, 'YYYY-MM-DD') AS arrive_by, to_char(w.must_out, 'YYYY-MM-DD') AS must_out,
          to_char(w.prev_arrive_by, 'YYYY-MM-DD') AS prev_arrive_by,
          to_char(w.next_arrive_by, 'YYYY-MM-DD') AS next_arrive_by,

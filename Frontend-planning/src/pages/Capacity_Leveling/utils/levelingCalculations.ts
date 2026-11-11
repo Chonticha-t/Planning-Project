@@ -172,6 +172,27 @@ export const expandBoardLots = (allLots: LotItem[], selected: LotItem[]) => {
   return allLots.filter((lot) => ids.has(lot.id));
 };
 
+type BoardPriority = readonly [number, number, number | null, number | null];
+
+const boardPriority = (row: GateArrivalRow): BoardPriority => {
+  const process = row.proc_disp?.trim().toUpperCase();
+  const gate = row.current_gate?.trim().toUpperCase();
+  const stateRank = row.gate_state === "in_gate" ? 0 : row.gate_state === "coming" ? 1 : row.gate_state === "need_wip" ? 2 : 3;
+  const remaining = row.rem_proc_in_gate;
+  return [
+    process && gate && process === gate ? 0 : 1,
+    stateRank,
+    typeof remaining === "number" && Number.isInteger(remaining) && remaining >= 0 ? -remaining : null,
+    Number.isInteger(row.pri) && row.pri >= 0 ? row.pri : null,
+  ];
+};
+
+const compareNullableNumber = (a: number | null, b: number | null) =>
+  a === b ? 0 : a === null ? 1 : b === null ? -1 : a - b;
+
+const compareBoardPriority = (a: BoardPriority, b: BoardPriority) =>
+  a[0] - b[0] || a[1] - b[1] || compareNullableNumber(a[2], b[2]) || compareNullableNumber(a[3], b[3]);
+
 /** One visible card per physical lot/gate/planned arrival; retain every allocation. */
 export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: ProcessCategory = "ALL"): LotItem[] => {
   const sources = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
@@ -188,13 +209,15 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
     bucket.members.set(source.id, source);
     buckets.set(key, bucket);
   }
-  return [...buckets].map(([id, { rows, members, date }]): LotItem => {
+  return [...buckets].map(([id, { rows, members, date }]) => {
     const sources = [...members.values()];
     const representative = sources.find(isMoved) || sources[0];
     const summary = summarizeGateQuantities(rows);
     const deadlines = rows.map((row) => row.must_out).filter(Boolean).sort();
     const durations = sources.map((lot) => lot.leadDays);
-    return {
+    // Keep one allocation's entire priority; never mix fields or sum duplicate remaining counts.
+    const priority = rows.map(boardPriority).reduce((best, next) => compareBoardPriority(next, best) < 0 ? next : best);
+    const lot: LotItem = {
       ...representative, id, plannedDate: date, product: new Set(rows.map((row) => row.prd_name)).size > 1 ? "Multiple products" : representative.product, qty: summary.total.piece, sheets: summary.total.sheet,
       kind: summary.total.lot ? "lot" : summary.needCount ? "need" : "unidentified",
       loadMin: summary.total.lot ? representative.loadMin : 0,
@@ -202,7 +225,13 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
       isHold: sources.some((lot) => lot.isHold), sourceChanged: sources.some((lot) => lot.sourceChanged),
       mustOut: deadlines[0] || "", leadDays: durations.every((value) => value && value > 0) ? Math.max(...durations as number[]) : null,
     };
-  }).sort((a, b) => a.plannedDate.localeCompare(b.plannedDate) || Number(lotKind(a) !== "lot") - Number(lotKind(b) !== "lot") || a.label.localeCompare(b.label));
+    return { lot, priority };
+  }).sort((a, b) => a.lot.plannedDate.localeCompare(b.lot.plannedDate)
+    || compareBoardPriority(a.priority, b.priority)
+    || Number(lotKind(a.lot) !== "lot") - Number(lotKind(b.lot) !== "lot")
+    || a.lot.label.localeCompare(b.lot.label)
+    || a.lot.id.localeCompare(b.lot.id))
+    .map(({ lot }) => lot);
 };
 
 /** Same arrival buckets and physical-lot counting helper as Summary Gate. */

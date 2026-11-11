@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
-import type { ApiCard, CapacityDay, LevelingData, ShiftConfig } from "../types";
+import type { ApiCard, CapacityDay, GateArrivalRow, LevelingData, ShiftConfig } from "../types";
 import {
   buildGrid,
   buildBoardLots,
@@ -277,6 +277,98 @@ test("shift capacity: 475 min per machine, 655 with OT, empty MC is not zero", (
 });
 
 
+
+const priorityData = (rows: Partial<GateArrivalRow>[]) => {
+  const source = data(rows.map((_, index) => card({ id: `card-${index}`, workKey: `work-${index}`, lotNo: `LOT-${index}` })));
+  source.arrivalRows = source.arrivalRows.map((row, index) => ({
+    ...row, pri: index + 1, proc_disp: "PROCESS_A", current_gate: "GATE_A", ...rows[index],
+  }));
+  return source;
+};
+
+test("board prioritizes process matches, then gate state, then remaining processes descending", () => {
+  const source = priorityData([
+    { gate_state: "in_gate", rem_proc_in_gate: 99 },
+    { proc_disp: "GATE_A", gate_state: "coming", rem_proc_in_gate: 100 },
+    { proc_disp: "GATE_A", gate_state: "in_gate", rem_proc_in_gate: 3 },
+    { proc_disp: "GATE_A", gate_state: "in_gate", rem_proc_in_gate: 8, pri: 99 },
+    { proc_disp: "GATE_A", gate_state: "need_wip", rem_proc_in_gate: 200 },
+    { gate_state: "coming", rem_proc_in_gate: 999 },
+    { gate_state: "need_wip", rem_proc_in_gate: 999 },
+    { proc_disp: "GATE_A", gate_state: "unknown", rem_proc_in_gate: 999 },
+  ]);
+  const before = structuredClone(source);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  assert.deepEqual(board.map(lot => lot.label), ["LOT-3", "LOT-2", "LOT-1", "LOT-4", "LOT-7", "LOT-0", "LOT-5", "LOT-6"]);
+  assert.deepEqual(source, before);
+});
+
+test("process matching trims spaces and ignores case without matching blanks or partial names", () => {
+  const source = priorityData([
+    { proc_disp: "  ", current_gate: "" },
+    { proc_disp: " gate_a ", current_gate: "GATE_A " },
+    { proc_disp: null, current_gate: null },
+    { proc_disp: "GATE_A_EXTRA" },
+  ]);
+  assert.deepEqual(buildBoardLots(source, source.cards.map(toLotItem)).map(lot => lot.label), ["LOT-1", "LOT-0", "LOT-2", "LOT-3"]);
+});
+
+test("remaining processes sort descending with zero ahead of missing and invalid values", () => {
+  const source = priorityData([
+    { rem_proc_in_gate: 2 }, { rem_proc_in_gate: 9 }, { rem_proc_in_gate: 0 },
+    { rem_proc_in_gate: null }, {}, { rem_proc_in_gate: NaN },
+    { rem_proc_in_gate: Infinity }, { rem_proc_in_gate: -1 },
+  ]);
+  assert.deepEqual(buildBoardLots(source, source.cards.map(toLotItem)).map(lot => lot.label), ["LOT-1", "LOT-0", "LOT-2", "LOT-3", "LOT-4", "LOT-5", "LOT-6", "LOT-7"]);
+});
+
+test("equal board priorities use source PRI and deterministic ties regardless of arrival order", () => {
+  const source = priorityData([
+    { rem_proc_in_gate: 5, pri: 9 }, { rem_proc_in_gate: 5, pri: 2 },
+    { rem_proc_in_gate: 5, pri: NaN }, { rem_proc_in_gate: 5, pri: 2 },
+  ]);
+  const expected = ["LOT-1", "LOT-3", "LOT-0", "LOT-2"];
+  assert.deepEqual(buildBoardLots(source, source.cards.map(toLotItem)).map(lot => lot.label), expected);
+  source.arrivalRows.reverse();
+  assert.deepEqual(buildBoardLots(source, source.cards.map(toLotItem)).map(lot => lot.label), expected);
+});
+
+test("merged cards use one allocation's best priority without mixing fields or adding duplicates", () => {
+  const source = priorityData([
+    { proc_disp: "GATE_A", gate_state: "coming", rem_proc_in_gate: 2 },
+    { proc_disp: "GATE_A", gate_state: "coming", rem_proc_in_gate: 3 },
+    { gate_state: "in_gate", rem_proc_in_gate: 99 },
+  ]);
+  const first = source.arrivalRows[0];
+  source.arrivalRows.push(
+    { ...first, pri: 4, proc_disp: "PROCESS_A", gate_state: "in_gate", rem_proc_in_gate: 100 },
+    { ...first, pri: 5 },
+  );
+  const lots = source.cards.map(toLotItem);
+  const gridBefore = buildGrid(source, lots);
+  let board = buildBoardLots(source, lots);
+  assert.deepEqual(board.map(lot => lot.label), ["LOT-1", "LOT-0", "LOT-2"]);
+  assert.equal(board.find(lot => lot.label === "LOT-0")?.allocations?.length, 3);
+  assert.deepEqual(boardCounts(board), { lots: 3, need: 0, unidentified: 0 });
+  // A better allocation must win even when it is not the first or the display representative.
+  source.arrivalRows.push({ ...first, pri: 6, rem_proc_in_gate: 4 });
+  board = buildBoardLots(source, lots);
+  assert.deepEqual(board.map(lot => lot.label), ["LOT-0", "LOT-1", "LOT-2"]);
+  assert.deepEqual(buildGrid(source, lots), gridBefore);
+});
+
+test("board recalculates current state after coming becomes in_gate while keeping dates primary", () => {
+  const source = priorityData([
+    { gate_state: "coming", rem_proc_in_gate: 9 },
+    { gate_state: "in_gate", rem_proc_in_gate: 2 },
+    { proc_disp: "GATE_A", gate_state: "in_gate", rem_proc_in_gate: 99 },
+  ]);
+  const lots = source.cards.map(toLotItem);
+  lots[2].plannedDate = "2026-11-17";
+  assert.deepEqual(buildBoardLots(source, lots).map(lot => lot.label), ["LOT-1", "LOT-0", "LOT-2"]);
+  source.arrivalRows[0].gate_state = "in_gate";
+  assert.deepEqual(buildBoardLots(source, lots).map(lot => lot.label), ["LOT-0", "LOT-1", "LOT-2"]);
+});
 
 test("board and grid show the same 32 actual lots and 3 need cards with allocation details retained", () => {
   const cards = Array.from({ length: 32 }, (_, i) => card({ id: `actual-${i}`, lotNo: `LOT-${i}`, workKey: `actual-${i}` }));
