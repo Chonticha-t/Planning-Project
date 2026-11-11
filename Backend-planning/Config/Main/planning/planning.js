@@ -7,10 +7,12 @@ const po_balance = require("../../../routes/10.17.87.244/Planning System/PO Bala
 
 const planning_summary = require("../../../routes/10.17.87.244/Planning System/Planning Summary/Planning Summary");
 const planning_summary_gate = require("../../../routes/10.17.87.244/Planning System/Planning Summary Gate/Planning Summary Gate");
+const capacity_leveling = require("../../../routes/10.17.87.244/Planning System/Capacity Leveling/Capacity Leveling");
 
 app.use("/auth", auth_router);
 app.use("/planning_summary", planning_summary);
 app.use("/planning_summary_gate", planning_summary_gate);
+app.use("/capacity_leveling", capacity_leveling);
 app.use("/", po_balance);
 
 module.exports = app;

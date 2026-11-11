@@ -8,36 +8,47 @@ import {
   History,
   ArrowRight,
 } from "lucide-react";
-import type { LotItem, DayGateLoad, MoveHistoryEntry } from "../types";
-import { computeDragPreview } from "../utils/levelingCalculations";
-import { GATES_CONFIG } from "../mock/levelingMockData";
+import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry } from "../types";
+import { cellPct, formatMinutes, moveWarning, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 interface LotDetailSidePanelProps {
   lot: LotItem | null;
-  previewDate: string;
-  onPreviewDateChange: (newDate: string) => void;
   gridData: DayGateLoad[];
+  capacity: Record<string, Record<string, CapacityDay>>;
+  today: string;
+  plannedIndex: Map<string, string>;
+  /** 0 = no plan has been saved yet */
+  planVersion: number;
   onApply: (lot: LotItem, newDate: string) => void;
   onCancel: () => void;
   onOpenCapacityModal: () => void;
-  isMoving?: boolean;
   isDraggingCard?: boolean;
-  frozenUntilDate?: string;
 }
+
+const formatDate = (value: string | null) => (value ? dayjs(value).format("DD/MM/YYYY") : "-");
+
+const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex items-center justify-between py-2 border-b border-base-200">
+    <span className="text-base-content/60 font-medium">{label}</span>
+    <span className="font-semibold text-base-content tabular-nums text-right">{children}</span>
+  </div>
+);
 
 export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   lot,
   gridData,
+  capacity,
+  today,
+  plannedIndex,
+  planVersion,
   onApply,
   onCancel,
   onOpenCapacityModal,
   isDraggingCard = false,
-  frozenUntilDate = "2026-11-02",
 }) => {
   const releaseBoxRef = useRef<HTMLDivElement>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [inspectedGateId, setInspectedGateId] = useState<string>("FADL");
 
   // Keep last non-null lot so the drawer can animate sliding out smoothly
   const [renderedLot, setRenderedLot] = useState<LotItem | null>(lot);
@@ -66,36 +77,37 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
     return null;
   }
 
-  const diffDays = dayjs(activeLot.mustStartDate).diff(
-    dayjs(activeLot.releaseDate),
-    "day"
-  );
-  const isLate = diffDays < 0;
+  const warning = moveWarning(activeLot, activeLot.plannedDate, plannedIndex);
+  const isLate = warning === "late" || warning === "order";
+  const diffDays = dayjs(activeLot.mustOut).diff(dayjs(activeLot.plannedDate), "day");
+  const openDays = gridData.filter((day) => day.date >= today && !day.gates[activeLot.gate]?.off);
+  const cell = gridData.find((day) => day.date === activeLot.plannedDate)?.gates[activeLot.gate];
+  const dayCapacity = capacity[activeLot.gate]?.[activeLot.plannedDate];
+  const pct = cellPct(cell);
+  // What this gate-day would show without this card.
+  const pctWithout = cell && pct !== null && cell.capacityMin
+    ? Math.round(((cell.loadMin - (activeLot.loadMin ?? 0)) / cell.capacityMin) * 100)
+    : null;
+  const nextPlanned = activeLot.nextGate
+    ? plannedIndex.get(`${activeLot.workKey}|${activeLot.nextGate}`) ?? activeLot.nextDate
+    : null;
+  const prevPlanned = activeLot.prevGate
+    ? plannedIndex.get(`${activeLot.workKey}|${activeLot.prevGate}`) ?? activeLot.prevDate
+    : null;
 
-  const preview = computeDragPreview(
-    gridData,
-    activeLot,
-    activeLot.releaseDate
-  );
-
-  // Find currently inspected route row (defaults to FADL or first row)
-  const inspectedRow =
-    preview.routeTableRows.find((r) => r.gateId === inspectedGateId) ||
-    preview.routeTableRows.find((r) => r.gateId === "FADL") ||
-    preview.routeTableRows[0];
-
-  const gateDef =
-    GATES_CONFIG.find((g) => g.id === inspectedRow?.gateId) || GATES_CONFIG[2];
-
-  const getPctPillClass = (pct: number) => {
-    if (pct > 100) {
-      return "bg-[#fee2e2] text-[#991b1b] font-semibold";
-    }
-    if (pct >= 80) {
-      return "bg-[#fef3c7] text-[#92400e] font-semibold";
-    }
-    return "bg-[#d1fae5] text-[#065f46] font-semibold";
-  };
+  // Moves made in this draft, then the move stored in the last saved plan.
+  const historyEntries: MoveHistoryEntry[] = [
+    ...(activeLot.moveHistory || []),
+    ...(activeLot.savedDate !== activeLot.baseDate
+      ? [{
+          id: "mh-saved-plan",
+          fromDate: activeLot.baseDate,
+          toDate: activeLot.savedDate,
+          changedAt: "",
+          changedBy: planVersion > 0 ? `Saved plan v${planVersion}` : "Saved plan",
+        }]
+      : []),
+  ];
 
   return createPortal(
     <>
@@ -110,10 +122,10 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
         }`}
       />
 
-      {/* Full-Height Right Navigation Drawer (Details & Capacity Inspection Only) */}
+      {/* Full-height right drawer with the details of one card */}
       <aside
         role="dialog"
-        aria-label="Lot detail drawer"
+        aria-label="Card detail drawer"
         aria-modal="true"
         className={`planning-summary-gate fixed inset-y-0 right-0 z-[100] w-[410px] max-w-[92vw] h-dvh bg-base-100 border-l border-base-300 shadow-2xl flex flex-col text-base-content transition-transform duration-300 ease-out ${
           isOpen ? "translate-x-0" : "translate-x-full pointer-events-none"
@@ -121,13 +133,13 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
       >
         {/* 1. Sticky Drawer Header */}
         <div className="px-5 py-4 border-b border-base-300 bg-base-100 shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <h4 className="text-base font-bold text-base-content">
-              {activeLot.id} · {activeLot.product}
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="text-base font-bold text-base-content break-all">
+              {activeLot.label} · {activeLot.product}
             </h4>
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-base-200 text-base-content/75 border border-base-300">
-                Selected
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
+                {activeLot.gate}
               </span>
               <button
                 type="button"
@@ -140,38 +152,38 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             </div>
           </div>
           <div className="text-xs text-base-content/60 mt-1 tabular-nums">
-            {activeLot.qty.toLocaleString()} pcs ·{" "}
-            {activeLot.routeId.replace(/_/g, " ")} · Ship P1{" "}
-            {activeLot.shipDate}/2026
+            {activeLot.qty.toLocaleString()} pcs
+            {activeLot.sheets !== null ? ` · ${activeLot.sheets.toLocaleString()} sheets` : ""}
+            {activeLot.item ? ` · ${activeLot.item}` : ""} · PO due {formatDate(activeLot.dueDate)}
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-base-200 text-base-content/70 border border-base-300">
+              {activeLot.gateState === "in_gate" ? "In gate" : activeLot.gateState === "need_wip" ? "Need WIP" : "Coming"}
+              {activeLot.currentProc ? ` · ${activeLot.currentProc}` : ""}
+            </span>
+            {activeLot.isHold && (
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">HOLD</span>
+            )}
+            {activeLot.overdue && (
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">Overdue</span>
+            )}
           </div>
         </div>
 
         {/* 2. Scrollable Drawer Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
-          {/* System start & Must start */}
+          {/* Dates of this gate and its neighbours */}
           <div className="flex flex-col text-xs">
-            <div className="flex items-center justify-between py-2 border-b border-base-200">
-              <span className="text-base-content/60 font-medium">
-                System start
-              </span>
-              <span className="font-semibold text-base-content tabular-nums">
-                {dayjs(activeLot.systemStartDate).format("DD/MM/YYYY")}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b border-base-200">
-              <span className="text-base-content/60 font-medium">
-                Must start
-              </span>
-              <span className="font-semibold text-base-content tabular-nums">
-                {dayjs(activeLot.mustStartDate).format("DD/MM/YYYY")}
-              </span>
-            </div>
+            {activeLot.prevGate && <Row label={`Previous gate · ${activeLot.prevGate}`}>{formatDate(prevPlanned)}</Row>}
+            <Row label="Arrive by">{formatDate(activeLot.arriveBy)}</Row>
+            <Row label="Must out">{formatDate(activeLot.mustOut)}</Row>
+            {activeLot.nextGate && <Row label={`Next gate · ${activeLot.nextGate}`}>{formatDate(nextPlanned)}</Row>}
           </div>
 
-          {/* Release Date Box */}
+          {/* Date at this gate */}
           <div>
             <label className="text-xs font-semibold text-base-content block mb-1.5">
-              Release date
+              {activeLot.gate} date
             </label>
             <div
               ref={releaseBoxRef}
@@ -181,28 +193,40 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
               <div className="flex items-center gap-2">
                 <CalendarIcon size={14} className="text-primary shrink-0" />
                 <span className="text-xs font-bold text-base-content tabular-nums">
-                  {dayjs(activeLot.releaseDate).format("DD/MM/YYYY")}
+                  {formatDate(activeLot.plannedDate)}
                 </span>
               </div>
               <span
                 className={`px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${
                   isLate
                     ? "bg-[#fee2e2] text-[#991b1b]"
+                    : warning === "early"
+                    ? "bg-[#fef3c7] text-[#92400e]"
                     : "bg-[#d1fae5] text-[#065f46]"
                 }`}
               >
-                {isLate ? "late" : `fits · +${diffDays}d slack`}
+                {warning === "order" ? "gate order" : isLate ? `late · ${diffDays}d` : warning === "early" ? "early" : `fits · +${diffDays}d slack`}
               </span>
             </div>
+            {warning !== "none" && (
+              <div className={`mt-1.5 text-[11.5px] font-semibold leading-snug ${isLate ? "text-rose-700" : "text-amber-800"}`}>
+                {WARNING_TEXT[warning]}.
+              </div>
+            )}
+            {activeLot.sourceChanged && (
+              <div className="mt-1.5 text-[11.5px] font-semibold leading-snug text-amber-800">
+                Must-out changed in Summary Gate after this move was saved.
+              </div>
+            )}
 
             {popoverOpen && (
               <DatePickerPopover
                 lot={activeLot}
-                frozenUntilDate={frozenUntilDate}
+                days={openDays}
                 anchorEl={releaseBoxRef.current}
                 onSelectDate={(newDate) => {
                   setPopoverOpen(false);
-                  if (newDate !== activeLot.releaseDate) {
+                  if (newDate !== activeLot.plannedDate) {
                     onApply(activeLot, newDate);
                   }
                 }}
@@ -211,86 +235,11 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             )}
           </div>
 
-          {/* Effect on its route Table */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-base-content uppercase tracking-wide">
-                Effect on its route
-              </span>
-              <span className="text-xs text-base-content/50">minutes / day</span>
-            </div>
-
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-base-200 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-1.5 pr-1">GATE</th>
-                  <th className="py-1.5 px-1">ARRIVES</th>
-                  <th className="py-1.5 px-1 text-right">CAPACITY</th>
-                  <th className="py-1.5 px-1 text-right">LOT</th>
-                  <th className="py-1.5 px-1 text-center">BEFORE</th>
-                  <th className="py-1.5 pl-1 text-center">AFTER</th>
-                </tr>
-              </thead>
-              <tbody className="text-xs tabular-nums">
-                {preview.routeTableRows.map((r) => {
-                  const isRowActive = inspectedRow?.gateId === r.gateId;
-                  return (
-                    <tr
-                      key={r.gateId}
-                      onClick={() => setInspectedGateId(r.gateId)}
-                      title="Click to inspect this gate's capacity breakdown"
-                      className={`border-b border-base-200/80 last:border-0 cursor-pointer transition-colors ${
-                        isRowActive ? "bg-base-200/50" : "hover:bg-base-200/25"
-                      }`}
-                    >
-                      <td className="py-2 pl-1.5 pr-1 font-bold text-base-content">
-                        {r.gateName}
-                      </td>
-                      <td className="py-2 px-1 text-base-content/70">
-                        {r.displayDate}
-                      </td>
-                      <td className="py-2 px-1 text-right text-base-content/80 font-medium whitespace-nowrap">
-                        <span>{r.capacityMin.toLocaleString()}</span>
-                        {r.hasOt && (
-                          <span className="ml-1 px-1.5 py-0.2 rounded-sm text-[10px] font-bold bg-amber-100 text-amber-800">
-                            OT
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-1 text-right text-base-content/70 font-medium">
-                        +{r.lotMinutes}
-                      </td>
-                      <td className="py-2 px-1 text-center">
-                        <span
-                          className={`inline-block min-w-[40px] px-1.5 py-0.5 rounded-md text-[11px] ${getPctPillClass(
-                            r.beforePct
-                          )}`}
-                        >
-                          {r.beforePct}%
-                        </span>
-                      </td>
-                      <td className="py-2 pl-1 pr-1 text-center">
-                        <span
-                          className={`inline-block min-w-[40px] px-1.5 py-0.5 rounded-md text-[11px] ${getPctPillClass(
-                            r.afterPct
-                          )}`}
-                        >
-                          {r.afterPct}%
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Gate Capacity Status Box (OT, Break 1, Break 2, Lunch status) */}
+          {/* Load of this gate on the planned day */}
           <div className="bg-base-200/40 border border-base-300 rounded-xl p-3.5 flex flex-col gap-2.5 text-xs tabular-nums">
-            {/* Top Header of Box */}
             <div className="flex items-center justify-between">
               <span className="font-bold text-base-content">
-                Capacity · {inspectedRow?.gateName} ({inspectedRow?.displayDate})
+                {activeLot.gate} load · {dayjs(activeLot.plannedDate).format("DD/MM")}
               </span>
               <button
                 type="button"
@@ -302,162 +251,133 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
               </button>
             </div>
 
-            {/* 2x2 Status Grid for OT, Break 1, Break 2, Lunch */}
-            <div className="grid grid-cols-2 gap-1.5">
-              {/* 1. OT Status */}
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-base-100 border border-base-200">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      inspectedRow?.hasOt ? "bg-amber-500" : "bg-slate-300"
-                    }`}
-                  />
-                  <span className="font-semibold text-base-content">OT</span>
-                </div>
-                <span
-                  className={`text-[11px] font-semibold ${
-                    inspectedRow?.hasOt
-                      ? "text-amber-700"
-                      : "text-base-content/45"
-                  }`}
-                >
-                  {inspectedRow?.hasOt ? `On (${gateDef.otMinutes}m)` : "Off"}
-                </span>
-              </div>
-
-              {/* 2. Break 1 Status */}
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-base-100 border border-base-200">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-primary" />
-                  <span className="font-semibold text-base-content">
-                    Break 1
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium text-base-content/70">
-                  On (10m)
-                </span>
-              </div>
-
-              {/* 3. Break 2 Status */}
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-base-100 border border-base-200">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-primary" />
-                  <span className="font-semibold text-base-content">
-                    Break 2
-                  </span>
-                </div>
-                <span className="text-[11px] font-medium text-base-content/70">
-                  On (10m)
-                </span>
-              </div>
-
-              {/* 4. Lunch Status */}
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-base-100 border border-base-200">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-primary" />
-                  <span className="font-semibold text-base-content">Lunch</span>
-                </div>
-                <span className="text-[11px] font-medium text-base-content/70">
-                  On (45m)
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Move History Section */}
-          {(() => {
-            const historyEntries: MoveHistoryEntry[] = [
-              ...(activeLot.moveHistory || []),
-              ...(activeLot.moveHistory?.length
-                ? []
-                : activeLot.releaseDate !== activeLot.initialReleaseDate
-                ? [
-                    {
-                      id: "mh-initial-move",
-                      fromDate: activeLot.initialReleaseDate,
-                      toDate: activeLot.releaseDate,
-                      changedAt: "08/11/2026 16:20",
-                      changedBy: "Planner · Plan v2",
-                      note: "Level gate workload",
-                    },
-                  ]
-                : []),
-            ];
-
-            return (
-              <div className="border border-base-300 rounded-xl p-3.5 bg-base-100 flex flex-col gap-2.5 text-xs tabular-nums">
+            {!cell ? (
+              <div className="text-base-content/55">This date is outside the period shown.</div>
+            ) : (
+              <>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <History size={13} className="text-primary" />
-                    <span className="font-bold text-base-content uppercase tracking-wide text-[11.5px]">
-                      Move History
-                    </span>
+                  <span className="text-base-content/60">This card (estimate)</span>
+                  <span className="font-semibold text-base-content">
+                    {activeLot.loadMin === null
+                      ? "No target UPH"
+                      : `${Math.round(activeLot.loadMin).toLocaleString()} min${activeLot.uphStatus === "partial" ? "*" : ""}`}
+                  </span>
+                </div>
+                {activeLot.uphStatus !== "ok" && (
+                  <div className="text-[11px] text-amber-800 leading-snug">
+                    {activeLot.procCount === 0
+                      ? "No routing process was found for this gate segment, so this card adds no minutes to Load %."
+                      : `Target UPH exists for ${activeLot.uphCount} of ${activeLot.procCount} processes in this gate segment${
+                          activeLot.uphStatus === "partial" ? "; the load is understated." : ", so this card adds no minutes to Load %."}`}
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-base-200 text-base-content/65 font-semibold text-[11px]">
-                    {historyEntries.length}{" "}
-                    {historyEntries.length === 1 ? "move" : "moves"}
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-base-content/60">Gate load / capacity</span>
+                  <span className="font-semibold text-base-content">
+                    {Math.round(cell.loadMin).toLocaleString()} / {cell.off ? "OFF" : formatMinutes(cell.capacityMin)}
+                    {cell.hasOt && (
+                      <span className="ml-1 px-1.5 rounded-sm text-[10px] font-bold bg-amber-100 text-amber-800">OT</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-base-content/60">Load % without → with this card</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    {pct === null || pctWithout === null ? (
+                      <span className="font-semibold text-base-content/50">{cell.off ? "Gate off" : "Set MC first"}</span>
+                    ) : (
+                      <>
+                        <span className={`inline-block min-w-[40px] text-center px-1.5 py-0.5 rounded-md text-[11px] ${pctPillClass(pctWithout)}`}>{pctWithout}%</span>
+                        <ArrowRight size={11} className="text-base-content/40" />
+                        <span className={`inline-block min-w-[40px] text-center px-1.5 py-0.5 rounded-md text-[11px] ${pctPillClass(pct)}`}>{pct}%</span>
+                      </>
+                    )}
                   </span>
                 </div>
 
-                {historyEntries.length === 0 ? (
-                  <div className="py-2.5 px-3 rounded-lg bg-base-200/40 border border-dashed border-base-300 text-base-content/55 text-xs flex items-center justify-between">
-                    <span>No moves yet (on initial system start date)</span>
-                    <span className="font-semibold text-base-content/75">
-                      {dayjs(activeLot.systemStartDate).format("DD/MM/YYYY")}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {historyEntries.map((entry, idx) => {
-                      const delta = dayjs(entry.toDate).diff(
-                        dayjs(entry.fromDate),
-                        "day"
-                      );
+                {/* Capacity of each shift on this day */}
+                {dayCapacity && (
+                  <div className="grid grid-cols-2 gap-1.5 pt-1">
+                    {(["day", "night"] as const).map((code) => {
+                      const shift = dayCapacity.shifts[code];
                       return (
-                        <div
-                          key={entry.id}
-                          className="p-2.5 rounded-lg bg-base-200/40 border border-base-200 flex flex-col gap-1"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 font-bold text-base-content">
-                              <span className="text-base-content/65">
-                                {dayjs(entry.fromDate).format("DD/MM/YYYY")}
-                              </span>
-                              <ArrowRight
-                                size={12}
-                                className="text-primary shrink-0"
-                              />
-                              <span className="text-primary">
-                                {dayjs(entry.toDate).format("DD/MM/YYYY")}
-                              </span>
-                            </div>
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10.5px] font-semibold ${
-                                delta < 0
-                                  ? "bg-indigo-50 text-[#4f46e5]"
-                                  : "bg-amber-50 text-amber-800"
-                              }`}
-                            >
-                              {delta < 0 ? `${delta}d` : `+${delta}d`}
-                            </span>
+                        <div key={code} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-base-100 border border-base-200">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${!shift.open ? "bg-slate-300" : shift.otOn ? "bg-amber-500" : "bg-primary"}`} />
+                            <span className="font-semibold text-base-content">{code === "day" ? "D/S" : "N/S"}</span>
                           </div>
-                          <div className="flex items-center justify-between text-[11px] text-base-content/55">
-                            <span>
-                              {entry.changedBy}
-                              {entry.note ? ` · ${entry.note}` : ""}
-                            </span>
-                            <span>
-                              {idx === 0 ? `${entry.changedAt}` : entry.changedAt}
-                            </span>
-                          </div>
+                          <span className="text-[11px] font-medium text-base-content/70">
+                            {!shift.open ? "Off" : `${formatMinutes(shift.capacityMin)}${shift.otOn ? " · OT" : ""}`}
+                          </span>
                         </div>
                       );
                     })}
                   </div>
                 )}
+              </>
+            )}
+          </div>
+
+          {/* Move History Section */}
+          <div className="border border-base-300 rounded-xl p-3.5 bg-base-100 flex flex-col gap-2.5 text-xs tabular-nums">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <History size={13} className="text-primary" />
+                <span className="font-bold text-base-content uppercase tracking-wide text-[11.5px]">
+                  Move History
+                </span>
               </div>
-            );
-          })()}
+              <span className="px-2 py-0.5 rounded-md bg-base-200 text-base-content/65 font-semibold text-[11px]">
+                {historyEntries.length}{" "}
+                {historyEntries.length === 1 ? "move" : "moves"}
+              </span>
+            </div>
+
+            {historyEntries.length === 0 ? (
+              <div className="py-2.5 px-3 rounded-lg bg-base-200/40 border border-dashed border-base-300 text-base-content/55 text-xs flex items-center justify-between">
+                <span>Not moved (on its must-out date)</span>
+                <span className="font-semibold text-base-content/75">
+                  {formatDate(activeLot.baseDate)}
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {historyEntries.map((entry) => {
+                  const delta = dayjs(entry.toDate).diff(dayjs(entry.fromDate), "day");
+                  return (
+                    <div
+                      key={entry.id}
+                      className="p-2.5 rounded-lg bg-base-200/40 border border-base-200 flex flex-col gap-1"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 font-bold text-base-content">
+                          <span className="text-base-content/65">{formatDate(entry.fromDate)}</span>
+                          <ArrowRight size={12} className="text-primary shrink-0" />
+                          <span className="text-primary">{formatDate(entry.toDate)}</span>
+                        </div>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10.5px] font-semibold ${
+                            delta < 0
+                              ? "bg-indigo-50 text-[#4f46e5]"
+                              : "bg-amber-50 text-amber-800"
+                          }`}
+                        >
+                          {delta < 0 ? `${delta}d` : `+${delta}d`}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-base-content/55">
+                        <span>
+                          {entry.changedBy}
+                          {entry.note ? ` · ${entry.note}` : ""}
+                        </span>
+                        <span>{entry.changedAt}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </aside>
     </>,

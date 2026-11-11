@@ -1,333 +1,245 @@
 import dayjs from "dayjs";
-import type { LotItem, DayGateLoad, LevelingKpiData } from "../types";
-import { GATES_CONFIG } from "../mock/levelingMockData";
+import type {
+  ApiCard,
+  DayGateLoad,
+  GateCell,
+  LevelingData,
+  LevelingKpiData,
+  LoadStatus,
+  LotItem,
+  MoveWarning,
+  ProcessCategory,
+  ShiftConfig,
+} from "../types";
 
-// Calculate arrival date given a release date and offset in calendar days (adjusting Sunday to Monday)
-export const calculateArrivalDate = (
-  releaseDateStr: string,
-  offsetDays: number
-): string => {
-  let target = dayjs(releaseDateStr).add(offsetDays, "day");
-  if (target.day() === 0) {
-    target = target.add(1, "day");
-  }
-  return target.format("YYYY-MM-DD");
+/** Green up to 85%, yellow up to 100%, red above. */
+export const loadStatus = (pct: number): LoadStatus =>
+  pct > 100 ? "red" : pct > 85 ? "yellow" : "green";
+
+export const pctPillClass = (pct: number) => {
+  const status = loadStatus(pct);
+  if (status === "red") return "bg-[#fee2e2] text-[#991b1b] font-bold";
+  if (status === "yellow") return "bg-[#fef3c7] text-[#92400e] font-bold";
+  return "bg-[#d1fae5] text-[#065f46] font-semibold";
 };
 
-// Recalculate grid day-gate loads dynamically from the actual lots in Release Board
-// so that top Gate Load by Day and bottom Release Board stay 100% synchronized.
-export const recalculateGridLoads = (
-  baseGrid: DayGateLoad[],
-  lots: LotItem[],
-  frozenUntilDate?: string,
-  useInitialDates: boolean = false
-): DayGateLoad[] => {
-  // 1. Pre-index baseline grid by date
-  const dayMap = new Map<string, DayGateLoad>();
-  const clonedGrid = baseGrid.map((d) => {
-    const isFrozen = frozenUntilDate
-      ? !dayjs(d.date).isAfter(dayjs(frozenUntilDate))
-      : d.isFrozen;
+export const NEED_WIP_LABEL = "Need WIP";
 
-    // Reset gate accumulators to a small base WIP load (only for dates with no explicit lot arrivals)
-    const gates: DayGateLoad["gates"] = {};
-    for (const [gId, gVal] of Object.entries(d.gates)) {
-      gates[gId] = {
-        ...gVal,
-        loadMin: 0,
-        pct: 0,
-        lotCount: 0,
-        totalPcs: 0,
-        totalSheets: 0,
-      };
-    }
-
-    const dayCopy: DayGateLoad = {
-      ...d,
-      isFrozen,
-      gates,
-      gateStatusDots: { ...d.gateStatusDots },
-    };
-    dayMap.set(d.date, dayCopy);
-    return dayCopy;
-  });
-
-  // 2. Accumulate actual lots from Release Board directly onto their Release Date column
-  // so every day column in Gate Load by Day matches the exact card count in Release Board below.
-  const LOT_LOAD_SCALE = 5.4;
-
-  for (const lot of lots) {
-    const activeRelease = useInitialDates
-      ? lot.initialReleaseDate
-      : lot.releaseDate;
-
-    const dayEntry = dayMap.get(activeRelease);
-    if (!dayEntry || dayEntry.isSunday) continue;
-
-    for (const step of lot.routeSteps) {
-      const gateCell = dayEntry.gates[step.gateId];
-      if (!gateCell) continue;
-
-      // Scale load proportionally to lot quantity & route step minutes
-      const qtyFactor = Math.max(0.65, lot.qty / 1400);
-      const addedMin = Math.round(step.minutes * LOT_LOAD_SCALE * qtyFactor);
-
-      gateCell.loadMin += addedMin;
-      gateCell.lotCount = (gateCell.lotCount || 0) + 1;
-      gateCell.totalPcs = (gateCell.totalPcs || 0) + lot.qty;
-      gateCell.totalSheets =
-        (gateCell.totalSheets || 0) + Math.ceil(lot.qty / 12);
-    }
-  }
-
-  // 3. Finalize percentages, status dots, and column header percentages
-  for (const dayEntry of clonedGrid) {
-    if (dayEntry.isSunday) continue;
-
-    for (const [gId, gateCell] of Object.entries(dayEntry.gates)) {
-      // When no lots arrive on this gate-day, 0 lots = 0% load & 0 pcs
-      if ((gateCell.lotCount || 0) === 0) {
-        gateCell.pct = 0;
-        gateCell.loadMin = 0;
-        gateCell.lotCount = 0;
-        gateCell.totalPcs = 0;
-        gateCell.totalSheets = 0;
-      } else {
-        gateCell.pct = Math.round(
-          (gateCell.loadMin / gateCell.capacityMin) * 100
-        );
-      }
-
-      if (gateCell.pct > 100) {
-        dayEntry.gateStatusDots[gId] = "red";
-      } else if (gateCell.pct >= 80) {
-        dayEntry.gateStatusDots[gId] = "yellow";
-      } else {
-        dayEntry.gateStatusDots[gId] = "green";
-      }
-    }
-
-    // Synchronize the column header % in Release Board with the day's FFPC (first gate) or max gate load
-    const ffpcPct = dayEntry.gates.FFPC?.pct || 0;
-    dayEntry.totalNewWorkPct = ffpcPct;
-  }
-
-  return clonedGrid;
-};
-
-// Compute KPI summary matching Image 1
-export const calculateKpis = (
-  grid: DayGateLoad[],
-  lots: LotItem[],
-  initialRedCellsCount: number = 5,
-  initialPosAtRiskCount: number = 3
-): LevelingKpiData => {
-  let redPlanningCount = 0;
-  let week1RedCount = 0;
-  let criticalPlanningGate = "";
-
-  for (const day of grid) {
-    if (day.isSunday) continue;
-    for (const [gateKey, gData] of Object.entries(day.gates)) {
-      if (gData.pct > 100) {
-        if (day.isFrozen) {
-          week1RedCount++;
-        } else {
-          redPlanningCount++;
-          if (!criticalPlanningGate) {
-            criticalPlanningGate = `${gateKey} · 17/11`;
-          }
-        }
-      }
-    }
-  }
-
-  const posAtRisk = lots.filter((lot) =>
-    dayjs(lot.releaseDate).isAfter(dayjs(lot.mustStartDate))
-  );
-
-  let movedEarlier = 0;
-  let movedLater = 0;
-  let movedCount = 0;
-
-  for (const lot of lots) {
-    if (lot.releaseDate !== lot.initialReleaseDate || lot.wasDate) {
-      movedCount++;
-      if (dayjs(lot.releaseDate).isBefore(dayjs(lot.initialReleaseDate))) {
-        movedEarlier++;
-      } else {
-        movedLater++;
-      }
-    }
-  }
-
+export const toLotItem = (card: ApiCard): LotItem => {
+  const { prdName, lotNo, moved: _moved, ...rest } = card;
+  void _moved;
   return {
-    redCellsPlanningBefore: initialRedCellsCount,
-    redCellsPlanningAfter: redPlanningCount,
-    redCellPlanningDetail: criticalPlanningGate
-      ? `${criticalPlanningGate} — drag one more lot`
-      : "Planning zone optimal (no red)",
-    posAtRiskBefore: initialPosAtRiskCount,
-    posAtRiskAfter: posAtRisk.length,
-    posAtRiskDetail:
-      posAtRisk.length > 0
-        ? `PO ${posAtRisk[0].id} · ${posAtRisk[0].product}`
-        : "All POs within Must start",
-    releasesMovedCount: movedCount,
-    releasesTotalCount: lots.length,
-    releasesMovedEarlier: movedEarlier,
-    releasesMovedLater: movedLater,
-    week1RedCells: week1RedCount,
+    ...rest,
+    label: lotNo?.trim() || NEED_WIP_LABEL,
+    product: prdName,
+    savedDate: card.plannedDate,
   };
 };
 
-// Recalculate the entire proposed move so shared gates accumulate all selected lots.
-export const computeBatchMovePreview = (
+export const matchesCategory = (lot: LotItem, category: ProcessCategory) =>
+  category === "ALL" || lot.processGroup === category;
+
+export const isMoved = (lot: LotItem) => lot.plannedDate !== lot.baseDate;
+
+const siblingKey = (workKey: string, gate: string) => `${workKey}|${gate}`;
+
+/** Planned date of every card, used to compare a card with the same work's next gate. */
+export const plannedDateIndex = (lots: LotItem[]) =>
+  new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot.plannedDate]));
+
+/**
+ * A card moves at ONE gate only, so the other gates of the same work stay where they are.
+ * Moving later than must-out eats into the next gate's time; reaching the next gate's date
+ * makes the gate order impossible.
+ */
+export const moveWarning = (
+  lot: LotItem,
+  date: string,
+  planned?: Map<string, string>
+): MoveWarning => {
+  const nextDate = lot.nextGate
+    ? planned?.get(siblingKey(lot.workKey, lot.nextGate)) ?? lot.nextDate
+    : null;
+  if (nextDate && date >= nextDate && date > lot.baseDate) return "order";
+  if (date > lot.mustOut) return "late";
+  if (lot.arriveBy && date < lot.arriveBy) return "early";
+  return "none";
+};
+
+export const WARNING_TEXT: Record<Exclude<MoveWarning, "none">, string> = {
+  early: "Before arrive-by: the previous gate must deliver early",
+  late: "After must-out: takes time from the next gate",
+  order: "On or after the next gate's date: gate order is impossible",
+};
+
+const emptyCell = (capacity: LevelingData["capacity"][string][string] | undefined): GateCell => ({
+  loadMin: 0,
+  capacityMin: capacity ? capacity.capacityMin : null,
+  pct: 0,
+  configured: Boolean(capacity) && capacity!.capacityMin !== null,
+  off: !capacity || capacity.off,
+  hasOt: Boolean(capacity?.hasOt),
+  lotCount: 0,
+  totalPcs: 0,
+  totalSheets: 0,
+  missingUph: 0,
+});
+
+/**
+ * Gate Load by Day. Load is shared by every process group on the gate, so it is always
+ * built from ALL cards, never from the filtered board list.
+ */
+export const buildGrid = (
+  data: LevelingData,
+  lots: LotItem[],
+  useBaseDates = false
+): DayGateLoad[] => {
+  const grid: DayGateLoad[] = data.days.map((day) => {
+    const gates: DayGateLoad["gates"] = {};
+    for (const { gate } of data.gates) gates[gate] = emptyCell(data.capacity[gate]?.[day.date]);
+    const d = dayjs(day.date);
+    return {
+      date: day.date,
+      dayLabel: d.format("ddd"),
+      displayDate: d.format("DD/MM"),
+      isToday: day.date === data.today,
+      isOff: Object.values(gates).every((cell) => cell.off),
+      gates,
+      gateStatusDots: {},
+    };
+  });
+  const byDate = new Map(grid.map((day) => [day.date, day]));
+
+  for (const lot of lots) {
+    const cell = byDate.get(useBaseDates ? lot.baseDate : lot.plannedDate)?.gates[lot.gate];
+    if (!cell) continue;
+    cell.lotCount += 1;
+    cell.totalPcs += lot.qty;
+    cell.totalSheets += lot.sheets ?? 0;
+    // A card without UPH is reported separately; it is never counted as zero load.
+    if (lot.loadMin === null) cell.missingUph += 1;
+    else cell.loadMin += lot.loadMin;
+  }
+
+  for (const day of grid) {
+    for (const [gate, cell] of Object.entries(day.gates)) {
+      if (cell.configured && cell.capacityMin! > 0) {
+        cell.pct = Math.round((cell.loadMin / cell.capacityMin!) * 100);
+      }
+      day.gateStatusDots[gate] = cell.off ? "off" : !cell.configured ? "unset" : loadStatus(cell.pct);
+    }
+  }
+  return grid;
+};
+
+/** Load % of a cell, or null when it is off or MC is not configured. */
+export const cellPct = (cell: GateCell | undefined, preview = false): number | null => {
+  if (!cell || cell.off || !cell.configured) return null;
+  return preview && cell.previewPct !== undefined ? cell.previewPct : cell.pct;
+};
+
+/** Marks the cells whose % would change if the given cards moved to the target date. */
+export const computeMovePreview = (
+  data: LevelingData,
   currentGrid: DayGateLoad[],
   allLots: LotItem[],
   movingLots: LotItem[],
-  targetReleaseDate: string,
-  frozenUntilDate: string
+  targetDate: string
 ) => {
   const movingIds = new Set(movingLots.map((lot) => lot.id));
-  const projectedLots = allLots.map((lot) => movingIds.has(lot.id)
-    ? { ...lot, releaseDate: targetReleaseDate }
-    : lot);
-  const projectedGrid = recalculateGridLoads(currentGrid, projectedLots, frozenUntilDate);
-  const projectedByDate = new Map(projectedGrid.map((day) => [day.date, day]));
+  const projected = buildGrid(
+    data,
+    allLots.map((lot) => (movingIds.has(lot.id) ? { ...lot, plannedDate: targetDate } : lot))
+  );
+  const projectedByDate = new Map(projected.map((day) => [day.date, day]));
   const previewGrid = currentGrid.map((day) => ({
     ...day,
-    gates: Object.fromEntries(Object.entries(day.gates).map(([gateId, gate]) => {
-      const nextPct = projectedByDate.get(day.date)?.gates[gateId]?.pct ?? gate.pct;
-      return [gateId, { ...gate, previewPct: nextPct !== gate.pct ? nextPct : undefined }];
-    })),
+    gates: Object.fromEntries(
+      Object.entries(day.gates).map(([gate, cell]) => {
+        const next = projectedByDate.get(day.date)?.gates[gate]?.pct ?? cell.pct;
+        return [gate, { ...cell, previewPct: next !== cell.pct ? next : undefined }];
+      })
+    ),
   }));
-  const targetBefore = currentGrid.find((day) => day.date === targetReleaseDate);
-  const targetAfter = projectedByDate.get(targetReleaseDate);
-  const gateNames = new Map(movingLots.flatMap((lot) =>
-    lot.routeSteps.map((step) => [step.gateId, step.gateName] as const)));
-  const routeTableRows = Array.from(gateNames).flatMap(([gateId, gateName]) => {
-    const before = targetBefore?.gates[gateId];
-    const after = targetAfter?.gates[gateId];
-    if (!before || !after) return [];
-    return [{ gateId, gateName, displayDate: dayjs(targetReleaseDate).format("DD/MM"),
-      beforePct: before.pct, afterPct: after.pct }];
-  });
-  return { previewGrid, routeTableRows };
+
+  // One gate only: the source date(s) lose the load and the target date gains it.
+  const gate = movingLots[0]?.gate;
+  const dates = [...new Set([...movingLots.map((lot) => lot.plannedDate), targetDate])].sort();
+  const impactRows = gate
+    ? dates.flatMap((date) => {
+        const before = currentGrid.find((day) => day.date === date)?.gates[gate];
+        const after = projectedByDate.get(date)?.gates[gate];
+        if (!before || !after) return [];
+        return [{
+          gate,
+          date,
+          isTarget: date === targetDate,
+          beforePct: cellPct(before),
+          afterPct: cellPct(after),
+          capacityMin: after.capacityMin,
+          hasOt: after.hasOt,
+        }];
+      })
+    : [];
+  return { previewGrid, impactRows };
 };
 
-// Preview load changes while a lot is being dragged or previewed to a target release date
-export const computeDragPreview = (
-  currentGrid: DayGateLoad[],
-  lot: LotItem,
-  targetReleaseDate: string
-): {
-  previewGrid: DayGateLoad[];
-  routeTableRows: Array<{
-    gateId: string;
-    gateName: string;
-    arrivesDateStr: string;
-    displayDate: string;
-    capacityMin: number;
-    hasOt?: boolean;
-    lotMinutes: number;
-    beforePct: number;
-    afterPct: number;
-  }>;
-  oldDateDisplay: string;
-  oldGateBeforePct: number;
-  oldGateAfterPct: number;
-} => {
-  const previewGrid = currentGrid.map((d) => ({
-    ...d,
-    gates: Object.entries(d.gates).reduce((acc, [gId, gVal]) => {
-      acc[gId] = { ...gVal };
-      return acc;
-    }, {} as DayGateLoad["gates"]),
-  }));
-
-  const LOT_LOAD_SCALE = 5.4;
-  const qtyFactor = Math.max(0.65, lot.qty / 1400);
-
-  const routeRows: Array<{
-    gateId: string;
-    gateName: string;
-    arrivesDateStr: string;
-    displayDate: string;
-    capacityMin: number;
-    hasOt?: boolean;
-    lotMinutes: number;
-    beforePct: number;
-    afterPct: number;
-  }> = [];
-
-  let oldGateBeforePct = 0;
-  let oldGateAfterPct = 0;
-
-  // 1. Remove lot from old release date column if moving to a different date
-  if (targetReleaseDate !== lot.releaseDate) {
-    const oldDay = previewGrid.find((d) => d.date === lot.releaseDate);
-    lot.routeSteps.forEach((step, idx) => {
-      if (oldDay && oldDay.gates[step.gateId]) {
-        const g = oldDay.gates[step.gateId];
-        const removedMin = Math.round(step.minutes * LOT_LOAD_SCALE * qtyFactor);
-        const newLoad = Math.max(0, g.loadMin - removedMin);
-        const nextPct = Math.round((newLoad / g.capacityMin) * 100);
-        g.previewPct = nextPct;
-        if (idx === 0) {
-          oldGateBeforePct = g.pct;
-          oldGateAfterPct = nextPct;
-        }
-      }
-    });
-  }
-
-  // 2. Add lot to target release date column
-  const targetDay = previewGrid.find((d) => d.date === targetReleaseDate);
-  lot.routeSteps.forEach((step) => {
-    const gDef = GATES_CONFIG.find((g) => g.id === step.gateId);
-    const cap = gDef?.normalCapacityMin || 6460;
-    const hasOt = targetDay?.hasOt || step.gateId === "FADL";
-    const actualCap = hasOt ? gDef?.otCapacityMin || 7690 : cap;
-
-    let beforePct = 0;
-    let afterPct = 0;
-
-    if (targetDay && targetDay.gates[step.gateId]) {
-      const g = targetDay.gates[step.gateId];
-      beforePct = g.pct;
-      const addedMin = Math.round(step.minutes * LOT_LOAD_SCALE * qtyFactor);
-      const deltaPct = Math.max(
-        2,
-        Math.round((addedMin / actualCap) * 100)
-      );
-      afterPct =
-        targetReleaseDate === lot.releaseDate
-          ? beforePct
-          : beforePct + deltaPct;
-      if (targetReleaseDate !== lot.releaseDate) {
-        g.previewPct = afterPct;
-      }
+export const calculateKpis = (
+  grid: DayGateLoad[],
+  requiredGrid: DayGateLoad[],
+  lots: LotItem[]
+): LevelingKpiData => {
+  const overloaded = (data: DayGateLoad[]) =>
+    data.flatMap((day) =>
+      Object.entries(day.gates)
+        .filter(([, cell]) => !cell.off && cell.configured && cell.pct > 100)
+        .map(([gate]) => `${gate} · ${day.displayDate}`)
+    );
+  const red = overloaded(grid);
+  const planned = plannedDateIndex(lots);
+  const warnings = lots.map((lot) => moveWarning(lot, lot.plannedDate, planned));
+  const late = lots.filter((_, index) => warnings[index] === "late" || warnings[index] === "order");
+  const moved = lots.filter(isMoved);
+  const unset = new Set<string>();
+  for (const day of grid) {
+    for (const [gate, cell] of Object.entries(day.gates)) {
+      if (!cell.off && !cell.configured) unset.add(gate);
     }
-
-    routeRows.push({
-      gateId: step.gateId,
-      gateName: step.gateName,
-      arrivesDateStr: targetReleaseDate,
-      displayDate: dayjs(targetReleaseDate).format("DD/MM"),
-      capacityMin: actualCap,
-      hasOt,
-      lotMinutes: step.minutes,
-      beforePct,
-      afterPct,
-    });
-  });
-
+  }
   return {
-    previewGrid,
-    routeTableRows: routeRows,
-    oldDateDisplay: dayjs(lot.releaseDate).format("DD/MM"),
-    oldGateBeforePct: oldGateBeforePct || 95,
-    oldGateAfterPct: oldGateAfterPct || 68,
+    overloadCells: red.length,
+    overloadCellsRequired: overloaded(requiredGrid).length,
+    overloadDetail: red.length ? red.slice(0, 6).join(", ") : "No gate-day above 100%",
+    lateCards: late.length,
+    movedLateCards: late.filter(isMoved).length,
+    orderCards: warnings.filter((warning) => warning === "order").length,
+    lateDetail: late.length
+      ? `${late[0].label} · ${late[0].product} @ ${late[0].gate}`
+      : "All cards are on or before must-out",
+    movedCount: moved.length,
+    totalCount: lots.length,
+    movedEarlier: moved.filter((lot) => lot.plannedDate < lot.baseDate).length,
+    movedLater: moved.filter((lot) => lot.plannedDate > lot.baseDate).length,
+    missingUphCards: lots.filter((lot) => lot.loadMin === null).length,
+    unsetCapacityGates: [...unset],
   };
 };
+
+/** Minutes one machine can run in the shift: regular - enabled breaks (+ OT when open). */
+export const shiftMinutesPerMachine = (cfg: ShiftConfig, otOn = cfg.otEnabled) => {
+  const breaks =
+    (cfg.break1 ? cfg.break1Min : 0) +
+    (cfg.break2 ? cfg.break2Min : 0) +
+    (cfg.lunch ? cfg.lunchMin : 0);
+  return Math.max(0, cfg.minPerShift - breaks + (otOn ? cfg.otMinutes : 0));
+};
+
+/** Shift capacity in minutes; null while MC is not entered, 0 when the shift is off. */
+export const shiftCapacityMin = (cfg: ShiftConfig, otOn = cfg.otEnabled): number | null => {
+  if (!cfg.enabled) return 0;
+  if (cfg.mcLines === null) return null;
+  return Math.round(cfg.mcLines * cfg.efficiency * shiftMinutesPerMachine(cfg, otOn) * 100) / 100;
+};
+
+export const formatMinutes = (value: number | null) =>
+  value === null ? "Set MC" : `${Math.round(value).toLocaleString()} min`;

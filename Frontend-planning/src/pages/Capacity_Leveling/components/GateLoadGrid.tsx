@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import dayjs from "dayjs";
 import { X } from "lucide-react";
-import type { DayGateLoad, PlanMode, LevelingKpiData } from "../types";
-import { GATES_CONFIG } from "../mock/levelingMockData";
+import type { DayGateLoad, GateInfo, PlanMode, LevelingKpiData } from "../types";
+import { cellPct, loadStatus } from "../utils/levelingCalculations";
 
 export type GridUnitMode = "pct" | "piece" | "sheet" | "lot";
 
@@ -13,42 +13,30 @@ const UNIT_MODES: { mode: GridUnitMode; label: string }[] = [
   { mode: "lot", label: "Lot" },
 ];
 
-// Derive Piece / Sheet / Lot metrics strictly from actual accumulated lots on that gate-day
-const getCellMetrics = (
-  _pct: number,
-  gInfo?: DayGateLoad["gates"][string]
-) => {
-  if (gInfo && gInfo.lotCount !== undefined && gInfo.lotCount > 0) {
-    return {
-      pcs: gInfo.totalPcs || 0,
-      sheets: gInfo.totalSheets || Math.ceil((gInfo.totalPcs || 0) / 12),
-      lots: gInfo.lotCount,
-    };
-  }
-  return { pcs: 0, sheets: 0, lots: 0 };
-};
-
-
 interface GateLoadGridProps {
+  gates: GateInfo[];
   gridData: DayGateLoad[];
-  /** Same grid with lots on their original system dates (Required) — compared in "required" mode */
+  /** Same grid with cards on their must-out dates (Required) — compared in "required" mode */
   requiredGridData?: DayGateLoad[];
   planMode: PlanMode;
   onPlanModeChange: (mode: PlanMode) => void;
   kpis: LevelingKpiData;
-  isDragging?: boolean;
   selectedGate?: string | null;
+  /** Gate currently shown on the Release Board */
+  boardGate?: string | null;
   selectedDate?: string | null;
   onSelectCell?: (gateId: string | null, dateStr: string | null) => void;
 }
 
 export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
+  gates,
   gridData,
   requiredGridData,
   planMode,
   onPlanModeChange,
   kpis,
   selectedGate = null,
+  boardGate = null,
   selectedDate = null,
   onSelectCell,
 }) => {
@@ -86,13 +74,11 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
     const dayCol = gridData.find((d) => d.date === selectedDate);
     const gInfo = dayCol?.gates[selectedGate];
     if (!gInfo) return null;
-    const pct =
-      planMode === "planned" && gInfo.previewPct !== undefined
-        ? gInfo.previewPct
-        : gInfo.pct;
     return {
-      pct,
-      ...getCellMetrics(pct, gInfo),
+      pct: cellPct(gInfo, planMode === "planned"),
+      pcs: gInfo.totalPcs,
+      sheets: gInfo.totalSheets,
+      lots: gInfo.lotCount,
     };
   }, [gridData, selectedGate, selectedDate, planMode]);
 
@@ -120,9 +106,9 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               <th className="text-left font-bold text-[11px] text-slate-400 tracking-wider px-2.5 py-1.5 sticky left-0 bg-base-100 z-10">
                 GATE
               </th>
-              {data.map((col, idx) => {
-                const isToday = idx === 0;
-                const isSun = col.isSunday;
+              {data.map((col) => {
+                const isToday = col.isToday;
+                const isSun = col.isOff;
                 const isDaySelected = selectedDate === col.date;
                 return (
                   <th key={col.date} className="p-[3px] font-medium">
@@ -169,7 +155,8 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
             </tr>
           </thead>
           <tbody>
-            {GATES_CONFIG.map((gate) => {
+            {gates.map((gateInfo) => {
+              const gate = { id: gateInfo.gate, name: gateInfo.gate };
               const isGateSelected =
                 selectedGate === gate.id && !selectedDate;
               return (
@@ -178,24 +165,71 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCellClick(gate.id, null)}
+                      title={`Show ${gate.name} on the Release Board`}
                       className={`font-bold cursor-pointer transition-colors ${
-                        selectedGate === gate.id
+                        selectedGate === gate.id || boardGate === gate.id
                           ? "text-[#4f46e5]"
                           : "text-base-content hover:text-[#4f46e5]"
                       }`}
                     >
                       {gate.name}
+                      {boardGate === gate.id && (
+                        <span className="block text-[9px] font-semibold uppercase tracking-wide text-[#4f46e5]/70">
+                          on board
+                        </span>
+                      )}
                     </button>
                   </td>
                   {data.map((col) => {
                     const gInfo = col.gates[gate.id];
 
-                    if (!gInfo || col.isSunday) {
+                    if (!gInfo || gInfo.off) {
                       return (
                         <td key={col.date} className="p-[3px] align-middle">
-                          <div className="w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed border-slate-200/80 bg-slate-50/80 text-slate-400 flex items-center justify-center text-[10.5px] font-bold">
-                            OFF
+                          <div
+                            title={gInfo && gInfo.lotCount > 0
+                              ? `${gate.name} is closed on ${col.displayDate} but ${gInfo.lotCount} card(s) are due`
+                              : undefined}
+                            className={`w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed flex flex-col items-center justify-center text-[10.5px] font-bold ${
+                              gInfo && gInfo.lotCount > 0
+                                ? "border-rose-300 bg-rose-50 text-rose-700"
+                                : "border-slate-200/80 bg-slate-50/80 text-slate-400"
+                            }`}
+                          >
+                            <span>OFF</span>
+                            {gInfo && gInfo.lotCount > 0 && (
+                              <span className="text-[9px] font-semibold">{gInfo.lotCount} lots due</span>
+                            )}
                           </div>
+                        </td>
+                      );
+                    }
+
+                    const { totalPcs: pcs, totalSheets: sheets, lotCount: lots } = gInfo;
+                    const isCellSelected =
+                      (selectedGate === gate.id && selectedDate === col.date) ||
+                      (selectedGate === null && selectedDate === col.date) ||
+                      isGateSelected;
+
+                    // MC is not entered yet: show the work, never a 0% that looks like free capacity.
+                    if (!gInfo.configured) {
+                      return (
+                        <td key={col.date} className="p-[3px] align-middle">
+                          <button
+                            type="button"
+                            aria-pressed={isCellSelected}
+                            onClick={() => handleCellClick(gate.id, col.date)}
+                            title={`${gate.name} · ${col.displayDate}: MC is not set, so Load % cannot be calculated | ${pcs.toLocaleString()} pcs | ${lots} lots`}
+                            className={`w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed border-amber-300 bg-amber-50/60 text-amber-800 flex flex-col items-center justify-center gap-1 py-1.5 px-1.5 cursor-pointer tabular-nums ${
+                              isCellSelected ? "ring-2 ring-[#4f46e5] shadow-xs" : ""
+                            }`}
+                          >
+                            <span className="text-[11px] font-extrabold leading-none whitespace-nowrap">Set MC</span>
+                            <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
+                              {pcs.toLocaleString()} pcs
+                            </span>
+                            <span className="text-[9px] opacity-75 leading-none whitespace-nowrap">{lots} lots</span>
+                          </button>
                         </td>
                       );
                     }
@@ -210,36 +244,15 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                       : gInfo.pct;
 
                     const originalPct = gInfo.pct;
-                    const { pcs, sheets, lots } = getCellMetrics(
-                      displayPct,
-                      gInfo
-                    );
-                    const isCellSelected =
-                      (selectedGate === gate.id && selectedDate === col.date) ||
-                      (selectedGate === null && selectedDate === col.date) ||
-                      isGateSelected;
-
-                    let pillStyle = "";
-                    if (col.isFrozen) {
-                      if (displayPct > 100) {
-                        pillStyle =
-                          "bg-[#fee2e2]/70 text-[#b91c1c]/85 font-semibold";
-                      } else if (displayPct >= 80) {
-                        pillStyle =
-                          "bg-[#fef3c7]/65 text-[#92400e]/80 font-semibold";
-                      } else {
-                        pillStyle =
-                          "bg-base-200/80 text-base-content/55 font-medium";
-                      }
-                    } else {
-                      if (displayPct > 100) {
-                        pillStyle = "bg-[#fee2e2] text-[#991b1b] font-bold";
-                      } else if (displayPct >= 80) {
-                        pillStyle = "bg-[#fef3c7] text-[#92400e] font-bold";
-                      } else {
-                        pillStyle = "bg-[#d1fae5] text-[#065f46] font-semibold";
-                      }
-                    }
+                    const status = loadStatus(displayPct);
+                    const pillStyle = status === "red"
+                      ? "bg-[#fee2e2] text-[#991b1b] font-bold"
+                      : status === "yellow"
+                      ? "bg-[#fef3c7] text-[#92400e] font-bold"
+                      : "bg-[#d1fae5] text-[#065f46] font-semibold";
+                    const missingNote = gInfo.missingUph > 0
+                      ? ` | ${gInfo.missingUph} card(s) without UPH not included`
+                      : "";
 
                     return (
                       <td key={col.date} className="p-[3px] align-middle">
@@ -247,7 +260,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                           type="button"
                           aria-pressed={isCellSelected}
                           onClick={() => handleCellClick(gate.id, col.date)}
-                          title={`${gate.name} · ${col.displayDate}: ${displayPct}% load | ${pcs.toLocaleString()} pcs | ${sheets.toLocaleString()} sheets | ${lots} lots`}
+                          title={`${gate.name} · ${col.displayDate}: ${displayPct}% load (${Math.round(gInfo.loadMin).toLocaleString()} / ${Math.round(gInfo.capacityMin ?? 0).toLocaleString()} min${gInfo.hasOt ? ", OT open" : ""}) | ${pcs.toLocaleString()} pcs | ${sheets.toLocaleString()} sheets | ${lots} lots${missingNote}`}
                           className={`w-full h-[54px] min-h-[54px] rounded-[8px] flex flex-col items-center justify-center gap-1 py-1.5 px-1.5 transition-all cursor-pointer tabular-nums hover:brightness-95 focus-visible:outline-2 focus-visible:outline-primary ${pillStyle} ${
                             isCellSelected
                               ? "ring-2 ring-[#4f46e5] shadow-xs"
@@ -278,6 +291,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                               <>
                                 <span className="text-[12.5px] font-extrabold leading-none whitespace-nowrap">
                                   {displayPct}%
+                                  {gInfo.missingUph > 0 && <span aria-label="some cards have no UPH">*</span>}
                                 </span>
                                 <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
                                   {pcs.toLocaleString()} pcs
@@ -377,56 +391,56 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
           <div className="inline-flex flex-wrap items-center gap-1.5 tabular-nums">
             {/* 1. Overload Cells */}
             <div
-              title={kpis.redCellPlanningDetail}
+              title={kpis.overloadDetail}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  kpis.redCellsPlanningAfter > 0
+                  kpis.overloadCells > 0
                     ? "bg-rose-500"
                     : "bg-emerald-500"
                 }`}
               />
               <span className="text-base-content/60 font-medium">Overload</span>
               <span className="font-bold text-base-content">
-                {kpis.redCellsPlanningAfter}
+                {kpis.overloadCells}
               </span>
-              {kpis.redCellsPlanningBefore !== kpis.redCellsPlanningAfter && (
+              {kpis.overloadCellsRequired !== kpis.overloadCells && (
                 <span className="text-[10.5px] text-base-content/40">
-                  (was {kpis.redCellsPlanningBefore})
+                  (was {kpis.overloadCellsRequired})
                 </span>
               )}
             </div>
 
             {/* 2. Late / At Risk Lots */}
             <div
-              title={kpis.posAtRiskDetail}
+              title={`${kpis.lateDetail}${kpis.orderCards ? ` · ${kpis.orderCards} with impossible gate order` : ""}`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  kpis.posAtRiskAfter > 0 ? "bg-amber-500" : "bg-emerald-500"
+                  kpis.lateCards > 0 ? "bg-amber-500" : "bg-emerald-500"
                 }`}
               />
               <span className="text-base-content/60 font-medium">
-                Late Lots
+                After must-out
               </span>
               <span className="font-bold text-base-content">
-                {kpis.posAtRiskAfter}
+                {kpis.lateCards}
               </span>
             </div>
 
             {/* 3. Moved Lots */}
             <div
-              title={`${kpis.releasesMovedEarlier} earlier · ${kpis.releasesMovedLater} later`}
+              title={`${kpis.movedEarlier} earlier · ${kpis.movedLater} later`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
             >
               <span className="w-2 h-2 rounded-full bg-[#4f46e5]" />
               <span className="text-base-content/60 font-medium">Moved</span>
               <span className="font-bold text-base-content">
-                {kpis.releasesMovedCount}
+                {kpis.movedCount}
                 <span className="text-base-content/40 font-normal">
-                  /{kpis.releasesTotalCount}
+                  /{kpis.totalCount}
                 </span>
               </span>
             </div>
@@ -442,16 +456,13 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
             >
               <span>
                 {[
-                  selectedGate
-                    ? GATES_CONFIG.find((g) => g.id === selectedGate)?.name ||
-                      selectedGate
-                    : null,
+                  selectedGate,
                   selectedDate ? dayjs(selectedDate).format("DD/MM") : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
                 {selectedCellSummary
-                  ? ` — ${selectedCellSummary.pct}% · ${selectedCellSummary.pcs.toLocaleString()} pcs · ${selectedCellSummary.sheets.toLocaleString()} sheets · ${selectedCellSummary.lots} lots`
+                  ? ` — ${selectedCellSummary.pct === null ? "no %" : `${selectedCellSummary.pct}%`} · ${selectedCellSummary.pcs.toLocaleString()} pcs · ${selectedCellSummary.sheets.toLocaleString()} sheets · ${selectedCellSummary.lots} lots`
                   : ""}
               </span>
               <X size={12} />
@@ -496,7 +507,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
             <div className="mb-1 flex items-center gap-2 text-xs font-bold tracking-wide text-base-content/70">
               <span className="h-2 w-2 rounded-full bg-base-content/40" />
               REQUIRED
-              <span className="font-normal text-base-content/50">· lots on system dates</span>
+              <span className="font-normal text-base-content/50">· cards on their must-out dates</span>
             </div>
             {renderTable(requiredGridData ?? [], 0, false)}
           </div>

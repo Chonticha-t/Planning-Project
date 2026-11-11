@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import dayjs from "dayjs";
+import toast from "react-hot-toast";
 import {
   X,
   ChevronLeft,
@@ -13,39 +14,16 @@ import {
   Moon,
 } from "lucide-react";
 
+import { useAuth } from "@/context/AuthContext";
+import type { GateShiftConfig, Shift, ShiftConfig, SpecialDay } from "../types";
+import { fetchCapacity, saveCapacity, toApiFailure } from "../hooks/api";
+import { formatMinutes, shiftCapacityMin } from "../utils/levelingCalculations";
+
 interface CapacityModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: () => void;
-}
-
-interface GateCapConfig {
-  gate: string;
-  group: "FPC" | "SMT";
-  mcLines: number;
-  manpower: string;
-  shiftsPerDay: number;
-  minPerShift: number;
-  otEnabled: boolean;
-  otMinutes: number;
-  break1: boolean;
-  break1Min: number;
-  break2: boolean;
-  break2Min: number;
-  lunch: boolean;
-  lunchMin: number;
-  specialDays: Record<number, "ot" | "off" | "work">;
-}
-
-type Shift = "day" | "night";
-type ShiftConfig = Omit<GateCapConfig, "gate" | "group" | "shiftsPerDay" | "specialDays"> & {
-  enabled: boolean;
-  specialDays: Record<string, "ot" | "off" | "work">;
-};
-interface GateShiftConfig {
-  gate: string;
-  group: "FPC" | "SMT";
-  shifts: Record<Shift, ShiftConfig>;
+  /** Called after settings were stored, so the page can recalculate Load % */
+  onSaved: () => void;
 }
 
 const SHIFTS = [
@@ -53,237 +31,86 @@ const SHIFTS = [
   { id: "night", label: "Night Shift", Icon: Moon },
 ] as const;
 
-const INITIAL_GATE_DEFAULTS: Record<string, GateCapConfig> = {
-  FFPC: {
-    gate: "FFPC",
-    group: "FPC",
-    mcLines: 8,
-    manpower: "16",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  FVAC: {
-    gate: "FVAC",
-    group: "FPC",
-    mcLines: 8,
-    manpower: "16",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  FADL: {
-    gate: "FADL",
-    group: "FPC",
-    mcLines: 8,
-    manpower: "16",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: { 19: "ot", 23: "ot" },
-  },
-  FIN: {
-    gate: "FIN",
-    group: "FPC",
-    mcLines: 8,
-    manpower: "20",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: { 19: "ot" },
-  },
-  "W/H": {
-    gate: "W/H",
-    group: "FPC",
-    mcLines: 8,
-    manpower: "10",
-    shiftsPerDay: 1,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 90,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  MFPC: {
-    gate: "MFPC",
-    group: "SMT",
-    mcLines: 6,
-    manpower: "12",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  MMOT: {
-    gate: "MMOT",
-    group: "SMT",
-    mcLines: 6,
-    manpower: "12",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  MBLK: {
-    gate: "MBLK",
-    group: "SMT",
-    mcLines: 6,
-    manpower: "12",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  MFIN: {
-    gate: "MFIN",
-    group: "SMT",
-    mcLines: 6,
-    manpower: "14",
-    shiftsPerDay: 2,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 180,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
-  "MW/H": {
-    gate: "MW/H",
-    group: "SMT",
-    mcLines: 6,
-    manpower: "8",
-    shiftsPerDay: 1,
-    minPerShift: 540,
-    otEnabled: false,
-    otMinutes: 90,
-    break1: true,
-    break1Min: 10,
-    break2: true,
-    break2Min: 10,
-    lunch: true,
-    lunchMin: 45,
-    specialDays: {},
-  },
+/** Day capacity of a gate; null while an active shift has no MC. */
+const calcGateCapacityMin = (cfg: GateShiftConfig, forceOt?: boolean): number | null => {
+  const shifts = [cfg.shifts.day, cfg.shifts.night].map((shift) => shiftCapacityMin(shift, forceOt ?? shift.otEnabled));
+  return shifts.some((value) => value === null) ? null : Math.round(shifts.reduce<number>((sum, value) => sum + (value ?? 0), 0));
 };
 
-const createInitialConfigs = (): Record<string, GateShiftConfig> =>
-  Object.fromEntries(Object.values(INITIAL_GATE_DEFAULTS).map((defaults) => {
-    const { gate, group, shiftsPerDay, specialDays, ...settings } = defaults;
-    const createShift = (enabled: boolean): ShiftConfig => ({
-      ...settings,
-      enabled,
-      // Legacy OT is a daily allowance; divide it across the active shifts.
-      otMinutes: settings.otMinutes / shiftsPerDay,
-      specialDays: Object.fromEntries(Object.entries(specialDays).map(([day, action]) => [
-        `2026-11-${day.padStart(2, "0")}`, action,
-      ])),
-    });
-    return [gate, { gate, group, shifts: {
-      day: createShift(true),
-      night: createShift(shiftsPerDay > 1),
-    } }];
-  }));
-
-const calcShiftCapacityMin = (cfg: ShiftConfig, forceOt?: boolean) => {
-  if (!cfg.enabled) return 0;
-  const breaks =
-    (cfg.break1 ? cfg.break1Min : 0) +
-    (cfg.break2 ? cfg.break2Min : 0) +
-    (cfg.lunch ? cfg.lunchMin : 0);
-  const netShiftMin = Math.max(0, cfg.minPerShift - breaks);
-  const useOt = forceOt !== undefined ? forceOt : cfg.otEnabled;
-  return (netShiftMin + (useOt ? cfg.otMinutes : 0)) * cfg.mcLines * 0.85;
-};
-
-const calcGateCapacityMin = (cfg: GateShiftConfig, forceOt?: boolean) =>
-  Math.round(calcShiftCapacityMin(cfg.shifts.day, forceOt) +
-    calcShiftCapacityMin(cfg.shifts.night, forceOt));
+const shortCap = (value: number | null) => (value === null ? "Set MC" : `${value.toLocaleString()}m`);
 
 export const CapacityModal: React.FC<CapacityModalProps> = ({
   isOpen,
   onClose,
-  onSave,
+  onSaved,
 }) => {
+  const { requireAdmin } = useAuth();
   const [selectedGate, setSelectedGate] = useState("FADL");
   const [activeTab, setActiveTab] = useState<"input" | "table">("input");
   const [selectedShift, setSelectedShift] = useState<Shift>("day");
-  const [monthOffset, setMonthOffset] = useState(0); // 0 = Nov 2026
-  const [configs, setConfigs] =
-    useState(createInitialConfigs);
-  const [selectedDays, setSelectedDays] = useState<number[]>([19, 23]);
-  const [specialAction, setSpecialAction] = useState<"ot" | "off" | "work">(
-    "ot"
-  );
+  const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
+  const [configs, setConfigs] = useState<Record<string, GateShiftConfig> | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [specialAction, setSpecialAction] = useState<SpecialDay | "clear">("ot");
   const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const loadConfigs = useCallback(async (signal?: AbortSignal) => {
+    setLoadError(null);
+    try {
+      const gates = await fetchCapacity(signal);
+      setConfigs(Object.fromEntries(gates.map((gate) => [gate.gate, gate])));
+      setIsDirty(false);
+    } catch (error) {
+      if (signal?.aborted) return;
+      setLoadError(toApiFailure(error).message);
+    }
+  }, []);
+
+  // Always start from the stored settings when the modal opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    const controller = new AbortController();
+    setConfigs(null);
+    setSelectedDays([]);
+    setMonthOffset(0);
+    void loadConfigs(controller.signal);
+    return () => controller.abort();
+  }, [isOpen, loadConfigs]);
 
   if (!isOpen) return null;
 
-  const currentMonth = dayjs("2026-11-01").add(monthOffset, "month");
+  if (!configs) {
+    return (
+      <div className="planning-summary-gate fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+        <div role="dialog" aria-modal="true" aria-label="Capacity Configuration"
+          className="bg-base-100 rounded-2xl shadow-2xl border border-base-300 w-full max-w-[460px] p-6 text-base-content flex flex-col gap-4">
+          <div className="text-sm font-bold">Capacity Configuration</div>
+          <div className={`text-sm ${loadError ? "text-rose-700" : "text-base-content/60"}`} role={loadError ? "alert" : "status"}>
+            {loadError ?? "Loading capacity settings..."}
+          </div>
+          <div className="flex justify-end gap-2">
+            {loadError && (
+              <button type="button" onClick={() => void loadConfigs()}
+                className="btn btn-sm h-8 px-4 btn-primary text-xs font-semibold rounded-lg">Try again</button>
+            )}
+            <button type="button" onClick={onClose}
+              className="btn btn-sm h-8 px-4 bg-base-100 border border-base-300 hover:bg-base-200 text-base-content text-xs font-semibold rounded-lg">Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const gateNames = Object.keys(configs);
+  const currentMonth = dayjs().startOf("month").add(monthOffset, "month");
   const daysInMonth = currentMonth.daysInMonth();
   const firstDayDow = currentMonth.day(); // 0 = Sun, 1 = Mon ...
   const leadingEmptySlots = firstDayDow === 0 ? 6 : firstDayDow - 1;
 
-  const gateCfg = configs[selectedGate] || configs.FADL;
+  const gateCfg = configs[selectedGate] || configs[gateNames[0]];
+  const activeGate = gateCfg.gate;
   const cfg = gateCfg.shifts[selectedShift];
   const shiftLabel = selectedShift === "day" ? "Day Shift" : "Night Shift";
   // Keep shift colors scoped below the modal header.
@@ -305,40 +132,71 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
   const updateCurrentShift = (patch: Partial<ShiftConfig>) => {
     const validatedPatch = { ...patch };
-    for (const key of ["mcLines", "minPerShift", "otMinutes", "break1Min", "break2Min", "lunchMin"] as const) {
+    // MC and manpower may stay empty (null) until they are known.
+    for (const key of ["mcLines", "manpower"] as const) {
+      const value = validatedPatch[key];
+      if (value !== undefined && value !== null) {
+        if (!Number.isFinite(value)) return;
+        validatedPatch[key] = Math.max(0, Math.floor(value));
+      }
+    }
+    for (const key of ["minPerShift", "otMinutes", "break1Min", "break2Min", "lunchMin"] as const) {
       const value = validatedPatch[key];
       if (value !== undefined) {
         if (!Number.isFinite(value)) return;
-        validatedPatch[key] = Math.max(0, key === "mcLines" ? Math.floor(value) : value);
+        validatedPatch[key] = Math.max(0, value);
       }
     }
-    setConfigs((prev) => ({
+    setConfigs((prev) => prev && ({
       ...prev,
-      [selectedGate]: {
-        ...prev[selectedGate],
+      [activeGate]: {
+        ...prev[activeGate],
         shifts: {
-          ...prev[selectedGate].shifts,
-          [selectedShift]: { ...prev[selectedGate].shifts[selectedShift], ...validatedPatch },
+          ...prev[activeGate].shifts,
+          [selectedShift]: { ...prev[activeGate].shifts[selectedShift], ...validatedPatch },
         },
       },
     }));
     setIsDirty(true);
   };
 
-  const normalCapMin = Math.round(calcShiftCapacityMin(cfg, false));
-  const otCapMin = Math.round(calcShiftCapacityMin(cfg, true));
+  const optionalNumber = (value: string) => (value.trim() === "" ? null : Number(value));
+
+  const normalCapMin = shiftCapacityMin(cfg, false);
+  const otCapMin = shiftCapacityMin(cfg, true);
   const activeCapMin = calcGateCapacityMin(gateCfg);
-  const shiftCapMin = Math.round(calcShiftCapacityMin(cfg));
+  const shiftCapMin = shiftCapacityMin(cfg);
 
   const handleApplySpecialDays = () => {
     if (!cfg.enabled) return;
     const nextSpecial = { ...cfg.specialDays };
     for (const d of selectedDays) {
       if (d >= 1 && d <= daysInMonth) {
-        nextSpecial[currentMonth.date(d).format("YYYY-MM-DD")] = specialAction;
+        const date = currentMonth.date(d).format("YYYY-MM-DD");
+        if (specialAction === "clear") delete nextSpecial[date];
+        else nextSpecial[date] = specialAction;
       }
     }
     updateCurrentShift({ specialDays: nextSpecial });
+    setSelectedDays([]);
+  };
+
+  // Settings and special days of every gate are stored together, in one transaction.
+  const handleSave = async () => {
+    if (isSaving) return;
+    await requireAdmin(async () => {
+      setIsSaving(true);
+      try {
+        await saveCapacity(Object.values(configs));
+        toast.success("Capacity settings saved.");
+        onSaved();
+        onClose();
+      } catch (error) {
+        toast.error(toApiFailure(error).message, { duration: 6000 });
+      } finally {
+        setIsSaving(false);
+      }
+    });
   };
 
   return (
@@ -466,8 +324,8 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     FPC GATES
                   </div>
                   <div className="space-y-0.5">
-                    {["FFPC", "FVAC", "FADL", "FIN", "W/H"].map((g) => {
-                      const isActive = selectedGate === g;
+                    {gateNames.filter((g) => configs[g].group === "FPC").map((g) => {
+                      const isActive = activeGate === g;
                       const gCap = calcGateCapacityMin(configs[g]);
                       return (
                         <button
@@ -488,7 +346,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                                 : "text-base-content/45"
                             }`}
                           >
-                            {gCap.toLocaleString()}m
+                            {shortCap(gCap)}
                           </span>
                         </button>
                       );
@@ -501,8 +359,8 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     SMT GATES
                   </div>
                   <div className="space-y-0.5">
-                    {["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"].map((g) => {
-                      const isActive = selectedGate === g;
+                    {gateNames.filter((g) => configs[g].group === "SMT").map((g) => {
+                      const isActive = activeGate === g;
                       const gCap = calcGateCapacityMin(configs[g]);
                       return (
                         <button
@@ -523,7 +381,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                                 : "text-base-content/45"
                             }`}
                           >
-                            {gCap.toLocaleString()}m
+                            {shortCap(gCap)}
                           </span>
                         </button>
                       );
@@ -541,7 +399,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                   <div>
                     <div className="text-sm font-bold text-base-content">
                       Standard Daily Capacity ·{" "}
-                      <span className="text-[color:var(--shift-label-color)]">{selectedGate}</span>
+                      <span className="text-[color:var(--shift-label-color)]">{activeGate}</span>
                     </div>
                     <div className="text-xs text-base-content/55">
                       {shiftLabel} · Default break and OT configuration
@@ -555,10 +413,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                         Total Gate Capacity / Day
                       </div>
                       <div className="text-base font-extrabold text-[color:var(--shift-accent-text)]">
-                        {activeCapMin.toLocaleString()} min
+                        {formatMinutes(activeCapMin)}
                       </div>
                       <div className="text-[10px] text-[color:var(--shift-accent-text)] opacity-80">
-                        {shiftLabel}: {shiftCapMin.toLocaleString()} min
+                        {shiftLabel}: {cfg.enabled ? formatMinutes(shiftCapMin) : "Off"}
                       </div>
                     </div>
                   </div>
@@ -740,9 +598,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                       type="number"
                         min={0}
                       aria-label="MC lines"
-                        value={cfg.mcLines}
+                      placeholder="-"
+                      title="Leave empty until the machine count is known"
+                        value={cfg.mcLines ?? ""}
                       onChange={(e) =>
-                        updateCurrentShift({ mcLines: Number(e.target.value) })
+                        updateCurrentShift({ mcLines: optionalNumber(e.target.value) })
                       }
                       className="w-14 bg-base-100 border border-base-300 rounded-lg px-2 py-1 text-right text-xs font-bold focus:outline-none"
                     />
@@ -754,11 +614,12 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                       Manpower
                     </span>
                     <input
-                      type="text"
+                      type="number"
+                      min={0}
                       aria-label="Manpower"
-                        value={cfg.manpower}
+                        value={cfg.manpower ?? ""}
                       onChange={(e) =>
-                        updateCurrentShift({ manpower: e.target.value })
+                        updateCurrentShift({ manpower: optionalNumber(e.target.value) })
                       }
                       placeholder="-"
                       className="w-14 bg-base-100 border border-base-300 rounded-lg px-2 py-1 text-right text-xs font-bold focus:outline-none"
@@ -821,7 +682,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                       {currentMonth.format("MMMM YYYY")}
                     </span>
                     <span className="text-xs text-base-content/50 ml-2">
-                      {shiftLabel} · Select dates to open OT or mark as Off
+                      {activeGate} · {shiftLabel} · Select dates to open OT, run normally or mark as Off
                     </span>
                   </div>
                 </div>
@@ -867,6 +728,8 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                                   ? "bg-primary text-primary-content shadow-2xs"
                                   : dayOverride === "ot"
                                   ? "bg-amber-100 text-amber-900 border border-amber-300"
+                                  : dayOverride === "work"
+                                  ? "bg-emerald-50 text-emerald-800 border border-emerald-300"
                                   : dayOverride === "off"
                                   ? "bg-slate-100 text-slate-400 line-through"
                                   : isSun
@@ -913,20 +776,21 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                       <div className="text-[11px] font-bold uppercase text-base-content/50">
                         Action for selected dates · {shiftLabel}
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {(
                           [
                             {
                               id: "ot",
                               label: "Open OT",
-                              sub: `${otCapMin.toLocaleString()} min`,
+                              sub: formatMinutes(otCapMin),
                             },
                             {
                               id: "work",
                               label: "Normal Day",
-                              sub: `${normalCapMin.toLocaleString()} min`,
+                              sub: formatMinutes(normalCapMin),
                             },
                             { id: "off", label: "Day Off", sub: "0 min" },
+                            { id: "clear", label: "Clear", sub: "Follow calendar" },
                           ] as const
                         ).map((item) => (
                           <button
@@ -990,8 +854,8 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                       (gCfg.break1 ? gCfg.break1Min : 0) +
                       (gCfg.break2 ? gCfg.break2Min : 0) +
                       (gCfg.lunch ? gCfg.lunchMin : 0);
-                    const norm = Math.round(calcShiftCapacityMin(gCfg, false));
-                    const withOt = Math.round(calcShiftCapacityMin(gCfg, true));
+                    const norm = shiftCapacityMin(gCfg, false);
+                    const withOt = shiftCapacityMin(gCfg, true);
                     return (
                       <tr
                         key={gate.gate}
@@ -1007,9 +871,9 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                           </span>
                         </td>
                         <td className="font-bold text-[color:var(--shift-label-color)]">{gate.gate}</td>
-                        <td className="font-semibold">{gCfg.mcLines}</td>
+                        <td className="font-semibold">{gCfg.mcLines ?? "-"}</td>
                         <td className="font-semibold text-base-content/75">
-                          {gCfg.manpower || "-"}
+                          {gCfg.manpower ?? "-"}
                         </td>
                         <td className="whitespace-nowrap">
                           {shiftLabel}
@@ -1033,13 +897,13 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                           </span>
                         </td>
                         <td className="font-bold text-base-content">
-                          {norm.toLocaleString()} min
+                          {gCfg.enabled ? formatMinutes(norm) : "Off"}
                         </td>
                         <td className="font-bold text-amber-700">
-                          {withOt.toLocaleString()} min
+                          {gCfg.enabled ? formatMinutes(withOt) : "Off"}
                         </td>
                         <td className="font-bold text-[color:var(--shift-label-color)]">
-                          {calcGateCapacityMin(gate).toLocaleString()} min
+                          {formatMinutes(calcGateCapacityMin(gate))}
                         </td>
                       </tr>
                     );
@@ -1053,7 +917,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-100">
           <span className="text-xs text-base-content/50">
-            {isDirty ? "Unsaved changes" : "All changes up to date"}
+            {isDirty ? "Unsaved changes" : "No changes"} · MC can stay empty until it is known
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -1065,13 +929,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => {
-                onSave();
-                onClose();
-              }}
+              onClick={() => void handleSave()}
+              disabled={!isDirty || isSaving}
               className="btn btn-sm h-8 px-4 btn-primary text-xs font-semibold rounded-lg cursor-pointer"
             >
-              Save
+              {isSaving ? "Saving..." : "Save"}
             </button>
           </div>
         </div>

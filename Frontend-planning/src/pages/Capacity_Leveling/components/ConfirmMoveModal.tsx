@@ -2,27 +2,53 @@ import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import { ArrowRight, Calendar, AlertCircle, CheckCircle2, X } from "lucide-react";
-import type { LotItem, DayGateLoad } from "../types";
-import { computeBatchMovePreview } from "../utils/levelingCalculations";
+import type { LotItem, DayGateLoad, LevelingData, MoveWarning } from "../types";
+import { computeMovePreview, moveWarning, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 
 interface ConfirmMoveModalProps {
   isOpen: boolean;
+  data: LevelingData;
+  /** Cards being moved; all belong to the same gate */
   lots: LotItem[];
   allLots: LotItem[];
-  frozenUntilDate: string;
   targetDate: string | null;
   gridData: DayGateLoad[];
+  plannedIndex: Map<string, string>;
   onConfirm: (lots: LotItem[], targetDate: string) => void;
   onCancel: () => void;
 }
 
+const WARNING_BADGE: Record<MoveWarning, string> = {
+  none: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  early: "bg-amber-50 text-amber-800 border-amber-200",
+  late: "bg-rose-50 text-rose-700 border-rose-200",
+  order: "bg-rose-100 text-rose-800 border-rose-400",
+};
+const WARNING_LABEL: Record<MoveWarning, string> = {
+  none: "Fits",
+  early: "Early",
+  late: "Late",
+  order: "Gate order",
+};
+
+const PctPill: React.FC<{ pct: number | null }> = ({ pct }) => (
+  <span
+    className={`inline-block min-w-[42px] px-1.5 py-0.5 rounded-md text-[11px] ${
+      pct === null ? "bg-base-200 text-base-content/50 font-semibold" : pctPillClass(pct)
+    }`}
+  >
+    {pct === null ? "—" : `${pct}%`}
+  </span>
+);
+
 export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
   isOpen,
+  data,
   lots,
   allLots,
-  frozenUntilDate,
   targetDate,
   gridData,
+  plannedIndex,
   onConfirm,
   onCancel,
 }) => {
@@ -40,34 +66,31 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
   }
 
   const lot = lots[0];
+  const gate = lot.gate;
   const isBatch = lots.length > 1;
-  const sourceDates = new Set(lots.map((item) => item.releaseDate));
-  const lateCount = lots.filter((item) => dayjs(targetDate).isAfter(dayjs(item.mustStartDate))).length;
-  const shiftDays = dayjs(targetDate).diff(dayjs(lot.releaseDate), "day");
-  const slackDays = dayjs(lot.mustStartDate).diff(dayjs(targetDate), "day");
-  const isLate = lateCount > 0;
-  const preview = computeBatchMovePreview(gridData, allLots, lots, targetDate, frozenUntilDate);
-
-  const getPctPillClass = (pct: number) => {
-    if (pct > 100) return "bg-[#fee2e2] text-[#991b1b] font-bold";
-    if (pct >= 80) return "bg-[#fef3c7] text-[#92400e] font-bold";
-    return "bg-[#d1fae5] text-[#065f46] font-semibold";
-  };
+  const sourceDates = new Set(lots.map((item) => item.plannedDate));
+  const warnings = lots.map((item) => moveWarning(item, targetDate, plannedIndex));
+  const count = (kind: MoveWarning) => warnings.filter((warning) => warning === kind).length;
+  const worst: MoveWarning = count("order") ? "order" : count("late") ? "late" : count("early") ? "early" : "none";
+  const shiftDays = dayjs(targetDate).diff(dayjs(lot.plannedDate), "day");
+  const slackDays = dayjs(lot.mustOut).diff(dayjs(targetDate), "day");
+  const { impactRows } = computeMovePreview(data, gridData, allLots, lots, targetDate);
+  const noLoadCount = lots.filter((item) => item.loadMin === null).length;
 
   return createPortal(
     <div className="planning-summary-gate fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/35">
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Confirm move release date"
-        className={`w-full ${isBatch ? "max-w-[620px]" : "max-w-[440px]"} max-h-[90vh] flex flex-col rounded-2xl bg-base-100 border border-base-300 shadow-2xl overflow-hidden text-base-content`}
+        aria-label={`Confirm move at ${gate}`}
+        className={`w-full ${isBatch ? "max-w-[620px]" : "max-w-[460px]"} max-h-[90vh] flex flex-col rounded-2xl bg-base-100 border border-base-300 shadow-2xl overflow-hidden text-base-content`}
       >
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-base-300 flex items-center justify-between bg-base-200/40">
           <div className="flex items-center gap-2">
             <Calendar size={16} className="text-primary" />
             <h3 className="text-sm font-bold text-base-content">
-              {isBatch ? `Move ${lots.length} Lots Together` : "Confirm Move Release Date"}
+              {isBatch ? `Move ${lots.length} Cards at ${gate}` : `Confirm Move at ${gate}`}
             </h3>
           </div>
           <button
@@ -82,30 +105,31 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
 
         {/* Body */}
         <div className="p-5 flex flex-col gap-4 tabular-nums overflow-y-auto min-h-0">
-          {/* Lot Info */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-bold text-base-content">
-                {isBatch ? `${lots.length} selected lots` : `${lot.id} · ${lot.product}`}
+          {/* Card Info */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-base-content break-all">
+                {isBatch ? `${lots.length} selected cards` : `${lot.label} · ${lot.product}`}
               </div>
               <div className="text-xs text-base-content/60 mt-0.5">
                 {isBatch
                   ? `${lots.reduce((sum, item) => sum + item.qty, 0).toLocaleString()} pcs total`
-                  : `${lot.qty.toLocaleString()} pcs · ${lot.routeId.replace(/_/g, " ")} · Must start ${dayjs(lot.mustStartDate).format("DD/MM/YYYY")}`}
+                  : `${lot.qty.toLocaleString()} pcs · Must out ${dayjs(lot.mustOut).format("DD/MM/YYYY")}`}
               </div>
             </div>
 
-            {isLate ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                <AlertCircle size={12} />
-                {isBatch ? `${lateCount} lot(s) late` : `Late (${slackDays}d)`}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <CheckCircle2 size={12} />
-                {isBatch ? "All lots fit Must Start" : `Fits (+${slackDays}d slack)`}
-              </span>
-            )}
+            <span className={`inline-flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border ${WARNING_BADGE[worst]}`}>
+              {worst === "none" ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+              {isBatch
+                ? worst === "none"
+                  ? "All cards fit"
+                  : `${count("late") + count("order")} late · ${count("early")} early`
+                : worst === "none"
+                ? `Fits (+${slackDays}d slack)`
+                : worst === "early"
+                ? "Early"
+                : `${WARNING_LABEL[worst]} (${slackDays}d)`}
+            </span>
           </div>
 
           {/* From -> To Box */}
@@ -115,7 +139,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
                 From Date
               </span>
               <span className="text-sm font-bold text-base-content/80 mt-0.5">
-                {sourceDates.size > 1 ? `${sourceDates.size} source dates` : dayjs(lot.releaseDate).format("ddd DD/MM/YYYY")}
+                {sourceDates.size > 1 ? `${sourceDates.size} source dates` : dayjs(lot.plannedDate).format("ddd DD/MM/YYYY")}
               </span>
             </div>
 
@@ -134,7 +158,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
               </span>
               <span
                 className={`text-sm font-bold mt-0.5 ${
-                  isLate ? "text-rose-600" : "text-primary"
+                  worst === "late" || worst === "order" ? "text-rose-600" : "text-primary"
                 }`}
               >
                 {dayjs(targetDate).format("ddd DD/MM/YYYY")}
@@ -142,20 +166,40 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
             </div>
           </div>
 
+          {/* What the warning means; the move is still allowed */}
+          {worst !== "none" && (
+            <div className={`rounded-xl border px-3.5 py-2.5 text-xs leading-relaxed ${WARNING_BADGE[worst]}`}>
+              {(["order", "late", "early"] as const).filter((kind) => count(kind) > 0).map((kind) => (
+                <div key={kind}>
+                  <strong>{isBatch ? `${count(kind)} card(s): ` : ""}</strong>
+                  {WARNING_TEXT[kind]}.
+                </div>
+              ))}
+              <div className="mt-1 opacity-80">
+                Only {gate} moves. The other gates of this work keep their dates.
+              </div>
+            </div>
+          )}
+
           {isBatch && (
             <div className="max-h-52 overflow-auto rounded-xl border border-base-300">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-base-200 text-base-content/70">
-                  <tr><th className="p-2 text-left">Lot / Product</th><th className="p-2">From</th><th className="p-2">Must Start</th><th className="p-2">Slack</th></tr>
+                  <tr><th className="p-2 text-left">Lot / Product</th><th className="p-2">From</th><th className="p-2">Must Out</th><th className="p-2">Slack</th><th className="p-2">Result</th></tr>
                 </thead>
                 <tbody>
-                  {lots.map((item) => {
-                    const slack = dayjs(item.mustStartDate).diff(dayjs(targetDate), "day");
+                  {lots.map((item, index) => {
+                    const slack = dayjs(item.mustOut).diff(dayjs(targetDate), "day");
                     return <tr key={item.id} className="border-t border-base-200">
-                      <td className="p-2"><strong>{item.id}</strong><div className="text-base-content/60">{item.product}</div></td>
-                      <td className="p-2 text-center">{dayjs(item.releaseDate).format("DD/MM")}</td>
-                      <td className="p-2 text-center">{dayjs(item.mustStartDate).format("DD/MM")}</td>
+                      <td className="p-2"><strong className="break-all">{item.label}</strong><div className="text-base-content/60">{item.product}</div></td>
+                      <td className="p-2 text-center">{dayjs(item.plannedDate).format("DD/MM")}</td>
+                      <td className="p-2 text-center">{dayjs(item.mustOut).format("DD/MM")}</td>
                       <td className={`p-2 text-center font-semibold ${slack < 0 ? "text-rose-600" : "text-emerald-600"}`}>{slack >= 0 ? "+" : ""}{slack}d</td>
+                      <td className="p-2 text-center">
+                        <span className={`inline-block rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${WARNING_BADGE[warnings[index]]}`}>
+                          {WARNING_LABEL[warnings[index]]}
+                        </span>
+                      </td>
                     </tr>;
                   })}
                 </tbody>
@@ -163,56 +207,49 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
             </div>
           )}
 
-          {/* Mini Gate Impact Table */}
+          {/* Load of this gate on the days that change */}
           <div>
             <div className="text-[11px] font-bold uppercase text-base-content/55 tracking-wide mb-1.5">
-              Gate Load Impact on New Route
+              {gate} Load % on the Affected Days
             </div>
             <div className="rounded-xl border border-base-300 overflow-hidden">
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="bg-base-200/60 border-b border-base-300 text-[10.5px] font-bold text-base-content/60 uppercase">
-                    <th className="py-1.5 px-2.5 text-left">Gate</th>
-                    <th className="py-1.5 px-2 text-left">Arrives</th>
+                    <th className="py-1.5 px-2.5 text-left">Date</th>
+                    <th className="py-1.5 px-2 text-right">Capacity</th>
                     <th className="py-1.5 px-2 text-center">Before</th>
                     <th className="py-1.5 px-2.5 text-center">After</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {preview.routeTableRows.map((r) => (
+                  {impactRows.map((r) => (
                     <tr
-                      key={r.gateId}
-                      className="border-b border-base-200 last:border-0"
+                      key={r.date}
+                      className={`border-b border-base-200 last:border-0 ${r.isTarget ? "bg-[#eef2ff]/50" : ""}`}
                     >
                       <td className="py-1.5 px-2.5 font-bold text-base-content">
-                        {r.gateName}
+                        {dayjs(r.date).format("ddd DD/MM/YYYY")}
+                        {r.isTarget && <span className="ml-1.5 text-[10px] font-semibold text-primary">target</span>}
                       </td>
-                      <td className="py-1.5 px-2 text-base-content/70">
-                        {r.displayDate}/2026
+                      <td className="py-1.5 px-2 text-right text-base-content/70 whitespace-nowrap">
+                        {r.capacityMin === null ? "MC not set" : `${Math.round(r.capacityMin).toLocaleString()} min`}
+                        {r.hasOt && (
+                          <span className="ml-1 px-1.5 rounded-sm text-[10px] font-bold bg-amber-100 text-amber-800">OT</span>
+                        )}
                       </td>
-                      <td className="py-1.5 px-2 text-center">
-                        <span
-                          className={`inline-block min-w-[42px] px-1.5 py-0.5 rounded-md text-[11px] ${getPctPillClass(
-                            r.beforePct
-                          )}`}
-                        >
-                          {r.beforePct}%
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-2.5 text-center">
-                        <span
-                          className={`inline-block min-w-[42px] px-1.5 py-0.5 rounded-md text-[11px] ${getPctPillClass(
-                            r.afterPct
-                          )}`}
-                        >
-                          {r.afterPct}%
-                        </span>
-                      </td>
+                      <td className="py-1.5 px-2 text-center"><PctPill pct={r.beforePct} /></td>
+                      <td className="py-1.5 px-2.5 text-center"><PctPill pct={r.afterPct} /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {noLoadCount > 0 && (
+              <div className="mt-1.5 text-[11px] text-amber-800">
+                {noLoadCount} of these card(s) have no target UPH, so they do not change Load %.
+              </div>
+            )}
           </div>
         </div>
 
@@ -231,7 +268,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
             onClick={() => onConfirm(lots, targetDate)}
             className="btn btn-sm h-9 px-4 rounded-xl btn-primary text-xs font-semibold cursor-pointer tabular-nums"
           >
-            Confirm Move {isBatch ? `${lots.length} Lots ` : ""}→ {dayjs(targetDate).format("DD/MM/YYYY")}
+            Confirm Move {isBatch ? `${lots.length} Cards ` : ""}→ {dayjs(targetDate).format("DD/MM/YYYY")}
           </button>
         </div>
       </div>

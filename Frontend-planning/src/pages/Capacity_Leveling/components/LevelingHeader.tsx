@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Calendar,
   Settings,
-  Zap,
+  RefreshCw,
   Save,
   ArrowLeft,
 } from "lucide-react";
@@ -21,9 +21,13 @@ interface LevelingHeaderProps {
   onCategoryChange: (cat: ProcessCategory) => void;
   dateRangeText: string;
   onOpenCapacityModal: () => void;
-  onAutoLevel: () => void;
+  onReload: () => void;
+  isLoading: boolean;
   onSavePlan: () => void;
+  canSave: boolean;
+  /** 0 = no plan has been saved yet */
   planVersion: number;
+  planSavedAt: string | null;
   isDraftModified: boolean;
 }
 
@@ -32,9 +36,12 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
   onCategoryChange,
   dateRangeText,
   onOpenCapacityModal,
-  onAutoLevel,
+  onReload,
+  isLoading,
   onSavePlan,
+  canSave,
   planVersion,
+  planSavedAt,
   isDraftModified,
 }) => {
   return (
@@ -79,8 +86,19 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
           <h1 className="text-sm font-bold text-base-content tracking-normal">
             Capacity Leveling
           </h1>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-base-200/70 text-base-content/70 border border-base-300">
-            {isDraftModified ? "Draft · not saved" : "Saved"}
+          <span
+            title={planSavedAt ? `Plan v${planVersion} saved ${planSavedAt}` : undefined}
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${
+              isDraftModified
+                ? "bg-amber-50 text-amber-800 border-amber-200"
+                : "bg-base-200/70 text-base-content/70 border-base-300"
+            }`}
+          >
+            {isDraftModified
+              ? "Draft · not saved"
+              : planVersion > 0
+              ? `Plan v${planVersion} · saved`
+              : "No saved plan"}
           </span>
         </div>
       </div>
@@ -103,20 +121,23 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
           <span>Capacity</span>
         </button>
 
-        {/* Auto-level Button */}
+        {/* Reload from Summary Gate (unsaved moves are kept) */}
         <button
           type="button"
-          onClick={onAutoLevel}
+          onClick={onReload}
+          disabled={isLoading}
+          title="Reload work and capacity. Unsaved moves are kept."
           className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer"
         >
-          <Zap size={13} className="text-amber-500 fill-amber-400" />
-          <span>Auto-level</span>
+          <RefreshCw size={13} className={`text-base-content/70 ${isLoading ? "animate-spin" : ""}`} />
+          <span>Reload</span>
         </button>
 
         {/* Save Plan Button */}
         <button
           type="button"
           onClick={onSavePlan}
+          disabled={!canSave}
           className="btn btn-xs h-8 px-3.5 rounded-lg btn-primary text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer"
         >
           <Save size={13} />

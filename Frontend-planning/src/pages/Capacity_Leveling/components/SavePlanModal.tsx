@@ -7,9 +7,9 @@ interface SavePlanModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirmSave: (reason: string) => void;
-  planVersion: number;
+  nextVersion: number;
+  isSaving: boolean;
   kpis: LevelingKpiData;
-  movedCount: number;
 }
 
 const QUICK_REASONS = [
@@ -22,16 +22,19 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
   isOpen,
   onClose,
   onConfirmSave,
+  nextVersion,
+  isSaving,
   kpis,
-  movedCount,
 }) => {
   const [reason, setReason] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
   if (!isOpen || typeof document === "undefined") return null;
 
-  const hasRedCells = kpis.redCellsPlanningAfter > 0;
-  const hasLateLots = kpis.posAtRiskAfter > 0;
+  const movedCount = kpis.movedCount;
+  const hasRedCells = kpis.overloadCells > 0;
+  // Only lateness the planner created needs a reason; overdue work that was not moved does not.
+  const hasLateLots = kpis.movedLateCards > 0;
   const requiresReason = hasRedCells || hasLateLots;
 
   const handleSave = () => {
@@ -60,10 +63,10 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-base-content leading-tight">
-                Save Plan
+                Save Plan v{nextVersion}
               </h3>
               <p className="text-xs text-base-content/60 mt-0.5">
-                Deploy updated schedule to Planning In Gate for Production
+                Saves the moved cards as a new version; earlier versions are kept
               </p>
             </div>
           </div>
@@ -82,10 +85,10 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
           <div className="grid grid-cols-3 gap-2.5">
             <div className="p-3 rounded-xl bg-base-200/50 border border-base-300 text-center">
               <div className="text-xs font-semibold text-base-content/60">
-                Moved Lots
+                Moved Cards
               </div>
               <div className="text-lg font-extrabold text-[#4f46e5] mt-0.5">
-                {movedCount} <span className="text-xs font-semibold">lots</span>
+                {movedCount} <span className="text-xs font-semibold">cards</span>
               </div>
             </div>
 
@@ -100,7 +103,7 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
                 Overload Gates
               </div>
               <div className="text-lg font-extrabold mt-0.5">
-                {kpis.redCellsPlanningAfter}{" "}
+                {kpis.overloadCells}{" "}
                 <span className="text-xs font-semibold">cells</span>
               </div>
             </div>
@@ -112,10 +115,10 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
                   : "bg-emerald-50/70 border-emerald-200 text-emerald-800"
               }`}
             >
-              <div className="text-xs font-semibold opacity-75">Late Lots</div>
+              <div className="text-xs font-semibold opacity-75">Moved Past Must-out</div>
               <div className="text-lg font-extrabold mt-0.5">
-                {kpis.posAtRiskAfter}{" "}
-                <span className="text-xs font-semibold">lots</span>
+                {kpis.movedLateCards}{" "}
+                <span className="text-xs font-semibold">cards</span>
               </div>
             </div>
           </div>
@@ -130,14 +133,15 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
               <ul className="text-xs space-y-1 text-amber-900/90 pl-6 list-disc">
                 {hasRedCells && (
                   <li>
-                    <strong>{kpis.redCellsPlanningAfter} gate cell(s)</strong>{" "}
+                    <strong>{kpis.overloadCells} gate cell(s)</strong>{" "}
                     still exceed 100% daily capacity.
                   </li>
                 )}
                 {hasLateLots && (
                   <li>
-                    <strong>{kpis.posAtRiskAfter} lot(s)</strong> are scheduled
-                    after their Must start date.
+                    <strong>{kpis.movedLateCards} moved card(s)</strong> are planned
+                    after their must-out date
+                    {kpis.orderCards > 0 ? `, ${kpis.orderCards} of them on or after the next gate's date` : ""}.
                   </li>
                 )}
               </ul>
@@ -146,9 +150,17 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 flex items-center gap-2.5">
               <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
               <span className="text-xs font-semibold leading-relaxed">
-                All planning gates are within 100% capacity and all lots meet
-                their Must start dates.
+                No gate-day is above 100% and no card was moved past its
+                must-out date.
               </span>
+            </div>
+          )}
+
+          {(kpis.missingUphCards > 0 || kpis.unsetCapacityGates.length > 0) && (
+            <div className="px-4 py-2.5 bg-base-200/60 border border-base-300 rounded-xl text-xs text-base-content/70 leading-relaxed">
+              Load % is incomplete:
+              {kpis.unsetCapacityGates.length > 0 && ` MC is not set for ${kpis.unsetCapacityGates.join(", ")}.`}
+              {kpis.missingUphCards > 0 && ` ${kpis.missingUphCards.toLocaleString()} card(s) have no UPH and add no minutes.`}
             </div>
           )}
 
@@ -161,7 +173,7 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
                   <span className="text-rose-500">*</span>
                 </label>
                 <span className="text-[11px] text-base-content/50">
-                  Required for overload / late lots
+                  Required for overload / late cards
                 </span>
               </div>
 
@@ -217,9 +229,10 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
           <button
             type="button"
             onClick={handleSave}
+            disabled={isSaving}
             className="btn btn-sm h-10 px-6 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-sm font-bold rounded-xl border-0 shadow-xs cursor-pointer"
           >
-            Confirm & Save Plan
+            {isSaving ? "Saving..." : "Confirm & Save Plan"}
           </button>
         </div>
       </div>

@@ -3,81 +3,181 @@ export type ProcessCategory = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 export type ViewMode = "board" | "list";
 export type Granularity = "days" | "weeks";
 export type PlanMode = "required" | "planned";
-
-export interface RouteStep {
-  gateId: string;
-  gateName: string;
-  offsetDays: number; // Days after release when lot arrives here
-  minutes: number;
-}
+export type Shift = "day" | "night";
+export type SpecialDay = "ot" | "work" | "off";
+export type LoadStatus = "green" | "yellow" | "red";
+/** early = before arrive-by, late = after must-out, order = on or after the next gate's date */
+export type MoveWarning = "none" | "early" | "late" | "order";
 
 export interface MoveHistoryEntry {
   id: string;
   fromDate: string; // YYYY-MM-DD
   toDate: string; // YYYY-MM-DD
-  changedAt: string; // e.g. "09/11/2026 13:40"
-  changedBy: string; // e.g. "Planner (Draft)" | "Plan v2"
+  changedAt: string;
+  changedBy: string;
   note?: string;
 }
 
+/** One card on the board: a work item at ONE gate. */
 export interface LotItem {
-  id: string; // e.g. "4500125"
-  product: string; // e.g. "Model B"
+  id: string;
+  workKey: string;
+  gate: string;
+  /** Lot number, or "Need WIP" for work that has no lot yet */
+  label: string;
+  product: string;
+  item: string | null;
   qty: number;
-  routeId: string; // "FPC_CASE_1" | "FPC_CASE_2" | "FPC_CASE_3" | "FPC_CASE_4" | "SMT" | "FULL"
-  systemStartDate: string; // "2026-11-16"
-  mustStartDate: string; // "2026-11-17"
-  releaseDate: string; // "2026-11-13" (current draft date)
-  initialReleaseDate: string; // "2026-11-16"
-  wasDate?: string; // e.g. "16/11" or "12/11" when moved
-  shipDate: string; // e.g. "25/11"
-  routeSteps: RouteStep[];
+  sheets: number | null;
+  status: string;
+  gateState: string;
+  processGroup: string | null;
+  currentGate: string | null;
+  currentProc: string | null;
+  isHold: boolean;
+  dueDate: string;
+  arriveBy: string | null;
+  mustOut: string;
+  /** Unmoved date at this gate: must-out, or today when already overdue */
+  baseDate: string;
+  /** Date in the current draft */
+  plannedDate: string;
+  /** Date in the last saved plan (equals baseDate when the card was never moved) */
+  savedDate: string;
+  overdue: boolean;
+  /** The source must-out changed after the move was saved */
+  sourceChanged: boolean;
+  prevGate: string | null;
+  prevDate: string | null;
+  nextGate: string | null;
+  nextDate: string | null;
+  /** Estimated minutes for the whole gate segment at target UPH; null when no UPH exists */
+  loadMin: number | null;
+  uphStatus: "ok" | "partial" | "missing";
+  procCount: number;
+  uphCount: number;
   moveHistory?: MoveHistoryEntry[];
 }
 
-export interface GateDefinition {
-  id: string;
-  name: string;
-  normalCapacityMin: number;
-  otCapacityMin: number;
-  shifts: number;
-  minutesPerShift: number;
-  mcCount: number;
-  efficiency: number; // e.g. 0.85
-  otMinutes: number;
+export interface ShiftCapacity {
+  open: boolean;
+  otOn: boolean;
+  capacityMin: number | null;
+}
+
+export interface CapacityDay {
+  off: boolean;
+  hasOt: boolean;
+  /** null = MC is not configured for an open shift */
+  capacityMin: number | null;
+  shifts: Record<Shift, ShiftCapacity>;
+}
+
+export interface GateInfo {
+  gate: string;
+  group: "FPC" | "SMT";
+}
+
+export interface PlanInfo {
+  planId: string;
+  version: number;
+  note: string | null;
+  savedBy: string;
+  savedAt: string;
+}
+
+export interface OrphanMove {
+  workKey: string;
+  gate: string;
+  prdName: string | null;
+  lotNo: string | null;
+  dueDate: string | null;
+  originalDate: string;
+  plannedDate: string;
+}
+
+export interface LevelingData {
+  today: string;
+  days: { date: string; isWorking: boolean }[];
+  gates: GateInfo[];
+  capacity: Record<string, Record<string, CapacityDay>>;
+  cards: ApiCard[];
+  orphanMoves: OrphanMove[];
+  undatedCount: number;
+  plan: PlanInfo | null;
+}
+
+/** Card as returned by the API before it is adapted for the board. */
+export interface ApiCard extends Omit<LotItem, "label" | "product" | "savedDate" | "moveHistory"> {
+  prdName: string;
+  lotNo: string | null;
+  moved: boolean;
+}
+
+export interface GateCell {
+  loadMin: number;
+  capacityMin: number | null;
+  /** 0 when capacity is not configured; check `configured` before reading */
+  pct: number;
+  configured: boolean;
+  off: boolean;
+  hasOt: boolean;
+  previewPct?: number; // while dragging
+  lotCount: number;
+  totalPcs: number;
+  totalSheets: number;
+  /** Cards on this gate-day with no usable UPH; their load is NOT in loadMin */
+  missingUph: number;
 }
 
 export interface DayGateLoad {
   date: string; // YYYY-MM-DD
   dayLabel: string; // "Mon", "Tue", etc.
   displayDate: string; // "03/11"
-  isSunday: boolean;
-  isFrozen: boolean; // week 1 (<= 7 days from start)
-  hasOt: boolean;
-  gates: Record<string, {
-    loadMin: number;
-    capacityMin: number;
-    pct: number;
-    previewPct?: number; // while dragging
-    hasOt?: boolean;
-    lotCount?: number;
-    totalPcs?: number;
-    totalSheets?: number;
-  }>;
-  totalNewWorkPct: number;
-  gateStatusDots: Record<string, "green" | "yellow" | "red">;
+  isToday: boolean;
+  /** Every leveled gate is closed on this date */
+  isOff: boolean;
+  gates: Record<string, GateCell>;
+  gateStatusDots: Record<string, LoadStatus | "off" | "unset">;
 }
 
 export interface LevelingKpiData {
-  redCellsPlanningBefore: number;
-  redCellsPlanningAfter: number;
-  redCellPlanningDetail: string;
-  posAtRiskBefore: number;
-  posAtRiskAfter: number;
-  posAtRiskDetail: string;
-  releasesMovedCount: number;
-  releasesTotalCount: number;
-  releasesMovedEarlier: number;
-  releasesMovedLater: number;
-  week1RedCells: number;
+  overloadCells: number;
+  overloadCellsRequired: number;
+  overloadDetail: string;
+  lateCards: number;
+  /** Late cards that the planner moved; cards that were already overdue are not included */
+  movedLateCards: number;
+  orderCards: number;
+  lateDetail: string;
+  movedCount: number;
+  totalCount: number;
+  movedEarlier: number;
+  movedLater: number;
+  missingUphCards: number;
+  unsetCapacityGates: string[];
+}
+
+export interface ShiftConfig {
+  settingId: string | null;
+  enabled: boolean;
+  mcLines: number | null;
+  manpower: number | null;
+  minPerShift: number;
+  otEnabled: boolean;
+  otMinutes: number;
+  break1: boolean;
+  break1Min: number;
+  break2: boolean;
+  break2Min: number;
+  lunch: boolean;
+  lunchMin: number;
+  efficiency: number;
+  specialDays: Record<string, SpecialDay>;
+}
+
+export interface GateShiftConfig {
+  gate: string;
+  group: "FPC" | "SMT";
+  shifts: Record<Shift, ShiftConfig>;
 }
