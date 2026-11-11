@@ -51,11 +51,10 @@ export interface LotItem {
   prevDate: string | null;
   nextGate: string | null;
   nextDate: string | null;
-  /** Estimated minutes for the whole gate segment at target UPH; null when no UPH exists */
+  /** Normal minutes per occupied planning day; excludes OT, MC count and efficiency. */
   loadMin: number | null;
-  uphStatus: "ok" | "partial" | "missing";
-  procCount: number;
-  uphCount: number;
+  leadDays: number | null;
+  standardShiftMin: Record<Shift, number>;
   moveHistory?: MoveHistoryEntry[];
 }
 
@@ -99,11 +98,15 @@ export interface OrphanMove {
 export interface LevelingData {
   today: string;
   days: { date: string; isWorking: boolean }[];
+  calendarDays: { date: string; isWorking: boolean }[];
   gates: GateInfo[];
   capacity: Record<string, Record<string, CapacityDay>>;
   cards: ApiCard[];
   orphanMoves: OrphanMove[];
   undatedCount: number;
+  duplicateWorkCount: number;
+  calculationMethod: string;
+  legacyPlanAvailable: boolean;
   plan: PlanInfo | null;
 }
 
@@ -126,8 +129,9 @@ export interface GateCell {
   lotCount: number;
   totalPcs: number;
   totalSheets: number;
-  /** Cards on this gate-day with no usable UPH; their load is NOT in loadMin */
-  missingUph: number;
+  /** Cards with missing lead time or normal shift minutes; their load cannot be placed. */
+  missingPlanning: number;
+  shiftLoadMin: Record<Shift, number>;
 }
 
 export interface DayGateLoad {
@@ -154,7 +158,7 @@ export interface LevelingKpiData {
   totalCount: number;
   movedEarlier: number;
   movedLater: number;
-  missingUphCards: number;
+  missingPlanningCards: number;
   unsetCapacityGates: string[];
 }
 

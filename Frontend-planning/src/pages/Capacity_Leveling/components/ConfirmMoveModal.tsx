@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import { ArrowRight, Calendar, AlertCircle, CheckCircle2, X } from "lucide-react";
 import type { LotItem, DayGateLoad, LevelingData, MoveWarning } from "../types";
-import { computeMovePreview, moveWarning, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
+import { computeMovePreview, moveWarning, occupancyWindow, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 
 interface ConfirmMoveModalProps {
   isOpen: boolean;
@@ -69,13 +69,13 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
   const gate = lot.gate;
   const isBatch = lots.length > 1;
   const sourceDates = new Set(lots.map((item) => item.plannedDate));
-  const warnings = lots.map((item) => moveWarning(item, targetDate, plannedIndex));
+  const warnings = lots.map((item) => moveWarning(item, targetDate, plannedIndex, data));
   const count = (kind: MoveWarning) => warnings.filter((warning) => warning === kind).length;
   const worst: MoveWarning = count("order") ? "order" : count("late") ? "late" : count("early") ? "early" : "none";
   const shiftDays = dayjs(targetDate).diff(dayjs(lot.plannedDate), "day");
   const slackDays = dayjs(lot.mustOut).diff(dayjs(targetDate), "day");
   const { impactRows } = computeMovePreview(data, gridData, allLots, lots, targetDate);
-  const noLoadCount = lots.filter((item) => item.loadMin === null).length;
+  const noLoadCount = lots.filter((item) => !occupancyWindow(data, item, targetDate)).length;
 
   return createPortal(
     <div className="planning-summary-gate fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/35">
@@ -167,6 +167,14 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
           </div>
 
           {/* What the warning means; the move is still allowed */}
+          <div className="rounded-xl border border-base-300 px-3.5 py-2.5 text-xs text-base-content/70">
+            The entire occupancy window moves; each card keeps its planning-day duration. Other gates keep their dates.
+            {!isBatch && <div className="mt-1 font-semibold tabular-nums">
+              {occupancyWindow(data, lot)?.startDate ?? "Unknown"} – {lot.plannedDate}
+              {" → "}{occupancyWindow(data, lot, targetDate)?.startDate ?? "Unknown"} – {targetDate}
+              {" · "}{lot.leadDays ?? "Unknown"} planning day(s)
+            </div>}
+          </div>
           {worst !== "none" && (
             <div className={`rounded-xl border px-3.5 py-2.5 text-xs leading-relaxed ${WARNING_BADGE[worst]}`}>
               {(["order", "late", "early"] as const).filter((kind) => count(kind) > 0).map((kind) => (
@@ -247,7 +255,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
             </div>
             {noLoadCount > 0 && (
               <div className="mt-1.5 text-[11px] text-amber-800">
-                {noLoadCount} of these card(s) have no target UPH, so they do not change Load %.
+                {noLoadCount} card(s) have an incomplete occupancy window. Check gate lead time and normal shift minutes.
               </div>
             )}
           </div>
@@ -265,6 +273,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
           <button
             type="button"
             aria-label="Confirm move"
+            disabled={noLoadCount > 0}
             onClick={() => onConfirm(lots, targetDate)}
             className="btn btn-sm h-9 px-4 rounded-xl btn-primary text-xs font-semibold cursor-pointer tabular-nums"
           >

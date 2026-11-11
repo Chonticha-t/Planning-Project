@@ -2,23 +2,16 @@ const express = require("express");
 const { randomUUID } = require("node:crypto");
 const {
   LEVELING_GATES, SHIFTS, NORMAL_VALID_FROM, NORMAL_VALID_TO, ValidationError,
-  isDate, dateRange, capacityGrid, buildCapacityConfig, parseSettingsPayload, sameShift,
-  workKey, buildCards, parsePlanPayload,
+  isDate, dateRange, capacityGrid, dayCapacity, shiftMinutesPerMachine, buildCapacityConfig, parseSettingsPayload, sameShift,
+  workKey, buildCards, occupancyCalendarRange, parsePlanPayload,
 } = require("./capacityLeveling");
 
-const PLAN_METHOD = "gate_segment_target_uph_v1";
+const PLAN_METHOD = "gate_max_target_occupancy_v1";
+const LEGACY_PLAN_METHOD = "gate_segment_target_uph_v1";
 const PLAN_LOCK_KEY = 0x504c4e4c564c; // Serializes capacity and plan writers.
 const MAX_RANGE_DAYS = 62;
 // Special days older than this are kept on record but no longer read or edited.
 const SPECIAL_WINDOW_DAYS = 62;
-
-const NORM_GATE = (column) => `CASE
-    WHEN BTRIM(${column}) IN ('FVAC', 'AT-FVAC') THEN 'FVAC'
-    WHEN BTRIM(${column}) IN ('FADL', 'AT-FADL') THEN 'FADL'
-    WHEN BTRIM(${column}) IN ('FIN', 'AT-FIN') THEN 'FIN'
-    WHEN BTRIM(${column}) IN ('MMOT', 'MMOT1') THEN 'MMOT'
-    WHEN BTRIM(${column}) IN ('MBLK', 'MBLK1') THEN 'MBLK'
-    ELSE BTRIM(${column}) END`;
 
 const SETTINGS_SQL = `
   SELECT setting_id, gate_name, shift_code, setting_kind, to_char(valid_from, 'YYYY-MM-DD') AS valid_from,
@@ -43,8 +36,8 @@ const settingParams = (gate, code, kind, from, to, shift, actor) => [
   shift.lunch, shift.lunchMin, shift.efficiency, actor,
 ];
 
-// The load of a work item at a gate is the time of every routing process in that gate
-// segment (previous gate -> this gate) at the target UPH; processes already passed are skipped.
+// Summary Gate already resolves the routing-specific lead time from the gate master.
+// Max Target reserves one machine for each work item throughout that many planning days.
 const WORKS_SQL = `
   WITH base AS (
     SELECT g.*,
@@ -57,24 +50,6 @@ const WORKS_SQL = `
     SELECT ROW_NUMBER() OVER (ORDER BY gate_order, pri) AS rn, *
     FROM base
     WHERE gate_name = ANY($1) AND gate_state <> 'passed'
-  ), std AS (
-    SELECT REPLACE(prd_name, '-', '') AS prd_key, ro_seq, BTRIM(proc_disp) AS proc_disp, MAX(uph) AS uph
-    FROM smart.smart_pcap_std_time_by_product
-    WHERE uph > 0
-    GROUP BY 1, 2, 3
-  ), load AS (
-    SELECT w.rn, COUNT(r.seq)::int AS proc_count, COUNT(s.uph)::int AS uph_count,
-           COALESCE(SUM(60.0 * w.qty / s.uph), 0)::float8 AS load_min
-    FROM works w
-    LEFT JOIN planning.prd_routing_master r
-           ON r.prd_name = w.prd_name
-          AND ${NORM_GATE("r.gate_name")} = w.gate_name
-          AND (w.seq IS NULL OR r.seq >= w.seq)
-    LEFT JOIN std s
-           ON s.prd_key = REPLACE(r.prd_name, '-', '')
-          AND s.ro_seq = r.seq
-          AND s.proc_disp = BTRIM(r.proc_disp)
-    GROUP BY w.rn
   )
   SELECT w.prd_name, w.item, w.lot_no, to_char(w.due_date, 'YYYY-MM-DD') AS due_date, w.status,
          w.qty::float8 AS qty, CEIL(w.qty / NULLIF(w.pcs_per_sheet, 0))::float8 AS sheets,
@@ -82,14 +57,13 @@ const WORKS_SQL = `
          to_char(w.arrive_by, 'YYYY-MM-DD') AS arrive_by, to_char(w.must_out, 'YYYY-MM-DD') AS must_out,
          w.prev_gate, to_char(w.prev_must_out, 'YYYY-MM-DD') AS prev_must_out,
          w.next_gate, to_char(w.next_must_out, 'YYYY-MM-DD') AS next_must_out,
-         l.proc_count, l.uph_count, l.load_min
+         w.lead_days
   FROM works w
-  JOIN load l USING (rn)
   ORDER BY w.rn`;
 
 const SOURCE_SQL = `
   SELECT prd_name, item, lot_no, to_char(due_date, 'YYYY-MM-DD') AS due_date, status, qty::float8 AS qty,
-         gate_name, to_char(must_out, 'YYYY-MM-DD') AS must_out
+         gate_name, lead_days, to_char(must_out, 'YYYY-MM-DD') AS must_out
   FROM planning.planning_summary_gate
   WHERE gate_name = ANY($1) AND gate_state <> 'passed' AND must_out IS NOT NULL`;
 
@@ -213,19 +187,25 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
         Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`) > (MAX_RANGE_DAYS - 1) * 86400000) {
         throw new ValidationError(`A valid date range of up to ${MAX_RANGE_DAYS} days is required.`);
       }
-      const [{ calendar }, config, plan, works] = await Promise.all([
-        loadCalendar(start, end),
+      const [config, plan, works] = await Promise.all([
         readConfig(pool),
         pool.query(LATEST_PLAN_SQL, [PLAN_METHOD]),
         pool.query(WORKS_SQL, [LEVELING_GATES]),
       ]);
       const latest = plan.rows[0];
       const moves = latest ? (await pool.query(MOVES_SQL, [latest.plan_id])).rows : [];
+      const legacy = latest ? null : (await pool.query(LATEST_PLAN_SQL, [LEGACY_PLAN_METHOD])).rows[0];
+      const { cards, orphanMoves, undated, duplicates } = buildCards(works.rows, moves, today, config);
+      const range = occupancyCalendarRange(cards, start, end);
+      const { calendar } = await loadCalendar(range.start, range.end);
       const days = dateRange(start, end).map((date) => ({ date, isWorking: calendar.isWorking(date) }));
-      const { cards, orphanMoves, undated } = buildCards(works.rows, moves, today);
+      const calendarDays = dateRange(range.start, range.end).map((date) => ({ date, isWorking: calendar.isWorking(date) }));
       return res.json({ status: "OK", data: {
-        today, days, gates: config.map(({ gate, group }) => ({ gate, group })),
-        capacity: capacityGrid(config, days), cards, orphanMoves, undatedCount: undated, plan: planInfo(latest),
+        today, days, calendarDays,
+        gates: config.map(({ gate, group }) => ({ gate, group })),
+        capacity: capacityGrid(config, days), cards, orphanMoves, undatedCount: undated,
+        duplicateWorkCount: duplicates, calculationMethod: PLAN_METHOD,
+        legacyPlanAvailable: Boolean(legacy), plan: planInfo(latest),
       } });
     } catch (error) {
       return fail(res, error, "Unable to load gate capacity data. Please try again.");
@@ -240,10 +220,30 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
       const outcome = await inTransaction(async (client) => {
         const latest = (await client.query(LATEST_PLAN_SQL, [PLAN_METHOD])).rows[0];
         if ((latest?.version_no ?? 0) !== baseVersion) return { conflict: "PLAN_VERSION_CONFLICT" };
-        const source = new Map((await client.query(SOURCE_SQL, [LEVELING_GATES])).rows
-          .map((row) => [`${workKey(row)}|${row.gate_name}`, row]));
+        const sourceRows = (await client.query(SOURCE_SQL, [LEVELING_GATES])).rows;
+        if (sourceRows.some((row) => !Number.isInteger(Number(row.lead_days)) || Number(row.lead_days) <= 0 || Number(row.lead_days) > 366)) {
+          throw new ValidationError("Resolve missing or unsupported gate lead times before saving a Max Target plan.");
+        }
+        const source = new Map(sourceRows.map((row) => [`${workKey(row)}|${row.gate_name}`, row]));
         const missing = moves.filter((move) => !source.has(`${move.workKey}|${move.gate}`));
         if (missing.length) return { conflict: "WORK_NOT_FOUND", missing: missing.length };
+
+        const config = await readConfig(client);
+        const gateConfig = new Map(config.map((gate) => [gate.gate, gate]));
+        if (sourceRows.some((row) => {
+          const gate = gateConfig.get(row.gate_name);
+          return !gate || SHIFTS.reduce((sum, code) => sum + shiftMinutesPerMachine(gate.shifts[code], false), 0) <= 0;
+        })) throw new ValidationError("Set positive normal shift minutes before saving a Max Target plan.");
+        if (moves.length) {
+          const targets = moves.map((move) => move.plannedDate).sort();
+          if (Date.parse(`${targets[targets.length - 1]}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`) > 3660 * 86400000) {
+            throw new ValidationError("The planned release exceeds the supported calendar range.");
+          }
+          const { calendar } = await loadCalendar(targets[0], targets[targets.length - 1]);
+          if (moves.some((move) => dayCapacity(gateConfig.get(move.gate), move.plannedDate, calendar.isWorking(move.plannedDate)).off)) {
+            throw new ValidationError("Choose an open gate day for every planned release.");
+          }
+        }
 
         const planId = randomUUID();
         const dates = [today, ...moves.map((move) => move.plannedDate)].sort();

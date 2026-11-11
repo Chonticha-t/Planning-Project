@@ -183,7 +183,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                   {data.map((col) => {
                     const gInfo = col.gates[gate.id];
 
-                    if (!gInfo || gInfo.off) {
+                    if (!gInfo || gInfo.off || gInfo.capacityMin === 0) {
                       return (
                         <td key={col.date} className="p-[3px] align-middle">
                           <div
@@ -196,7 +196,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                                 : "border-slate-200/80 bg-slate-50/80 text-slate-400"
                             }`}
                           >
-                            <span>OFF</span>
+                            <span>{!gInfo || gInfo.off ? "OFF" : "No capacity"}</span>
                             {gInfo && gInfo.lotCount > 0 && (
                               <span className="text-[9px] font-semibold">{gInfo.lotCount} lots due</span>
                             )}
@@ -212,19 +212,19 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                       isGateSelected;
 
                     // MC is not entered yet: show the work, never a 0% that looks like free capacity.
-                    if (!gInfo.configured) {
+                    if (!gInfo.configured || gInfo.missingPlanning > 0) {
                       return (
                         <td key={col.date} className="p-[3px] align-middle">
                           <button
                             type="button"
                             aria-pressed={isCellSelected}
                             onClick={() => handleCellClick(gate.id, col.date)}
-                            title={`${gate.name} · ${col.displayDate}: MC is not set, so Load % cannot be calculated | ${pcs.toLocaleString()} pcs | ${lots} lots`}
+                            title={`${gate.name} · ${col.displayDate}: ${gInfo.missingPlanning > 0 ? "Check gate lead time and normal shift minutes" : "MC is not set"}; Load % is unavailable | ${pcs.toLocaleString()} pcs | ${lots} lots`}
                             className={`w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed border-amber-300 bg-amber-50/60 text-amber-800 flex flex-col items-center justify-center gap-1 py-1.5 px-1.5 cursor-pointer tabular-nums ${
                               isCellSelected ? "ring-2 ring-[#4f46e5] shadow-xs" : ""
                             }`}
                           >
-                            <span className="text-[11px] font-extrabold leading-none whitespace-nowrap">Set MC</span>
+                            <span className="text-[11px] font-extrabold leading-none whitespace-nowrap">{gInfo.missingPlanning > 0 ? "Check plan" : "Set MC"}</span>
                             <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
                               {pcs.toLocaleString()} pcs
                             </span>
@@ -250,9 +250,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                       : status === "yellow"
                       ? "bg-[#fef3c7] text-[#92400e] font-bold"
                       : "bg-[#d1fae5] text-[#065f46] font-semibold";
-                    const missingNote = gInfo.missingUph > 0
-                      ? ` | ${gInfo.missingUph} card(s) without UPH not included`
-                      : "";
+                    const missingNote = " | Planning occupancy across all process groups; pcs and lots are not daily output";
 
                     return (
                       <td key={col.date} className="p-[3px] align-middle">
@@ -291,7 +289,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                               <>
                                 <span className="text-[12.5px] font-extrabold leading-none whitespace-nowrap">
                                   {displayPct}%
-                                  {gInfo.missingUph > 0 && <span aria-label="some cards have no UPH">*</span>}
                                 </span>
                                 <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
                                   {pcs.toLocaleString()} pcs
@@ -363,6 +360,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
             Gate Load by Day
           </h3>
+          <span className="text-[10px] text-base-content/55">Max Target · all groups · occupied lots</span>
 
           {/* Display Units Switcher matching GateMatrixTable (Load % | Piece | Sheet | Lot) */}
           <div
@@ -507,7 +505,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
             <div className="mb-1 flex items-center gap-2 text-xs font-bold tracking-wide text-base-content/70">
               <span className="h-2 w-2 rounded-full bg-base-content/40" />
               REQUIRED
-              <span className="font-normal text-base-content/50">· cards on their must-out dates</span>
+              <span className="font-normal text-base-content/50">· occupancy from Summary Gate</span>
             </div>
             {renderTable(requiredGridData ?? [], 0, false)}
           </div>

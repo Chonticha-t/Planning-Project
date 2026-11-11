@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const express = require("express");
 const {
   LEVELING_GATES, DEFAULT_SHIFT, ValidationError, shiftMinutesPerMachine, effectiveShift, dayCapacity,
-  loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, parsePlanPayload,
+  loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, occupancyCalendarRange, parsePlanPayload, isDate,
 } = require("../utils/capacityLeveling");
 const { createCapacityLevelingRouter } = require("../utils/capacityLevelingRouter");
 
@@ -84,7 +84,7 @@ const work = (overrides = {}) => ({
   sheets: 84, gate_name: "FADL", gate_state: "in_gate", process_group: "EFPC_GEN", prd_category: "FPC",
   current_gate: "FADL", proc_disp: "A", is_hold: false, arrive_by: "2026-11-16", must_out: "2026-11-17",
   prev_gate: "FVAC", prev_must_out: "2026-11-16", next_gate: "FIN", next_must_out: "2026-11-19",
-  proc_count: 3, uph_count: 3, load_min: 660, ...overrides,
+  lead_days: 2, ...overrides,
 });
 
 test("cards sit on must_out, a saved move changes that gate only, overdue work loads today", () => {
@@ -97,18 +97,20 @@ test("cards sit on must_out, a saved move changes that gate only, overdue work l
   assert.deepEqual(cards.map((card) => [card.gate, card.plannedDate, card.moved, card.overdue]), [
     ["FADL", "2026-11-18", true, false], ["FIN", "2026-11-19", false, false], ["FADL", "2026-11-12", false, true],
   ]);
-  assert.equal(cards[0].loadMin, 660);
+  assert.equal(cards[0].loadMin, 950);
+  assert.deepEqual(cards[0].standardShiftMin, { day: 475, night: 475 });
   assert.equal(orphanMoves.length, 0);
 });
 
-test("work without a lot keeps a stable key; missing UPH is never counted as zero load", () => {
+test("work without a lot keeps a stable key; missing or invalid lead time is explicit", () => {
   const { cards } = buildCards([
-    work({ lot_no: null, status: "need wip", uph_count: 0, load_min: 0 }),
-    work({ lot_no: "L003", uph_count: 2, load_min: 360 }),
-    work({ lot_no: "L004", proc_count: 0, uph_count: 0, load_min: 0 }),
+    work({ lot_no: null, status: "need wip" }),
+    work({ lot_no: "L003", lead_days: null }),
+    work({ lot_no: "L004", lead_days: 0 }),
+    work({ lot_no: "L005", lead_days: 367 }),
   ], [], "2026-11-12");
   assert.equal(cards[0].workKey, "NEED|PRD-A|2026-11-25");
-  assert.deepEqual(cards.map((card) => [card.uphStatus, card.loadMin]), [["missing", null], ["partial", 360], ["missing", null]]);
+  assert.deepEqual(cards.map((card) => [card.leadDays, card.loadMin]), [[2, 950], [null, null], [null, null], [null, null]]);
 });
 
 test("moves whose work left the gate are returned as orphans; changed sources are flagged", () => {
@@ -190,6 +192,94 @@ test("load endpoint returns capacity per gate and day with cards from the latest
   const works = pool.log.find((entry) => /planning_summary_gate/.test(entry.sql));
   assert.deepEqual(works.params, [LEVELING_GATES]);
   assert.match(works.sql, /gate_state <> 'passed'/);
+  assert.match(works.sql, /w\.lead_days/);
+  assert.doesNotMatch(works.sql, /smart_pcap_std_time|SUM\(60|uph/i);
+});
+
+test("normal reservation ignores OT, MC, efficiency and closed shifts", () => {
+  const config = [{ ...gate({ mcLines: 8, efficiency: 0.8, otEnabled: true },
+    { minPerShift: 485, enabled: false }), gate: "FADL" }];
+  const { cards } = buildCards([work()], [], "2026-11-12", config);
+  assert.equal(cards[0].loadMin, 895);
+  assert.deepEqual(cards[0].standardShiftMin, { day: 475, night: 420 });
+  const zero = [{ ...gate({ minPerShift: 65 }, { minPerShift: 65 }), gate: "FADL" }];
+  assert.equal(buildCards([work()], [], "2026-11-12", zero).cards[0].loadMin, null);
+});
+
+test("duplicate source rows reserve only one work item per gate and are reported", () => {
+  const { cards, duplicates } = buildCards([work(), work(), work({ gate_name: "FIN" })], [], "2026-11-12");
+  assert.equal(cards.length, 2);
+  assert.equal(duplicates, 1);
+});
+
+test("planning calendar covers future releases and rejects unsupported ranges safely", () => {
+  const { cards } = buildCards([work({ must_out: "2027-01-15", lead_days: 10 })], [], "2026-11-12");
+  const range = occupancyCalendarRange(cards, "2026-11-12", "2026-12-01");
+  assert.ok(range.start < "2026-11-12");
+  assert.equal(range.end, "2027-01-15");
+  assert.throws(() => occupancyCalendarRange([{ ...cards[0], plannedDate: "2099-01-01" }], "2026-11-12", "2026-12-01"), ValidationError);
+  assert.equal(isDate("2026-99-99"), false);
+  assert.equal(isDate("2026-02-30"), false);
+});
+
+test("a legacy UPH plan stays separate and its moved dates are not silently imported", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, (params) => params[0] === "gate_segment_target_uph_v1" ? [{ plan_id: "old", version_no: 7 }] : []],
+    [/planning_summary_gate/, [work()]],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/load?startdate=2026-11-12&stopdate=2026-11-20");
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.plan, null);
+    assert.equal(data.legacyPlanAvailable, true);
+    assert.equal(data.calculationMethod, "gate_max_target_occupancy_v1");
+    assert.equal(data.cards[0].plannedDate, "2026-11-17");
+    assert.ok(data.calendarDays[0].date < data.days[0].date);
+  });
+  assert.ok(!pool.log.some((entry) => /FROM planning\.work_plan_gate_item/.test(entry.sql)));
+});
+
+test("saving with missing master lead time fails without writing a plan", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.planning_summary_gate/, [work({ lead_days: null })]],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, "INVALID_REQUEST");
+  });
+  assert.ok(!pool.log.some((entry) => entry.sql.startsWith("INSERT")));
+  assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+});
+
+test("the API rejects a direct save onto a closed day before writing", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.planning_summary_gate/, [work()]],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/plan", { method: "POST", body: {
+      baseVersion: 0, moves: [{ workKey: "LOT|L001|2026-11-25", gate: "FADL", plannedDate: "2026-11-15" }],
+    } });
+    assert.equal(response.status, 400);
+  });
+  assert.ok(!pool.log.some((entry) => entry.sql.startsWith("INSERT")));
+  assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+});
+
+test("the API rejects zero normal reservation minutes even when saving no moves", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.planning_summary_gate/, [work()]],
+    [/FROM planning\.capacity_setting/, [row({ regular_minutes_per_shift: 65 }), row({ shift_code: "night", regular_minutes_per_shift: 65 })]],
+  ]);
+  await withApi(pool, async (api) => {
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } })).status, 400);
+  });
+  assert.ok(!pool.log.some((entry) => entry.sql.startsWith("INSERT")));
 });
 
 test("missing tables are reported as setup required, not as zero capacity", async () => {
@@ -255,7 +345,7 @@ test("special days are saved with the settings for that gate and shift only; wri
 
 test("saving a plan creates the next version with only the moved cards", async () => {
   const source = [{ prd_name: "PRD-A", item: "94-1", lot_no: "L001", due_date: "2026-11-25", status: "production plan",
-    qty: 1000, gate_name: "FADL", must_out: "2026-11-17" }];
+    qty: 1000, gate_name: "FADL", must_out: "2026-11-17", lead_days: 2 }];
   const rules = [
     [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
     [/FROM planning\.work_plan\b/, [{ plan_id: "p3", plan_group_id: "p1", version_no: 3, note: null, created_by: "planner", saved_at: "x" }]],

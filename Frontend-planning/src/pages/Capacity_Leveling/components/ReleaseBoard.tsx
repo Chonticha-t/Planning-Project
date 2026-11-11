@@ -12,12 +12,13 @@ import {
   Calendar,
   Pencil,
 } from "lucide-react";
-import type { LotItem, DayGateLoad, GateInfo, ViewMode, Granularity } from "../types";
-import { cellPct, isMoved, loadStatus, moveWarning, WARNING_TEXT } from "../utils/levelingCalculations";
+import type { LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData } from "../types";
+import { cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 interface ReleaseBoardProps {
+  data: LevelingData;
   gates: GateInfo[];
   /** The board shows the cards of one gate; a move changes that gate only */
   boardGate: string;
@@ -68,6 +69,7 @@ const STATUS_BAR: Record<string, string> = {
 };
 
 export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
+  data,
   gates,
   boardGate,
   onBoardGateChange,
@@ -517,7 +519,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         previewTargetDate={
                           isThisMovingPreview ? currentTargetDate : null
                         }
-                        warning={moveWarning(lot, lot.plannedDate, plannedIndex)}
+                        warning={moveWarning(lot, lot.plannedDate, plannedIndex, data)}
                         days={planningDays}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
@@ -664,7 +666,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         isBeingDragged={Boolean(draggedLot) && movingIds.has(lot.id)}
                         isMovingPreview={movingIds.has(lot.id) && Boolean(currentTargetDate) && currentTargetDate !== lot.plannedDate}
                         previewTargetDate={movingIds.has(lot.id) ? currentTargetDate : null}
-                        warning={moveWarning(lot, lot.plannedDate, plannedIndex)}
+                        warning={moveWarning(lot, lot.plannedDate, plannedIndex, data)}
                         days={planningDays}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
@@ -779,7 +781,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
                 const { lot } = item;
                 const isSelected = selectedLot?.id === lot.id;
-                const warning = moveWarning(lot, lot.plannedDate, plannedIndex);
+                const warning = moveWarning(lot, lot.plannedDate, plannedIndex, data);
                 const isLate = warning === "late" || warning === "order";
                 const moved = isMoved(lot);
                 const slackDays = dayjs(lot.mustOut).diff(dayjs(lot.plannedDate), "day");
@@ -830,13 +832,13 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     {/* EST. LOAD */}
                     <td>
                       {lot.loadMin === null ? (
-                        <span className="text-[11.5px] font-semibold text-amber-700" title="No target UPH for this gate segment">
-                          No UPH
+                        <span className="text-[11.5px] font-semibold text-amber-700" title="Check gate lead time and normal shift minutes">
+                          Check plan
                         </span>
                       ) : (
                         <span className="font-medium text-[13px] text-base-content/80"
-                          title={lot.uphStatus === "partial" ? `UPH found for ${lot.uphCount} of ${lot.procCount} processes` : undefined}>
-                          {Math.round(lot.loadMin).toLocaleString()} min{lot.uphStatus === "partial" ? "*" : ""}
+                          title={`${lot.leadDays} planning day(s), from ${occupancyWindow(data, lot)?.startDate ?? "unknown"}; normal minutes exclude OT`}>
+                          {Math.round(lot.loadMin).toLocaleString()} min/day
                         </span>
                       )}
                     </td>

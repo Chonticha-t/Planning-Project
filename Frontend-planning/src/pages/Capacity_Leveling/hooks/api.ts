@@ -11,6 +11,9 @@ export interface ApiFailure {
 
 /** Turns any request failure into the server's code and message. */
 export const toApiFailure = (error: unknown): ApiFailure => {
+  if (error instanceof Error && error.name === "PlanningDataError") {
+    return { code: "MAX_TARGET_UNAVAILABLE", message: error.message };
+  }
   if (axios.isAxiosError(error)) {
     const body = error.response?.data as { code?: string; message?: string } | undefined;
     return {
@@ -26,7 +29,14 @@ export const fetchLevelingData = async (startdate: string, stopdate: string, sig
     params: { startdate, stopdate },
     signal,
   });
-  return data.data;
+  const next = data?.data;
+  if (!next || next.calculationMethod !== "gate_max_target_occupancy_v1" ||
+    !Array.isArray(next.calendarDays) || !Array.isArray(next.cards)) {
+    const error = new Error("Max Target data is unavailable. Reload after the planning server is updated.");
+    error.name = "PlanningDataError";
+    throw error;
+  }
+  return next;
 };
 
 export const fetchCapacity = async (signal?: AbortSignal) => {

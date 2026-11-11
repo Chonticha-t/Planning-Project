@@ -98,7 +98,7 @@ export const LotCard: React.FC<LotCardProps> = ({
   const isMoved = cardIsMoved(lot);
   const isLate = warning === "late" || warning === "order";
   const isEarly = warning === "early";
-  const hasNote = isMoved || warning !== "none" || lot.sourceChanged || lot.uphStatus !== "ok";
+  const hasNote = isMoved || warning !== "none" || lot.sourceChanged || lot.loadMin === null;
 
   const releaseDisplay = dayjs(lot.plannedDate).format("DD/MM/YYYY");
   const wasDisplay = dayjs(lot.baseDate).format("DD/MM/YYYY");
@@ -240,7 +240,7 @@ export const LotCard: React.FC<LotCardProps> = ({
           <span>{compact ? dayjs(lot.plannedDate).format("DD/MM") : releaseDisplay}</span>
         </button>
 
-        {/* Trailing note button: warning, moved, changed source or missing UPH */}
+        {/* Trailing note button: warning, moved, changed source or incomplete planning data */}
         {hasNote && (
           <button
             ref={noteBtnRef}
@@ -263,7 +263,7 @@ export const LotCard: React.FC<LotCardProps> = ({
                 ? `Moved from ${wasDisplay}`
                 : lot.sourceChanged
                 ? "Must-out changed after this move was saved"
-                : "Target UPH is missing for this gate segment"
+                : "Check gate lead time and normal shift minutes"
             }
             className={`inline-flex items-center justify-center w-[21px] h-[21px] rounded-md border transition-colors cursor-pointer shrink-0 ${
               isSelected
@@ -353,11 +353,9 @@ export const LotCard: React.FC<LotCardProps> = ({
                   Must-out changed in Summary Gate after this move was saved.
                 </div>
               )}
-              {lot.uphStatus !== "ok" && (
+              {lot.loadMin === null && (
                 <div className="text-[11px] font-semibold leading-snug text-amber-800">
-                  {lot.uphStatus === "missing"
-                    ? "No target UPH: this card adds no minutes to Load %."
-                    : `UPH found for ${lot.uphCount} of ${lot.procCount} processes: load is understated.`}
+                  Gate lead time or normal shift minutes are missing; this occupancy cannot be calculated.
                 </div>
               )}
             </div>,

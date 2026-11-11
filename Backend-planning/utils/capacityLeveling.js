@@ -23,6 +23,7 @@ class ValidationError extends Error {
 }
 
 const isDate = (value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  Number.isFinite(Date.parse(`${value}T00:00:00Z`)) &&
   new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 const dateRange = (start, end) => {
@@ -195,34 +196,35 @@ const workKey = (row) => {
   return lot ? `LOT|${lot}|${row.due_date}` : `NEED|${row.prd_name}|${row.due_date}`;
 };
 
-const uphStatus = (procCount, uphCount) => {
-  if (procCount > 0 && uphCount === procCount) return "ok";
-  return uphCount > 0 ? "partial" : "missing";
-};
-
 // One card per work item and gate. A saved move replaces the must_out date for that gate only.
-const buildCards = (rows, moves, today) => {
+const buildCards = (rows, moves, today, config = buildCapacityConfig([])) => {
   const moveByKey = new Map(moves.map((move) => [`${move.work_key}|${move.gate_name}`, move]));
   const used = new Set();
   const seen = new Map();
   const cards = [];
   let undated = 0;
+  let duplicates = 0;
+  const standards = new Map(config.map(({ gate, shifts }) => [gate,
+    Object.fromEntries(SHIFTS.map((code) => [code, shiftMinutesPerMachine(shifts[code], false)])),
+  ]));
   for (const row of rows) {
-    if (!row.must_out) { undated += 1; continue; }
+    if (!isDate(row.must_out)) { undated += 1; continue; }
     const key = workKey(row);
     const moveKey = `${key}|${row.gate_name}`;
-    const copy = seen.get(moveKey) || 0;
-    seen.set(moveKey, copy + 1);
+    if (seen.has(moveKey)) { duplicates += 1; continue; }
+    seen.set(moveKey, true);
     const move = moveByKey.get(moveKey);
     if (move) used.add(moveKey);
     // Work that is already overdue still has to be done, so it loads today.
     const baseDate = row.must_out < today ? today : row.must_out;
     const target = move ? move.planned_date : baseDate;
-    const procCount = Number(row.proc_count) || 0;
-    const uphCount = Number(row.uph_count) || 0;
-    const status = uphStatus(procCount, uphCount);
+    const duration = Number(row.lead_days);
+    // Bound calendar expansion and flag bad/missing master values instead of inventing a duration.
+    const leadDays = Number.isInteger(duration) && duration > 0 && duration <= 366 ? duration : null;
+    const standardShiftMin = standards.get(row.gate_name) ?? { day: 0, night: 0 };
+    const standardMin = round2(standardShiftMin.day + standardShiftMin.night);
     cards.push({
-      id: copy ? `${moveKey}#${copy}` : moveKey,
+      id: moveKey,
       workKey: key, gate: row.gate_name,
       prdName: row.prd_name, item: row.item, lotNo: row.lot_no, dueDate: row.due_date,
       status: row.status, qty: Number(row.qty) || 0, sheets: row.sheets === null ? null : Number(row.sheets),
@@ -237,15 +239,31 @@ const buildCards = (rows, moves, today) => {
       overdue: row.must_out < today,
       prevGate: row.prev_gate, prevDate: row.prev_must_out,
       nextGate: row.next_gate, nextDate: row.next_must_out,
-      loadMin: status === "missing" ? null : round2(Number(row.load_min) || 0),
-      uphStatus: status, procCount, uphCount,
+      leadDays, standardShiftMin,
+      loadMin: leadDays !== null && standardMin > 0 ? standardMin : null,
     });
   }
   const orphanMoves = moves.filter((move) => !used.has(`${move.work_key}|${move.gate_name}`)).map((move) => ({
     workKey: move.work_key, gate: move.gate_name, prdName: move.prd_name, lotNo: move.lot_no,
     dueDate: move.due_date, originalDate: move.original_date, plannedDate: move.planned_date,
   }));
-  return { cards, orphanMoves, undated };
+  return { cards, orphanMoves, undated, duplicates };
+};
+
+// A bounded calendar also covers cards released after the visible range whose occupancy overlaps it.
+const occupancyCalendarRange = (cards, start, end) => {
+  const maxLead = cards.reduce((longest, card) => Math.max(longest, card.leadDays ?? 1), 1);
+  const calendarStart = new Date(Date.parse(`${start}T00:00:00Z`) - (maxLead * 7 + 14) * 86400000)
+    .toISOString().slice(0, 10);
+  let calendarEnd = end;
+  for (const card of cards) {
+    if (card.leadDays !== null && isDate(card.plannedDate) && card.plannedDate > calendarEnd) calendarEnd = card.plannedDate;
+    if (card.leadDays !== null && card.baseDate > calendarEnd) calendarEnd = card.baseDate;
+  }
+  if (Date.parse(`${calendarEnd}T00:00:00Z`) - Date.parse(`${calendarStart}T00:00:00Z`) > 3660 * 86400000) {
+    throw new ValidationError("The planning dates exceed the supported ten-year calendar range.");
+  }
+  return { start: calendarStart, end: calendarEnd };
 };
 
 const parsePlanPayload = (body, today) => {
@@ -272,5 +290,5 @@ module.exports = {
   LEVELING_GATES, GATE_GROUP, SHIFTS, SPECIAL_ACTIONS, NORMAL_VALID_FROM, NORMAL_VALID_TO, DEFAULT_SHIFT,
   ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid,
   loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
-  workKey, buildCards, parsePlanPayload,
+  workKey, buildCards, occupancyCalendarRange, parsePlanPayload,
 };

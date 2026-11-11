@@ -8,11 +8,12 @@ import {
   History,
   ArrowRight,
 } from "lucide-react";
-import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry } from "../types";
-import { cellPct, formatMinutes, moveWarning, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
+import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry, LevelingData } from "../types";
+import { cellPct, formatMinutes, moveWarning, occupancyWindow, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 interface LotDetailSidePanelProps {
+  data: LevelingData;
   lot: LotItem | null;
   gridData: DayGateLoad[];
   capacity: Record<string, Record<string, CapacityDay>>;
@@ -36,6 +37,7 @@ const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, ch
 );
 
 export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
+  data,
   lot,
   gridData,
   capacity,
@@ -77,7 +79,8 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
     return null;
   }
 
-  const warning = moveWarning(activeLot, activeLot.plannedDate, plannedIndex);
+  const warning = moveWarning(activeLot, activeLot.plannedDate, plannedIndex, data);
+  const occupied = occupancyWindow(data, activeLot);
   const isLate = warning === "late" || warning === "order";
   const diffDays = dayjs(activeLot.mustOut).diff(dayjs(activeLot.plannedDate), "day");
   const openDays = gridData.filter((day) => day.date >= today && !day.gates[activeLot.gate]?.off);
@@ -86,7 +89,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   const pct = cellPct(cell);
   // What this gate-day would show without this card.
   const pctWithout = cell && pct !== null && cell.capacityMin
-    ? Math.round(((cell.loadMin - (activeLot.loadMin ?? 0)) / cell.capacityMin) * 100)
+    ? Math.round((Math.max(0, cell.loadMin - (occupied ? activeLot.loadMin ?? 0 : 0)) / cell.capacityMin) * 100)
     : null;
   const nextPlanned = activeLot.nextGate
     ? plannedIndex.get(`${activeLot.workKey}|${activeLot.nextGate}`) ?? activeLot.nextDate
@@ -256,21 +259,18 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             ) : (
               <>
                 <div className="flex items-center justify-between">
-                  <span className="text-base-content/60">This card (estimate)</span>
+                  <span className="text-base-content/60">Normal reservation / day</span>
                   <span className="font-semibold text-base-content">
                     {activeLot.loadMin === null
-                      ? "No target UPH"
-                      : `${Math.round(activeLot.loadMin).toLocaleString()} min${activeLot.uphStatus === "partial" ? "*" : ""}`}
+                      ? "Check planning data"
+                      : `${Math.round(activeLot.loadMin).toLocaleString()} min`}
                   </span>
                 </div>
-                {activeLot.uphStatus !== "ok" && (
-                  <div className="text-[11px] text-amber-800 leading-snug">
-                    {activeLot.procCount === 0
-                      ? "No routing process was found for this gate segment, so this card adds no minutes to Load %."
-                      : `Target UPH exists for ${activeLot.uphCount} of ${activeLot.procCount} processes in this gate segment${
-                          activeLot.uphStatus === "partial" ? "; the load is understated." : ", so this card adds no minutes to Load %."}`}
-                  </div>
-                )}
+                <div className={`text-[11px] leading-snug ${occupied ? "text-base-content/60" : "text-amber-800"}`}>
+                  {occupied
+                    ? `${activeLot.leadDays} planning day(s): ${formatDate(occupied.startDate)} – ${formatDate(occupied.endDate)}. D ${activeLot.standardShiftMin.day} / N ${activeLot.standardShiftMin.night} min per day, excluding OT.`
+                    : "A valid gate lead time, normal shift minutes and planning calendar are required."}
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-base-content/60">Gate load / capacity</span>
                   <span className="font-semibold text-base-content">

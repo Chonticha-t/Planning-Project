@@ -134,7 +134,7 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
                 {hasRedCells && (
                   <li>
                     <strong>{kpis.overloadCells} gate cell(s)</strong>{" "}
-                    still exceed 100% daily capacity.
+                    exceed daily capacity or have work with zero capacity.
                   </li>
                 )}
                 {hasLateLots && (
@@ -150,17 +150,17 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 flex items-center gap-2.5">
               <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
               <span className="text-xs font-semibold leading-relaxed">
-                No gate-day is above 100% and no card was moved past its
+                No gate-day exceeds capacity and no card was moved past its
                 must-out date.
               </span>
             </div>
           )}
 
-          {(kpis.missingUphCards > 0 || kpis.unsetCapacityGates.length > 0) && (
+          {(kpis.missingPlanningCards > 0 || kpis.unsetCapacityGates.length > 0) && (
             <div className="px-4 py-2.5 bg-base-200/60 border border-base-300 rounded-xl text-xs text-base-content/70 leading-relaxed">
               Load % is incomplete:
               {kpis.unsetCapacityGates.length > 0 && ` MC is not set for ${kpis.unsetCapacityGates.join(", ")}.`}
-              {kpis.missingUphCards > 0 && ` ${kpis.missingUphCards.toLocaleString()} card(s) have no UPH and add no minutes.`}
+              {kpis.missingPlanningCards > 0 && ` ${kpis.missingPlanningCards.toLocaleString()} card(s) need valid gate lead time and normal shift minutes.`}
             </div>
           )}
 
