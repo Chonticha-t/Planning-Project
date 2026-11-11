@@ -1,3 +1,4 @@
+import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import React, { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
@@ -8,12 +9,14 @@ import {
   History,
   ArrowRight,
 } from "lucide-react";
-import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry, LevelingData } from "../types";
-import { cellPct, formatMinutes, moveWarning, occupancyWindow, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
+import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry, LevelingData, ProcessCategory } from "../types";
+import { adjacentGateDates, expandBoardLots, occupancyWindow, buildGrid, cellPct, formatMinutes, moveWarning, plannedArrivalDate, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 interface LotDetailSidePanelProps {
   data: LevelingData;
+  allLots: LotItem[];
+  category: ProcessCategory;
   lot: LotItem | null;
   gridData: DayGateLoad[];
   capacity: Record<string, Record<string, CapacityDay>>;
@@ -38,6 +41,8 @@ const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, ch
 
 export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   data,
+  allLots,
+  category,
   lot,
   gridData,
   capacity,
@@ -80,23 +85,24 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   }
 
   const warning = moveWarning(activeLot, activeLot.plannedDate, plannedIndex, data);
-  const occupied = occupancyWindow(data, activeLot);
+  const isNeed = activeLot.gateState === "need_wip" || activeLot.label.trim().toUpperCase() === "NEED WIP";
+  const standard = data.gates.find((gate) => gate.gate === activeLot.gate)?.standardShiftMin;
+  const normalMinutes = standard ? standard.day + standard.night : null;
   const isLate = warning === "late" || warning === "order";
-  const diffDays = dayjs(activeLot.mustOut).diff(dayjs(activeLot.plannedDate), "day");
+  const projectedEnd = occupancyWindow(data, activeLot)?.endDate;
+  const diffDays = projectedEnd && activeLot.mustOut ? dayjs(activeLot.mustOut).diff(dayjs(projectedEnd), "day") : null;
   const openDays = gridData.filter((day) => day.date >= today && !day.gates[activeLot.gate]?.off);
-  const cell = gridData.find((day) => day.date === activeLot.plannedDate)?.gates[activeLot.gate];
-  const dayCapacity = capacity[activeLot.gate]?.[activeLot.plannedDate];
+  const arrivalDate = plannedArrivalDate(activeLot.arriveBy, activeLot);
+  const cell = gridData.find((day) => day.date === arrivalDate)?.gates[activeLot.gate];
+  const dayCapacity = arrivalDate ? capacity[activeLot.gate]?.[arrivalDate] : undefined;
   const pct = cellPct(cell);
-  // What this gate-day would show without this card.
-  const pctWithout = cell && pct !== null && cell.capacityMin
-    ? Math.round((Math.max(0, cell.loadMin - (occupied ? activeLot.loadMin ?? 0 : 0)) / cell.capacityMin) * 100)
-    : null;
-  const nextPlanned = activeLot.nextGate
-    ? plannedIndex.get(`${activeLot.workKey}|${activeLot.nextGate}`) ?? activeLot.nextDate
-    : null;
-  const prevPlanned = activeLot.prevGate
-    ? plannedIndex.get(`${activeLot.workKey}|${activeLot.prevGate}`) ?? activeLot.prevDate
-    : null;
+  // Removing one allocation must not subtract a lot still represented by another allocation.
+  const memberKeys = new Set(expandBoardLots(allLots, [activeLot]).map((lot) => lot.workKey));
+  const withoutRows = data.arrivalRows.filter((row) => !memberKeys.has(row.workKey) || row.gate_name !== activeLot.gate);
+  const withoutCell = arrivalDate ? buildGrid({ ...data, arrivalRows: withoutRows }, allLots, false, category)
+    .find((day) => day.date === arrivalDate)?.gates[activeLot.gate] : undefined;
+  const pctWithout = cellPct(withoutCell);
+  const { previous: prevPlanned, next: nextPlanned } = adjacentGateDates(activeLot, plannedIndex);
 
   // Moves made in this draft, then the move stored in the last saved plan.
   const historyEntries: MoveHistoryEntry[] = [
@@ -155,8 +161,8 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             </div>
           </div>
           <div className="text-xs text-base-content/60 mt-1 tabular-nums">
-            {activeLot.qty.toLocaleString()} pcs
-            {activeLot.sheets !== null ? ` · ${activeLot.sheets.toLocaleString()} sheets` : ""}
+            {formatGateQuantity(activeLot.qty, "piece")} pcs
+            {activeLot.sheets !== null ? ` · ${formatGateQuantity(activeLot.sheets, "sheet")} sheets` : ""}
             {activeLot.item ? ` · ${activeLot.item}` : ""} · PO due {formatDate(activeLot.dueDate)}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -178,15 +184,31 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
           {/* Dates of this gate and its neighbours */}
           <div className="flex flex-col text-xs">
             {activeLot.prevGate && <Row label={`Previous gate · ${activeLot.prevGate}`}>{formatDate(prevPlanned)}</Row>}
-            <Row label="Arrive by">{formatDate(activeLot.arriveBy)}</Row>
+            <Row label="Source arrival">{formatDate(activeLot.arriveBy)}</Row>
             <Row label="Must out">{formatDate(activeLot.mustOut)}</Row>
+            <Row label="Projected completion">{formatDate(projectedEnd ?? null)}</Row>
             {activeLot.nextGate && <Row label={`Next gate · ${activeLot.nextGate}`}>{formatDate(nextPlanned)}</Row>}
           </div>
 
-          {/* Date at this gate */}
+          <details className="rounded-xl border border-base-300 p-3 text-xs">
+            <summary className="cursor-pointer font-semibold">Source allocations ({activeLot.allocations?.length ?? 0})</summary>
+            <div className="mt-2 max-h-56 overflow-auto">
+              <table className="w-full text-left"><thead><tr><th>Product / PO / Item</th><th>Due</th><th>Source arrival</th><th>Qty</th></tr></thead>
+                <tbody>{activeLot.allocations?.map((row, index) => (
+                  <tr key={`${row.workKey}-${index}`} className="border-t border-base-200">
+                    <td className="py-2">{row.prd_name}<br />{row.po_no || "-"} / {row.item || "-"}</td>
+                    <td>{formatDate(row.due_date)}</td><td>{formatDate(row.arrive_by ?? null)}</td>
+                    <td>{formatGateQuantity(row.qty ?? null, "piece")}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </details>
+
+          {/* Arrival date at this gate */}
           <div>
             <label className="text-xs font-semibold text-base-content block mb-1.5">
-              {activeLot.gate} date
+              {activeLot.gate} arrival date
             </label>
             <div
               ref={releaseBoxRef}
@@ -208,7 +230,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
                     : "bg-[#d1fae5] text-[#065f46]"
                 }`}
               >
-                {warning === "order" ? "gate order" : isLate ? `late · ${diffDays}d` : warning === "early" ? "early" : `fits · +${diffDays}d slack`}
+                {diffDays === null ? "Check completion" : warning === "order" ? "gate order" : isLate ? `late · ${diffDays}d` : warning === "early" ? "early" : `fits · +${diffDays}d slack`}
               </span>
             </div>
             {warning !== "none" && (
@@ -218,7 +240,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             )}
             {activeLot.sourceChanged && (
               <div className="mt-1.5 text-[11.5px] font-semibold leading-snug text-amber-800">
-                Must-out changed in Summary Gate after this move was saved.
+                Source arrival changed in Summary Gate after this move was saved.
               </div>
             )}
 
@@ -238,11 +260,11 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             )}
           </div>
 
-          {/* Load of this gate on the planned day */}
+          {/* Load on the arrival date, separate from the board's release date. */}
           <div className="bg-base-200/40 border border-base-300 rounded-xl p-3.5 flex flex-col gap-2.5 text-xs tabular-nums">
             <div className="flex items-center justify-between">
               <span className="font-bold text-base-content">
-                {activeLot.gate} load · {dayjs(activeLot.plannedDate).format("DD/MM")}
+                {activeLot.gate} arrival load · {arrivalDate ? dayjs(arrivalDate).format("DD/MM") : "Unknown date"}
               </span>
               <button
                 type="button"
@@ -259,20 +281,18 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             ) : (
               <>
                 <div className="flex items-center justify-between">
-                  <span className="text-base-content/60">Normal reservation / day</span>
+                  <span className="text-base-content/60">Normal minutes / actual arrival lot</span>
                   <span className="font-semibold text-base-content">
-                    {activeLot.loadMin === null
-                      ? "Check planning data"
-                      : `${Math.round(activeLot.loadMin).toLocaleString()} min`}
+                    {isNeed ? "0 min (Need WIP)" : normalMinutes === null || normalMinutes <= 0
+                      ? "Check normal shift minutes"
+                      : `${Math.round(normalMinutes).toLocaleString()} min`}
                   </span>
                 </div>
-                <div className={`text-[11px] leading-snug ${occupied ? "text-base-content/60" : "text-amber-800"}`}>
-                  {occupied
-                    ? `${activeLot.leadDays} planning day(s): ${formatDate(occupied.startDate)} – ${formatDate(occupied.endDate)}. D ${activeLot.standardShiftMin.day} / N ${activeLot.standardShiftMin.night} min per day, excluding OT.`
-                    : "A valid gate lead time, normal shift minutes and planning calendar are required."}
+                <div className="text-[11px] leading-snug text-base-content/60">
+                  Actual lots are counted once per gate/arrival date, excluding Need WIP. All allocations in this card move together.
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-base-content/60">Gate load / capacity</span>
+                  <span className="text-base-content/60">Arrival load / capacity ({formatDate(arrivalDate)})</span>
                   <span className="font-semibold text-base-content">
                     {Math.round(cell.loadMin).toLocaleString()} / {cell.off ? "OFF" : formatMinutes(cell.capacityMin)}
                     {cell.hasOt && (

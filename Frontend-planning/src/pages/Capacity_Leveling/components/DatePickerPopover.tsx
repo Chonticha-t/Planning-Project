@@ -113,10 +113,10 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
     >
       {/* Header */}
       <div className="text-xs font-bold text-base-content mb-1 break-all">
-        {lot.label} · {lot.gate} date
+        {lot.label} · {lot.gate} arrival
       </div>
       <div className="text-[11px] text-base-content/55 tabular-nums mb-2">
-        Must out {dayjs(lot.mustOut).format("DD/MM/YYYY")}
+        Must out {lot.mustOut ? dayjs(lot.mustOut).format("DD/MM/YYYY") : "N/A"}
         {lot.arriveBy ? ` · arrive by ${dayjs(lot.arriveBy).format("DD/MM")}` : ""}
       </div>
 

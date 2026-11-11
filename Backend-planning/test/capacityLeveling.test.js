@@ -3,9 +3,9 @@ const assert = require("node:assert/strict");
 const express = require("express");
 const {
   LEVELING_GATES, DEFAULT_SHIFT, ValidationError, shiftMinutesPerMachine, effectiveShift, dayCapacity,
-  loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, occupancyCalendarRange, parsePlanPayload, isDate,
+  loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, occupancyCalendarRange, parsePlanPayload, isDate, arrivalWorkKey, buildArrivalCards, arrivalEndDate,
 } = require("../utils/capacityLeveling");
-const { createCapacityLevelingRouter } = require("../utils/capacityLevelingRouter");
+const { createCapacityLevelingRouter, PLAN_METHOD } = require("../utils/capacityLevelingRouter");
 
 const shift = (overrides = {}) => ({ ...DEFAULT_SHIFT, mcLines: 1, specialDays: {}, ...overrides });
 const gate = (day = {}, night = {}) => ({ gate: "FVAC", group: "FPC", shifts: { day: shift(day), night: shift(night) } });
@@ -159,7 +159,7 @@ async function withApi(pool, callback, { admin = true } = {}) {
     await new Promise((resolve) => server.once("listening", resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
     await callback((url, options = {}) => fetch(base + url, {
-      ...options, headers: { "Content-Type": "application/json" }, body: options.body && JSON.stringify(options.body),
+      ...options, headers: { "Content-Type": "application/json" }, body: options.body && JSON.stringify({ ...(url === "/plan" ? { calculationMethod: PLAN_METHOD } : {}), ...options.body }),
     }));
   } finally {
     server.closeAllConnections();
@@ -172,7 +172,7 @@ test("load endpoint returns capacity per gate and day with cards from the latest
     [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
     [/FROM planning\.capacity_setting/, [row({ gate_name: "FADL", resource_count: 2 }), row({ setting_id: "s2", gate_name: "FADL", shift_code: "night", resource_count: 2 })]],
     [/FROM planning\.work_plan\b/, [{ plan_id: "p3", plan_group_id: "p1", version_no: 3, note: null, created_by: "planner", saved_at: "2026-11-11 15:00" }]],
-    [/FROM planning\.work_plan_gate_item/, [{ work_key: "LOT|L001|2026-11-25", gate_name: "FADL", original_date: "2026-11-17", planned_date: "2026-11-18" }]],
+    [/FROM planning\.work_plan_gate_item/, [{ work_key: arrivalWorkKey(work()), gate_name: "FADL", original_date: "2026-11-17", planned_date: "2026-11-18" }]],
     [/planning_summary_gate/, [work()]],
   ]);
   await withApi(pool, async (api) => {
@@ -186,6 +186,10 @@ test("load endpoint returns capacity per gate and day with cards from the latest
     assert.equal(data.capacity.FADL["2026-11-15"].off, true);
     assert.equal(data.capacity.FVAC["2026-11-14"].capacityMin, null);
     assert.equal(data.cards[0].plannedDate, "2026-11-18");
+    assert.equal(data.loadBasis, "summary_gate_arrivals_v1");
+    assert.equal(data.arrivalRows[0].arrive_by, work().arrive_by);
+    assert.equal(data.arrivalRows[0].workKey, data.cards[0].workKey);
+    assert.deepEqual(data.gates.find((gate) => gate.gate === "FADL").standardShiftMin, { day: 475, night: 475 });
     assert.equal(data.plan.version, 3);
     assert.equal((await api("/load?startdate=2026-11-14&stopdate=2027-11-16")).status, 400);
   });
@@ -193,7 +197,29 @@ test("load endpoint returns capacity per gate and day with cards from the latest
   assert.deepEqual(works.params, [LEVELING_GATES]);
   assert.match(works.sql, /gate_state <> 'passed'/);
   assert.match(works.sql, /w\.lead_days/);
+  assert.match(works.sql, /w\.pcs_per_sheet::float8 AS pcs_per_sheet/);
+  assert.match(works.sql, /w\.pri/);
   assert.doesNotMatch(works.sql, /smart_pcap_std_time|SUM\(60|uph/i);
+});
+
+test("arrival rows retain all allocations and valid arrivals without release dates", async () => {
+  const rows = [work(), work({ pri: 2 }), work({ lot_no: "L002", must_out: null }), work({ lot_no: "L003", arrive_by: null })];
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/planning_summary_gate/, rows],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/load?startdate=2026-11-12&stopdate=2026-11-20");
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.arrivalRows.length, 4);
+    assert.equal(data.cards.length, 2);
+    assert.equal(data.undatedCount, 1);
+    assert.equal(data.undatedArrivalCount, 1);
+    assert.equal(data.duplicateWorkCount, 1);
+    assert.equal(data.arrivalRows[2].must_out, null);
+    assert.equal(data.arrivalRows[0].arrive_by, rows[0].arrive_by);
+  });
 });
 
 test("normal reservation ignores OT, MC, efficiency and closed shifts", () => {
@@ -234,20 +260,20 @@ test("a legacy UPH plan stays separate and its moved dates are not silently impo
     const { data } = await response.json();
     assert.equal(data.plan, null);
     assert.equal(data.legacyPlanAvailable, true);
-    assert.equal(data.calculationMethod, "gate_max_target_occupancy_v1");
-    assert.equal(data.cards[0].plannedDate, "2026-11-17");
+    assert.equal(data.calculationMethod, PLAN_METHOD);
+    assert.equal(data.cards[0].plannedDate, "2026-11-16");
     assert.ok(data.calendarDays[0].date < data.days[0].date);
   });
   assert.ok(!pool.log.some((entry) => /FROM planning\.work_plan_gate_item/.test(entry.sql)));
 });
 
-test("saving with missing master lead time fails without writing a plan", async () => {
+test("moving an arrival with missing master lead time fails without writing a plan", async () => {
   const pool = fakePool([
     [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
     [/FROM planning\.planning_summary_gate/, [work({ lead_days: null })]],
   ]);
   await withApi(pool, async (api) => {
-    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } });
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(work()), gate: "FADL", plannedDate: "2026-11-18" }] } });
     assert.equal(response.status, 400);
     assert.equal((await response.json()).code, "INVALID_REQUEST");
   });
@@ -262,7 +288,7 @@ test("the API rejects a direct save onto a closed day before writing", async () 
   ]);
   await withApi(pool, async (api) => {
     const response = await api("/plan", { method: "POST", body: {
-      baseVersion: 0, moves: [{ workKey: "LOT|L001|2026-11-25", gate: "FADL", plannedDate: "2026-11-15" }],
+      baseVersion: 0, moves: [{ workKey: arrivalWorkKey(work()), gate: "FADL", plannedDate: "2026-11-15" }],
     } });
     assert.equal(response.status, 400);
   });
@@ -270,14 +296,14 @@ test("the API rejects a direct save onto a closed day before writing", async () 
   assert.equal(pool.log.at(-1).sql, "ROLLBACK");
 });
 
-test("the API rejects zero normal reservation minutes even when saving no moves", async () => {
+test("the API rejects moving an actual lot with zero normal minutes", async () => {
   const pool = fakePool([
     [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
     [/FROM planning\.planning_summary_gate/, [work()]],
     [/FROM planning\.capacity_setting/, [row({ regular_minutes_per_shift: 65 }), row({ shift_code: "night", regular_minutes_per_shift: 65 })]],
   ]);
   await withApi(pool, async (api) => {
-    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } })).status, 400);
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(work()), gate: "FADL", plannedDate: "2026-11-18" }] } })).status, 400);
   });
   assert.ok(!pool.log.some((entry) => entry.sql.startsWith("INSERT")));
 });
@@ -344,14 +370,13 @@ test("special days are saved with the settings for that gate and shift only; wri
 });
 
 test("saving a plan creates the next version with only the moved cards", async () => {
-  const source = [{ prd_name: "PRD-A", item: "94-1", lot_no: "L001", due_date: "2026-11-25", status: "production plan",
-    qty: 1000, gate_name: "FADL", must_out: "2026-11-17", lead_days: 2 }];
+  const source = [work()];
   const rules = [
     [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
     [/FROM planning\.work_plan\b/, [{ plan_id: "p3", plan_group_id: "p1", version_no: 3, note: null, created_by: "planner", saved_at: "x" }]],
     [/FROM planning\.planning_summary_gate/, source],
   ];
-  const move = { workKey: "LOT|L001|2026-11-25", gate: "FADL", plannedDate: "2026-11-18" };
+  const move = { workKey: arrivalWorkKey(work()), gate: "FADL", plannedDate: "2026-11-18" };
   const pool = fakePool(rules);
   await withApi(pool, async (api) => {
     assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 3, moves: [move] } })).status, 200);
@@ -360,7 +385,7 @@ test("saving a plan creates the next version with only the moved cards", async (
   assert.deepEqual(header.params.slice(1, 6), ["p1", 4, "p3", "2026-11-12", "2026-11-18"]);
   assert.equal(header.params[8], "planner");
   const item = pool.log.find((entry) => entry.sql.startsWith("INSERT INTO planning.work_plan_gate_item"));
-  assert.deepEqual(item.params.slice(2, 5).concat(item.params.slice(10)), [move.workKey, "FADL", "PRD-A", "2026-11-17", "2026-11-18"]);
+  assert.deepEqual(item.params.slice(2, 5).concat(item.params.slice(10)), [move.workKey, "FADL", "PRD-A", "2026-11-16", "2026-11-18"]);
   assert.ok(!pool.log.some((entry) => /^(UPDATE|DELETE)/.test(entry.sql)));
 
   // A stale version or a card that left Summary Gate rolls back without writing.
@@ -371,4 +396,115 @@ test("saving a plan creates the next version with only the moved cards", async (
     });
     assert.ok(!stale.log.some((entry) => entry.sql.startsWith("INSERT")));
   }
+});
+
+
+test("arrival cards group physical lots across due dates, retain allocations and do not clamp history", () => {
+  const rows = [work(), work({ due_date: "2026-12-01", pri: 2 }), work({ lot_no: "OLD", arrive_by: "2026-11-01" }), work({ lot_no: "NEED WIP", gate_state: "need_wip", pri: 3 })];
+  const result = buildArrivalCards(rows, [], "2026-11-12");
+  assert.equal(result.cards.length, 3);
+  assert.equal(result.cards[0].allocations.length, 2);
+  assert.equal(result.cards[0].baseDate, "2026-11-16");
+  assert.equal(result.cards[1].plannedDate, "2026-11-01");
+  assert.equal(result.cards[2].loadMin, 0);
+  assert.equal(arrivalWorkKey(rows[0]), arrivalWorkKey(rows[1]));
+  assert.notEqual(arrivalWorkKey(rows[0]), arrivalWorkKey({ ...rows[0], arrive_by: "2026-11-17" }));
+});
+
+test("changed source arrival does not silently inherit an old arrival move", () => {
+  const original = work();
+  const moves = [{ work_key: arrivalWorkKey(original), gate_name: "FADL", original_date: original.arrive_by, planned_date: "2026-11-18" }];
+  const changed = buildArrivalCards([work({ arrive_by: "2026-11-17" })], moves, "2026-11-12");
+  assert.equal(changed.cards[0].plannedDate, "2026-11-17");
+  assert.equal(changed.orphanMoves.length, 1);
+});
+
+test("server projects completion forward and honors working days", () => {
+  const calendar = { isWorking: date => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 };
+  assert.equal(arrivalEndDate("2026-11-21", 2, calendar), "2026-11-24");
+  assert.equal(arrivalEndDate("2026-11-21", 1, calendar), "2026-11-23");
+  assert.equal(arrivalEndDate("2026-11-21", null, calendar), null);
+});
+
+test("release-date clients cannot save dates as arrival plans", async () => {
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]]]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { calculationMethod: "gate_max_target_occupancy_v1", baseVersion: 0, moves: [] } });
+    assert.equal(response.status, 400);
+  });
+  assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
+});
+
+test("an existing occupancy plan is retained but never loaded into the arrival board", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, params => params[0] === "gate_max_target_occupancy_v1" ? [{ plan_id: "old-release", version_no: 4 }] : []],
+    [/planning_summary_gate/, [work()]],
+  ]);
+  await withApi(pool, async api => {
+    const response = await api("/load?startdate=2026-11-12&stopdate=2026-11-20");
+    const { data } = await response.json();
+    assert.equal(data.legacyPlanAvailable, true);
+    assert.equal(data.plan, null);
+    assert.equal(data.cards[0].plannedDate, "2026-11-16");
+  });
+  assert.ok(!pool.log.some(entry => /work_plan_gate_item/.test(entry.sql)));
+});
+
+test("saving an arrival that overlaps the next gate rolls back before any insert", async () => {
+  const rows = [work({ next_arrive_by: "2026-11-19" })];
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, rows]]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-18" }] } });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).message, /overlaps/);
+  });
+  assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
+  assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+});
+
+test("arrival save and reload preserve source and planned arrival dates with the new plan method", async () => {
+  const rows = [work({ prev_must_out: "2026-11-14", next_arrive_by: "2026-11-21" })];
+  let header = null;
+  let stored = [];
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/FROM planning\.work_plan_gate_item/, () => stored],
+    [/planning_summary_gate/, rows],
+    [/INSERT INTO planning\.work_plan \(/, params => { header = { plan_id: params[0], plan_group_id: params[1], version_no: params[2], created_by: params[8], saved_at: "2026-11-12 12:00" }; assert.equal(params[6], PLAN_METHOD); return []; }],
+    [/INSERT INTO planning\.work_plan_gate_item/, params => { stored.push({ work_key: params[2], gate_name: params[3], original_date: params[10], planned_date: params[11] }); return []; }],
+  ]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-18" }] } });
+    assert.equal(response.status, 200);
+    const load = await api("/load?startdate=2026-11-12&stopdate=2026-11-20");
+    const { data } = await load.json();
+    assert.equal(data.plan.version, 1);
+    assert.equal(data.cards[0].baseDate, "2026-11-16");
+    assert.equal(data.cards[0].plannedDate, "2026-11-18");
+    assert.equal(data.arrivalRows[0].arrive_by, "2026-11-16");
+    assert.deepEqual(stored.map(move => [move.original_date, move.planned_date]), [["2026-11-16", "2026-11-18"]]);
+  });
+});
+
+
+test("same-day handoff is valid when completion equals the next gate arrival", async () => {
+  const rows = [work({ prev_must_out: "2026-11-17", next_arrive_by: "2026-11-19" })];
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, rows]]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-17" }] } });
+    assert.equal(response.status, 200);
+  });
+  assert.ok(pool.log.some(entry => entry.sql.startsWith("INSERT")));
+});
+
+test("arriving before the previous gate finishes is rejected atomically", async () => {
+  const rows = [work({ prev_must_out: "2026-11-18", next_arrive_by: "2026-11-25" })];
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, rows]]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-17" }] } });
+    assert.equal(response.status, 400);
+  });
+  assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
 });

@@ -13,7 +13,8 @@ import {
   Pencil,
 } from "lucide-react";
 import type { LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData } from "../types";
-import { cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
+import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
+import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
 import { DatePickerPopover } from "./DatePickerPopover";
 
@@ -27,6 +28,7 @@ interface ReleaseBoardProps {
   lots: LotItem[];
   /** Cards of this gate planned after the visible date range */
   beyondRangeCount: number;
+  pastArrivalCount: number;
   gridData: DayGateLoad[];
   today: string;
   plannedIndex: Map<string, string>;
@@ -75,6 +77,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   onBoardGateChange,
   lots,
   beyondRangeCount,
+  pastArrivalCount,
   gridData,
   today,
   plannedIndex,
@@ -113,6 +116,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   // Scroll the day column into view when a cell/day is clicked in Gate Load by Day
   useEffect(() => {
     if (!focusedDate || !scrollContainerRef.current) return;
+    setExpandedDayCols((previous) => ({ ...previous, [focusedDate]: true }));
     const colEl = scrollContainerRef.current.querySelector<HTMLElement>(
       `[data-day-col="${focusedDate}"]`
     );
@@ -125,6 +129,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     }
   }, [focusedDate]);
 
+  const visibleDays = useMemo(() => gridData.filter((day) => day.date >= today), [gridData, today]);
+
   // Days on which this gate is open; a card cannot be planned on a closed day.
   const planningDays = useMemo(
     () => gridData.filter((d) => d.date >= today && !d.gates[boardGate]?.off),
@@ -134,7 +140,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   // Calendar weeks (Monday start) across the visible range, for the Weeks view.
   const weekGroups = useMemo<WeekGroup[]>(() => {
     const groups = new Map<string, DayGateLoad[]>();
-    for (const day of planningDays) {
+    for (const day of visibleDays) {
       const d = dayjs(day.date);
       const monday = d.subtract((d.day() + 6) % 7, "day").format("YYYY-MM-DD");
       groups.set(monday, [...(groups.get(monday) ?? []), day]);
@@ -154,13 +160,13 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         title: `WEEK ${index + 1}`,
         rangeLabel: `${dayjs(days[0].date).format("DD/MM")} – ${dayjs(days[days.length - 1].date).format("DD/MM")}`,
         // A card dropped on a week lands on its first open day.
-        defaultTargetDate: days[0].date,
+        defaultTargetDate: days.find((day) => !day.gates[boardGate]?.off)?.date ?? "",
         days,
         avgWorkPct: pcts.length ? Math.round(pcts.reduce((sum, pct) => sum + pct, 0) / pcts.length) : null,
         gateStatusDots,
       };
     });
-  }, [planningDays, boardGate, gates]);
+  }, [visibleDays, boardGate, gates]);
 
   const selectedLots = lots.filter((lot) => selectedLotIds.has(lot.id));
   const movingIds = new Set(activeMovingLots.map((lot) => lot.id));
@@ -198,6 +204,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     e: React.DragEvent<HTMLDivElement>,
     dayDate: string
   ) => {
+    if (!planningDates.has(dayDate)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (hoverTargetDate !== dayDate) {
@@ -210,7 +217,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     dayDate: string
   ) => {
     e.preventDefault();
-    if (draggedLot) {
+    if (draggedLot && planningDates.has(dayDate)) {
       onMoveLots(selectedLotIds.has(draggedLot.id) ? selectedLots : [draggedLot], dayDate);
     }
     onDragEnd();
@@ -223,7 +230,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
-            Release Board
+            Gate Arrival Board
           </h3>
           {/* One gate at a time: moving a card changes this gate's date only */}
           <div role="group" aria-label="Gate shown on the board"
@@ -241,8 +248,11 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             ))}
           </div>
           <span className="badge badge-sm bg-base-200 text-base-content/70 border-base-300 font-semibold tabular-nums">
-            {lots.length} cards
+            {boardCountLabel(lots)}
           </span>
+          {pastArrivalCount > 0 && (
+            <span className="text-[11px] text-base-content/50" title="Historical arrivals remain on their source dates and are not moved to today.">{pastArrivalCount} earlier arrival card(s)</span>
+          )}
           {beyondRangeCount > 0 && (
             <span className="text-[11px] text-base-content/50 tabular-nums"
               title="These cards are planned after the last day shown.">
@@ -417,7 +427,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           className={`flex overflow-x-auto pb-2 scroll-smooth ${isCompact ? "gap-1.5 min-h-[400px]" : "gap-2 min-h-[480px]"}`}
         >
           {/* Scrollable Day Columns for ALL planning days */}
-          {planningDays.map((col) => {
+          {visibleDays.map((col) => {
             const colLots = lots.filter((l) => l.plannedDate === col.date);
             const colPct = cellPct(col.gates[boardGate]);
             const isDayExpanded = Boolean(expandedDayCols[col.date]);
@@ -433,7 +443,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               activeMovingLots.some((lot) => lot.plannedDate !== col.date) &&
               currentTargetDate === col.date &&
               activeMovingLots.length > 0;
-            const isAfterMustStart = activeMovingLots.some((lot) => col.date > lot.mustOut);
+            const isAfterMustStart = activeMovingLots.some((lot) => ["late", "order"].includes(moveWarning(lot, col.date, plannedIndex, data)));
 
             const isFocusedCol = focusedDate === col.date;
 
@@ -460,17 +470,17 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       <div className="text-[10.5px] font-semibold uppercase text-base-content/50">
                         {col.dayLabel}
                       </div>
-                      <div className="text-xs font-bold text-base-content tabular-nums mt-0.5 flex items-center gap-1">
+                      <div className="text-xs font-bold text-base-content tabular-nums mt-0.5 flex flex-col items-start gap-1">
                         <span>{col.displayDate}</span>
                         {colLots.length > 0 && (
-                          <span className="px-1.5 py-0 rounded bg-base-200 text-[10px] font-semibold text-base-content/60">
-                            {colLots.length}
+                          <span className="px-1.5 py-0 rounded bg-base-200 text-[10px] font-semibold text-base-content/60 whitespace-normal">
+                            {boardCountLabel(colLots)}
                           </span>
                         )}
                       </div>
                     </div>
                     <span
-                      title={colPct === null ? `MC is not set for ${boardGate}` : `${boardGate} load on this day`}
+                      title={colPct === null ? `Arrival load is unavailable for ${boardGate}` : `${boardGate} arrival load on this day; cards below use the same arrivals`}
                       className={`text-xs font-bold tabular-nums ${
                         colPct === null
                           ? "text-base-content/40"
@@ -499,15 +509,18 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
                 {/* Internally Scrollable Column Cards Body */}
                 <div className={`flex-1 flex flex-col overflow-y-auto pr-0.5 min-h-0 ${isCompact ? "gap-1.5" : "gap-2"}`}>
-                  {visibleLots.map((lot) => {
+                  {visibleLots.map((lot, index) => {
                     const isThisMovingPreview =
                       movingIds.has(lot.id) &&
                       Boolean(currentTargetDate) &&
                       currentTargetDate !== lot.plannedDate;
 
                     return (
+                      <React.Fragment key={lot.id}>
+                      {(index === 0 || lotKind(visibleLots[index - 1]) !== lotKind(lot)) && (
+                        <div className="text-[10px] font-bold text-base-content/60 uppercase">{lotKind(lot) === "lot" ? "Actual lots" : lotKind(lot) === "need" ? "Need WIP (no load)" : "Missing lot ID"}</div>
+                      )}
                       <LotCard
-                        key={lot.id}
                         lot={lot}
                         showSelection={isEditMode}
                         compact={isCompact}
@@ -526,6 +539,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         onDragEnd={handleCardDragEnd}
                         onDateChange={onMoveLot}
                       />
+                      </React.Fragment>
                     );
                   })}
 
@@ -568,10 +582,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     </button>
                   )}
 
-                  {/* After Must Start Warning Text */}
+                  {/* After Must Out Warning Text */}
                   {isAfterMustStart && (
                     <div className="mt-2 px-1 text-center text-[11px] font-semibold text-rose-700 leading-snug shrink-0">
-                      After must-out of one or more selected cards
+                      Projected completion is after must-out or overlaps another gate
                     </div>
                   )}
                 </div>
@@ -633,7 +647,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                           {wg.avgWorkPct === null ? "MC not set" : `Avg ${wg.avgWorkPct}%`}
                         </span>
                         <div className="text-[11px] text-base-content/50 mt-0.5 tabular-nums">
-                          {weekLots.length} cards
+                          {boardCountLabel(weekLots)}
                         </div>
                       </div>
                     </div>
@@ -722,12 +736,12 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       weekDates.has(l.plannedDate)
                     );
                     if (weekLots.length === 0) return [];
-                    const totalPcs = weekLots.reduce((s, l) => s + l.qty, 0);
+                    const totalPcs = weekLots.some((lot) => lot.qty === null) ? null : weekLots.reduce((sum, lot) => sum + (lot.qty ?? 0), 0);
                     return [
                       {
                         type: "header" as const,
                         wg,
-                        count: weekLots.length,
+                        count: boardCountLabel(weekLots),
                         totalPcs,
                       },
                       ...weekLots.map((lot) => ({ type: "row" as const, lot })),
@@ -756,12 +770,12 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                               <strong className="font-bold text-base-content">
                                 {item.count}
                               </strong>{" "}
-                              cards
+                              arrivals
                             </span>
                             <span className="text-base-content/30">·</span>
                             <span>
                               <strong className="font-bold text-base-content">
-                                {item.totalPcs.toLocaleString()}
+                                {formatGateQuantity(item.totalPcs, "piece")}
                               </strong>{" "}
                               pcs
                             </span>
@@ -784,7 +798,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 const warning = moveWarning(lot, lot.plannedDate, plannedIndex, data);
                 const isLate = warning === "late" || warning === "order";
                 const moved = isMoved(lot);
-                const slackDays = dayjs(lot.mustOut).diff(dayjs(lot.plannedDate), "day");
+                const projectedEnd = occupancyWindow(data, lot)?.endDate;
+                const slackDays = projectedEnd && lot.mustOut ? dayjs(lot.mustOut).diff(dayjs(projectedEnd), "day") : null;
                 const isPickerOpen = listDatePicker?.lot.id === lot.id;
 
                 return (
@@ -819,11 +834,11 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     <td>
                       <div className="flex flex-col items-center leading-tight">
                         <span className="font-bold text-[13.5px] text-base-content">
-                          {lot.qty.toLocaleString()} pcs
+                          {formatGateQuantity(lot.qty, "piece")} pcs
                         </span>
                         {lot.sheets !== null && (
                           <span className="text-[11px] font-medium text-base-content/50">
-                            {lot.sheets.toLocaleString()} sheets
+                            {formatGateQuantity(lot.sheets, "sheet")} sheets
                           </span>
                         )}
                       </div>
@@ -837,8 +852,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         </span>
                       ) : (
                         <span className="font-medium text-[13px] text-base-content/80"
-                          title={`${lot.leadDays} planning day(s), from ${occupancyWindow(data, lot)?.startDate ?? "unknown"}; normal minutes exclude OT`}>
-                          {Math.round(lot.loadMin).toLocaleString()} min/day
+                          title={`${lot.leadDays} planning day(s), arrival ${occupancyWindow(data, lot)?.startDate ?? "unknown"}; normal minutes exclude OT`}>
+                          {Math.round(lot.loadMin).toLocaleString()} min/arrival lot
                         </span>
                       )}
                     </td>
@@ -887,10 +902,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     <td>
                       <span
                         className={`font-bold text-[13px] ${
-                          slackDays < 0 ? "text-rose-600" : "text-emerald-600"
+                          slackDays !== null && slackDays < 0 ? "text-rose-600" : "text-emerald-600"
                         }`}
                       >
-                        {slackDays >= 0 ? `+${slackDays}d` : `${slackDays}d`}
+                        {slackDays === null ? "N/A" : slackDays >= 0 ? `+${slackDays}d` : `${slackDays}d`}
                       </span>
                     </td>
 

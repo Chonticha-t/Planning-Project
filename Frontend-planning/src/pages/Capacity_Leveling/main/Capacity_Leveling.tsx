@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
-import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Info, RefreshCw } from "lucide-react";
 
 import "../../Planning_Summary_Gate/gateTheme.css";
@@ -15,10 +14,13 @@ import type {
 } from "../types";
 import {
   buildGrid,
+  buildBoardLots,
+  expandBoardLots,
+  lotKind,
+  moveWarning,
   calculateKpis,
   computeMovePreview,
   isMoved,
-  matchesCategory,
   occupancyWindow,
   plannedDateIndex,
   toLotItem,
@@ -33,16 +35,11 @@ import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
 import { CapacityModal } from "../components/CapacityModal";
 import { SavePlanModal } from "../components/SavePlanModal";
 import { useAuth } from "@/context/AuthContext";
-import {
-  groupsForCategory,
-  savePlanForGroups,
-} from "../../Planning_In_Gate/planStore";
 
 /** Days shown from today, inclusive. */
 const RANGE_DAYS = 28;
 
 const Capacity_Leveling: React.FC = () => {
-  const navigate = useNavigate();
   const { user, requireAdmin } = useAuth();
   const [category, setCategory] = useState<ProcessCategory>("EFPC_GEN");
   const [planMode, setPlanMode] = useState<PlanMode>("planned");
@@ -113,6 +110,10 @@ const Capacity_Leveling: React.FC = () => {
 
   const today = data?.today ?? dayjs().format("YYYY-MM-DD");
   const gates = useMemo(() => data?.gates ?? [], [data]);
+  const visibleGridGates = useMemo(
+    () => category === "ALL" ? gates : gates.filter((gate) => gate.group === (category === "SMT" ? "SMT" : "FPC")),
+    [gates, category]
+  );
 
   // Follow the process group: SMT works on the SMT gates, the FPC groups on the FPC gates.
   useEffect(() => {
@@ -125,25 +126,21 @@ const Capacity_Leveling: React.FC = () => {
     });
   }, [category, gates]);
 
-  // Planned occupancy follows each draft release, preserving the gate's master duration.
-  // Capacity is shared by all process groups on the gate.
-  const grid = useMemo(() => (data ? buildGrid(data, lots) : []), [data, lots]);
-  // Required occupancy follows the source release dates.
-  const requiredGrid = useMemo(() => (data ? buildGrid(data, lots, true) : []), [data, lots]);
+  // Count arrivals using Summary Gate's process filter and distinct physical-lot rules.
+  const grid = useMemo(() => (data ? buildGrid(data, lots, false, category) : []), [data, lots, category]);
+  const requiredGrid = useMemo(() => (data ? buildGrid(data, lots, true, category) : []), [data, lots, category]);
   const plannedIndex = useMemo(() => plannedDateIndex(lots, data ?? undefined), [lots, data]);
 
   const rangeDates = useMemo(() => new Set(grid.map((day) => day.date)), [grid]);
-  const gateLots = useMemo(
-    () => lots.filter((lot) => lot.gate === boardGate && matchesCategory(lot, category)),
-    [lots, boardGate, category]
-  );
+  const allBoardLots = useMemo(() => data ? buildBoardLots(data, lots, category) : [], [data, lots, category]);
+  const gateLots = useMemo(() => allBoardLots.filter((lot) => lot.gate === boardGate), [allBoardLots, boardGate]);
   const boardLots = useMemo(
     () => gateLots.filter((lot) => rangeDates.has(lot.plannedDate)),
     [gateLots, rangeDates]
   );
   const selectedLot = useMemo(
-    () => lots.find((lot) => lot.id === selectedLotId) ?? null,
-    [lots, selectedLotId]
+    () => allBoardLots.find((lot) => lot.id === selectedLotId) ?? null,
+    [allBoardLots, selectedLotId]
   );
 
   const activeMovingLots = useMemo(() => {
@@ -158,10 +155,10 @@ const Capacity_Leveling: React.FC = () => {
 
   const displayGrid = useMemo(() => {
     if (data && activeMovingLots.length > 0 && activePreviewTargetDate) {
-      return computeMovePreview(data, grid, lots, activeMovingLots, activePreviewTargetDate).previewGrid;
+      return computeMovePreview(data, grid, lots, activeMovingLots, activePreviewTargetDate, category).previewGrid;
     }
     return grid;
-  }, [data, activeMovingLots, activePreviewTargetDate, grid, lots]);
+  }, [data, activeMovingLots, activePreviewTargetDate, grid, lots, category]);
 
   const kpis = useMemo(() => calculateKpis(grid, requiredGrid, lots, data ?? undefined), [grid, requiredGrid, lots, data]);
   const isDraftModified = useMemo(() => lots.some((lot) => lot.plannedDate !== lot.savedDate), [lots]);
@@ -181,19 +178,19 @@ const Capacity_Leveling: React.FC = () => {
     (lotsToStage: LotItem[], targetDate: string) => {
       setDraggedLot(null);
       setHoverTargetDate(null);
-      const ids = new Set(lotsToStage.map((lot) => lot.id));
-      const currentLots = lots.filter((lot) => ids.has(lot.id));
+      const ids = new Set(lotsToStage.flatMap((lot) => lot.sourceIds || [lot.id]));
+      const currentLots = expandBoardLots(lots, lotsToStage);
       if (currentLots.length !== ids.size || new Set(currentLots.map((lot) => lot.gate)).size > 1 ||
-        currentLots.some((lot) => !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate))) {
-        toast.error("Choose an open day from today with a complete planning window. Check gate lead time and normal shift minutes.");
+        currentLots.some((lot) => lotKind(lot) === "unidentified" || lot.loadMin === null || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate) || moveWarning(lot, targetDate, plannedIndex, data) === "order")) {
+        toast.error("Choose an open arrival day with valid lead time and normal minutes, without overlapping the previous or next gate.");
         return;
       }
-      const changedLots = currentLots.filter((lot) => lot.plannedDate !== targetDate);
+      const changedLots = lotsToStage.filter((lot) => lot.plannedDate !== targetDate);
       if (changedLots.length === 0) return;
       setSelectedLotId(null);
       setPendingMove({ lots: changedLots, targetDate });
     },
-    [lots, isValidMoveTarget, data]
+    [lots, isValidMoveTarget, data, plannedIndex]
   );
 
   const handleStageMoveLot = useCallback((lot: LotItem, targetDate: string) => {
@@ -209,8 +206,10 @@ const Capacity_Leveling: React.FC = () => {
         setBoardGate(gateId);
         setSelectedLotIds(new Set());
       }
-      // Highlight the exact same day column in Release Board
+      // Grid and board use the same arrival date and process filter.
       setFocusedBoardDate(dateStr);
+      setViewMode("board");
+      setGranularity("days");
     },
     []
   );
@@ -248,11 +247,11 @@ const Capacity_Leveling: React.FC = () => {
 
   const handleMoveLots = useCallback(
     (lotsToMove: LotItem[], targetDate: string) => {
-      const ids = new Set(lotsToMove.map((lot) => lot.id));
-      const stagedDates = new Map(lotsToMove.map((lot) => [lot.id, lot.plannedDate]));
-      const currentLots = lots.filter((lot) => ids.has(lot.id));
+      const ids = new Set(lotsToMove.flatMap((lot) => lot.sourceIds || [lot.id]));
+      const stagedDates = new Map(lotsToMove.flatMap((lot) => (lot.sourceIds || [lot.id]).map((id) => [id, lot.plannedDate] as const)));
+      const currentLots = expandBoardLots(lots, lotsToMove);
       if (currentLots.length !== ids.size || currentLots.some((lot) =>
-        lot.plannedDate !== stagedDates.get(lot.id) || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate))) {
+        lot.plannedDate !== stagedDates.get(lot.id) || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate) || moveWarning(lot, targetDate, plannedIndex, data) === "order")) {
         toast.error("The selected cards or target date are no longer available.");
         return;
       }
@@ -278,11 +277,11 @@ const Capacity_Leveling: React.FC = () => {
       setSelectedLotIds(new Set());
       setPendingMove(null);
       toast.success(
-        `${currentLots.length} card(s) moved to ${dayjs(targetDate).format("DD/MM/YYYY")} at ${currentLots[0].gate}`,
+        `${lotsToMove.length} arrival card(s) moved to ${dayjs(targetDate).format("DD/MM/YYYY")} at ${currentLots[0].gate}`,
         { id: "move-lots", duration: 2500 }
       );
     },
-    [lots, isValidMoveTarget, user, data]
+    [lots, isValidMoveTarget, user, data, plannedIndex]
   );
 
   const handleConfirmSave = useCallback(
@@ -292,22 +291,14 @@ const Capacity_Leveling: React.FC = () => {
         setSaving(true);
         try {
           // Only moved cards are stored; unmoved cards keep following Summary Gate.
-          const moves = lots.filter(isMoved).map((lot) => ({
+          const moves = lots.filter((lot) => isMoved(lot) && lot.plannedDate >= today).map((lot) => ({
             workKey: lot.workKey, gate: lot.gate, plannedDate: lot.plannedDate,
           }));
           const { plan, movedCount } = await savePlan(data.plan?.version ?? 0, moves, reason);
           draftRef.current = new Map();
-          const groups = groupsForCategory(category);
-          savePlanForGroups(groups, {
-            version: plan.version,
-            savedAt: new Date().toISOString(),
-            savedBy: user?.full_name || user?.username || "Planner",
-            reason: reason || undefined,
-            sourceCategory: category,
-          });
           setSaveModalOpen(false);
           toast.success(`Plan v${plan.version} saved with ${movedCount} moved card(s).`, { duration: 3500 });
-          navigate(`/planning/planning_in_gate?cat=${category}`);
+          await load();
         } catch (error) {
           const failed = toApiFailure(error);
           toast.error(failed.message, { duration: 6000 });
@@ -321,7 +312,7 @@ const Capacity_Leveling: React.FC = () => {
         }
       });
     },
-    [data, saving, requireAdmin, lots, category, user, navigate, load]
+    [data, saving, requireAdmin, lots, today, load]
   );
 
   const dateRangeText = grid.length
@@ -336,6 +327,12 @@ const Capacity_Leveling: React.FC = () => {
         onCategoryChange={(next) => {
           setCategory(next);
           setSelectedLotIds(new Set());
+          setSelectedLotId(null);
+          setPendingMove(null);
+          setDraggedLot(null);
+          setHoverTargetDate(null);
+          setSelectedGridGate(null);
+          setSelectedGridDate(null);
         }}
         dateRangeText={dateRangeText}
         onOpenCapacityModal={() => {
@@ -383,8 +380,9 @@ const Capacity_Leveling: React.FC = () => {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl border border-base-300 bg-base-100 px-4 py-2.5 text-xs text-base-content/70">
             <span className="inline-flex items-center gap-1.5">
               <Info size={13} className="text-primary" />
-              Max Target: 1 lot reserves 1 machine throughout its gate window, including closed dates. OT adds capacity only.
+              Arrival load: distinct actual lots entering the gate × (normal D + N minutes). Need WIP is separate. OT adds capacity only.
             </span>
+            <span>Matches Summary Gate with the same process filter and holiday-adjusted dates. Drag a card to change its arrival date. All allocations represented by that card move together.</span>
             {kpis.unsetCapacityGates.length > 0 && (
               <span className="font-semibold text-amber-700">
                 MC not set: {kpis.unsetCapacityGates.join(", ")}
@@ -398,8 +396,8 @@ const Capacity_Leveling: React.FC = () => {
             )}
             {sourceChangedCount > 0 && (
               <span className="font-semibold text-amber-700"
-                title="Must-out changed in Summary Gate after these cards were moved and saved.">
-                {sourceChangedCount} moved card(s) have a changed must-out
+                title="Arrival changed in Summary Gate after these cards were moved and saved.">
+                {sourceChangedCount} moved card(s) have a changed arrival
               </span>
             )}
             {data.orphanMoves.length > 0 && (
@@ -411,20 +409,24 @@ const Capacity_Leveling: React.FC = () => {
             )}
             {data.undatedCount > 0 && (
               <span className="text-base-content/55">
-                {data.undatedCount} row(s) without a must-out date are not shown
+                {data.undatedCount} row(s) without arrival dates are not on the board
               </span>
             )}
+            {data.undatedArrivalCount > 0 && (
+              <span className="font-semibold text-amber-700">{data.undatedArrivalCount} row(s) without arrival dates are excluded from the arrival grid</span>
+            )}
             {data.duplicateWorkCount > 0 && (
-              <span className="font-semibold text-amber-700">{data.duplicateWorkCount} duplicate work row(s) counted once</span>
+              <span className="text-base-content/55">{data.duplicateWorkCount} source allocation row(s) grouped into arrival cards; details remain available</span>
             )}
             {data.legacyPlanAvailable && (
-              <span className="text-base-content/65">An earlier UPH plan is retained. This Max Target plan starts from Summary Gate.</span>
+              <span className="text-base-content/65">Earlier release-date plans are retained separately. This arrival plan starts from Summary Gate.</span>
             )}
           </div>
 
           {/* 2. Gate Load Grid matching GateMatrixTable (with inline KPI badges) */}
           <GateLoadGrid
-            gates={gates}
+            gates={visibleGridGates}
+            category={category}
             gridData={displayGrid}
             requiredGridData={requiredGrid}
             planMode={planMode}
@@ -445,7 +447,7 @@ const Capacity_Leveling: React.FC = () => {
             onSelectCell={handleSelectGridCell}
           />
 
-          {/* 3. Release Board / List — Planned mode only; Required mode is a read-only comparison */}
+          {/* 3. Gate Arrival Board / List — Planned mode only; Required mode is a read-only comparison */}
           {planMode === "planned" && (
             <div className="w-full min-w-0">
               <ReleaseBoard
@@ -457,7 +459,8 @@ const Capacity_Leveling: React.FC = () => {
                 }}
                 lots={boardLots}
                 data={data}
-                beyondRangeCount={gateLots.length - boardLots.length}
+                beyondRangeCount={gateLots.filter((lot) => lot.plannedDate > (grid[grid.length - 1]?.date ?? today)).length}
+                pastArrivalCount={gateLots.filter((lot) => lot.plannedDate < (grid[0]?.date ?? today)).length}
                 gridData={grid}
                 today={today}
                 plannedIndex={plannedIndex}
@@ -486,6 +489,8 @@ const Capacity_Leveling: React.FC = () => {
           {/* 4. Right Navigation Drawer (details of one card) */}
           <LotDetailSidePanel
             data={data}
+            allLots={lots}
+            category={category}
             lot={selectedLot}
             gridData={grid}
             capacity={data.capacity}
@@ -505,6 +510,7 @@ const Capacity_Leveling: React.FC = () => {
           <ConfirmMoveModal
             isOpen={Boolean(pendingMove)}
             data={data}
+            category={category}
             lots={pendingMove?.lots || []}
             allLots={lots}
             targetDate={pendingMove?.targetDate || null}

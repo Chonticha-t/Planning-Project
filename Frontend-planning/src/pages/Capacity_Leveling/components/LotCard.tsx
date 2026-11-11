@@ -98,11 +98,11 @@ export const LotCard: React.FC<LotCardProps> = ({
   const isMoved = cardIsMoved(lot);
   const isLate = warning === "late" || warning === "order";
   const isEarly = warning === "early";
-  const hasNote = isMoved || warning !== "none" || lot.sourceChanged || lot.loadMin === null;
+  const hasNote = isMoved || warning !== "none" || lot.sourceChanged || lot.loadMin === null || !lot.leadDays;
 
   const releaseDisplay = dayjs(lot.plannedDate).format("DD/MM/YYYY");
   const wasDisplay = dayjs(lot.baseDate).format("DD/MM/YYYY");
-  const mustStartDisplay = dayjs(lot.mustOut).format("DD/MM/YYYY");
+  const mustStartDisplay = lot.mustOut ? dayjs(lot.mustOut).format("DD/MM/YYYY") : "N/A";
 
   // Moving preview state (ghost card + lifted card)
   if ((isBeingDragged || isMovingPreview) && previewTargetDate) {
@@ -350,14 +350,15 @@ export const LotCard: React.FC<LotCardProps> = ({
               </div>
               {lot.sourceChanged && (
                 <div className="text-[11px] font-semibold leading-snug text-amber-800">
-                  Must-out changed in Summary Gate after this move was saved.
+                  Source arrival changed in Summary Gate after this move was saved.
                 </div>
               )}
               {lot.loadMin === null && (
                 <div className="text-[11px] font-semibold leading-snug text-amber-800">
-                  Gate lead time or normal shift minutes are missing; this occupancy cannot be calculated.
+                  Normal shift minutes are missing; arrival load cannot be calculated.
                 </div>
               )}
+              {!lot.leadDays && <div className="text-[11px] text-amber-800">Gate lead time is missing; this arrival cannot be moved until it is configured.</div>}
             </div>,
             document.body
           )}

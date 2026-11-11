@@ -30,7 +30,9 @@ export const fetchLevelingData = async (startdate: string, stopdate: string, sig
     signal,
   });
   const next = data?.data;
-  if (!next || next.calculationMethod !== "gate_max_target_occupancy_v1" ||
+  if (!next || next.calculationMethod !== "gate_arrival_max_target_v1" ||
+    next.loadBasis !== "summary_gate_arrivals_v1" || !Array.isArray(next.arrivalRows) ||
+    !Array.isArray(next.gates) || next.gates.some((gate) => !gate.standardShiftMin) ||
     !Array.isArray(next.calendarDays) || !Array.isArray(next.cards)) {
     const error = new Error("Max Target data is unavailable. Reload after the planning server is updated.");
     error.name = "PlanningDataError";
@@ -57,6 +59,7 @@ export interface PlanMove {
 
 export const savePlan = async (baseVersion: number, moves: PlanMove[], note: string) => {
   const { data } = await axios.post<{ data: { plan: PlanInfo; movedCount: number } }>(`${BASE}/plan`, {
+    calculationMethod: "gate_arrival_max_target_v1",
     baseVersion,
     moves,
     note,

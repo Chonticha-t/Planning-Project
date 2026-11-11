@@ -1,3 +1,5 @@
+import type { PlanningSummaryGateRow } from "../Planning_Summary_Gate/types";
+
 export type ProcessCategory = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 
 export type ViewMode = "board" | "list";
@@ -27,7 +29,12 @@ export interface LotItem {
   label: string;
   product: string;
   item: string | null;
-  qty: number;
+  qty: number | null;
+  kind?: "lot" | "need" | "unidentified";
+  /** All source allocations represented by this visible card. */
+  allocations?: GateArrivalRow[];
+  /** Source cards moved together when duplicate arrivals merge on the board. */
+  sourceIds?: string[];
   sheets: number | null;
   status: string;
   gateState: string;
@@ -38,14 +45,14 @@ export interface LotItem {
   dueDate: string;
   arriveBy: string | null;
   mustOut: string;
-  /** Unmoved date at this gate: must-out, or today when already overdue */
+  /** Original arrival date at this gate; overdue arrivals are never clamped to today. */
   baseDate: string;
   /** Date in the current draft */
   plannedDate: string;
   /** Date in the last saved plan (equals baseDate when the card was never moved) */
   savedDate: string;
   overdue: boolean;
-  /** The source must-out changed after the move was saved */
+  /** The source arrival changed after the move was saved */
   sourceChanged: boolean;
   prevGate: string | null;
   prevDate: string | null;
@@ -75,6 +82,16 @@ export interface CapacityDay {
 export interface GateInfo {
   gate: string;
   group: "FPC" | "SMT";
+  standardShiftMin: Record<Shift, number>;
+}
+
+export interface GateArrivalRow extends PlanningSummaryGateRow {
+  workKey: string;
+  prev_gate?: string | null;
+  prev_arrive_by?: string | null;
+  prev_must_out?: string | null;
+  next_arrive_by?: string | null;
+  next_must_out?: string | null;
 }
 
 export interface PlanInfo {
@@ -102,6 +119,9 @@ export interface LevelingData {
   gates: GateInfo[];
   capacity: Record<string, Record<string, CapacityDay>>;
   cards: ApiCard[];
+  arrivalRows: GateArrivalRow[];
+  undatedArrivalCount: number;
+  loadBasis: "summary_gate_arrivals_v1";
   orphanMoves: OrphanMove[];
   undatedCount: number;
   duplicateWorkCount: number;
@@ -127,9 +147,11 @@ export interface GateCell {
   hasOt: boolean;
   previewPct?: number; // while dragging
   lotCount: number;
-  totalPcs: number;
-  totalSheets: number;
-  /** Cards with missing lead time or normal shift minutes; their load cannot be placed. */
+  needCount: number;
+  unidentifiedCount: number;
+  totalPcs: number | null;
+  totalSheets: number | null;
+  /** Actual arrivals with missing normal shift minutes. */
   missingPlanning: number;
   shiftLoadMin: Record<Shift, number>;
 }

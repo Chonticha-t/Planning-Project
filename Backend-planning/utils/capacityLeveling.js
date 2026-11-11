@@ -196,6 +196,77 @@ const workKey = (row) => {
   return lot ? `LOT|${lot}|${row.due_date}` : `NEED|${row.prd_name}|${row.due_date}`;
 };
 
+// Match Summary Gate's reporting identity, with the source arrival date as the move scope.
+// A changed source date becomes an orphan rather than reusing a release-date move.
+const arrivalWorkKey = (row, index = 0) => {
+  const lot = row.lot_no?.trim() || "";
+  const need = row.gate_state === "need_wip" || lot.toUpperCase() === "NEED WIP";
+  const identity = lot && !need ? ["lot", row.gate_name, lot, row.arrive_by]
+    : [need ? "need" : "unidentified", row.gate_name, row.prd_name, row.item, row.po_no,
+      row.due_date, row.pri, row.arrive_by, need ? null : index];
+  return `ARR|${require("node:crypto").createHash("sha256").update(JSON.stringify(identity)).digest("hex")}`;
+};
+
+const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([])) => {
+  const groups = new Map();
+  let undated = 0;
+  rows.forEach((row, index) => {
+    if (row.gate_state === "passed") return;
+    if (!isDate(row.arrive_by)) { undated++; return; }
+    const key = arrivalWorkKey(row, index);
+    const group = groups.get(key) || [];
+    group.push(row);
+    groups.set(key, group);
+  });
+  const byMove = new Map(moves.map((move) => [`${move.work_key}|${move.gate_name}`, move]));
+  const used = new Set();
+  const cards = [...groups].map(([key, allocations]) => {
+    const row = allocations[0];
+    const id = `${key}|${row.gate_name}`;
+    const move = byMove.get(id);
+    if (move) used.add(id);
+    const need = row.gate_state === "need_wip" || row.lot_no?.trim().toUpperCase() === "NEED WIP";
+    const kind = need ? "need" : row.lot_no?.trim() ? "lot" : "unidentified";
+    const gate = config.find((item) => item.gate === row.gate_name);
+    const standardShiftMin = Object.fromEntries(SHIFTS.map((code) => [code, gate ? shiftMinutesPerMachine(gate.shifts[code], false) : 0]));
+    const durations = allocations.map((item) => Number(item.lead_days));
+    const leadDays = durations.every((value) => Number.isInteger(value) && value > 0 && value <= 366) ? Math.max(...durations) : null;
+    const normal = standardShiftMin.day + standardShiftMin.night;
+    const deadlines = allocations.map((item) => item.must_out).filter(isDate).sort();
+    const dueDates = allocations.map((item) => item.due_date).filter(isDate).sort();
+    return {
+      id, workKey: key, gate: row.gate_name, prdName: row.prd_name, item: row.item, lotNo: row.lot_no,
+      qty: Number(row.qty) || 0, sheets: row.sheets == null ? null : Number(row.sheets),
+      status: row.status, gateState: row.gate_state, processGroup: row.process_group,
+      currentGate: row.current_gate, currentProc: row.proc_disp, isHold: allocations.some((item) => item.is_hold === true),
+      dueDate: dueDates[0] || "", arriveBy: row.arrive_by, mustOut: deadlines[0] || "",
+      baseDate: row.arrive_by, plannedDate: move?.planned_date || row.arrive_by, moved: Boolean(move),
+      sourceChanged: Boolean(move) && move.original_date !== row.arrive_by, overdue: row.arrive_by < today,
+      prevGate: row.prev_gate, prevDate: row.prev_must_out, nextGate: row.next_gate, nextDate: row.next_arrive_by,
+      leadDays, standardShiftMin, loadMin: kind === "lot" ? normal > 0 ? normal : null : 0,
+      kind, allocations, sourceIds: [id],
+    };
+  });
+  const orphanMoves = moves.filter((move) => !used.has(`${move.work_key}|${move.gate_name}`)).map((move) => ({
+    workKey: move.work_key, gate: move.gate_name, prdName: move.prd_name, lotNo: move.lot_no,
+    dueDate: move.due_date, originalDate: move.original_date, plannedDate: move.planned_date,
+  }));
+  return { cards, orphanMoves, undated, duplicates: rows.filter((row) => row.gate_state !== "passed" && isDate(row.arrive_by)).length - cards.length };
+};
+
+// Summary Gate uses arrival as the boundary: completion is leadDays working days later.
+const arrivalEndDate = (arrival, leadDays, calendar) => {
+  if (!isDate(arrival) || !Number.isInteger(leadDays) || leadDays < 1 || leadDays > 366) return null;
+  let remaining = leadDays;
+  let time = Date.parse(`${arrival}T00:00:00Z`);
+  for (let step = 0; step <= leadDays * 7 + 14; step++, time += 86400000) {
+    const date = new Date(time).toISOString().slice(0, 10);
+    if (step > 0 && calendar.isWorking(date)) remaining--;
+    if (remaining === 0) return date;
+  }
+  return null;
+};
+
 // One card per work item and gate. A saved move replaces the must_out date for that gate only.
 const buildCards = (rows, moves, today, config = buildCapacityConfig([])) => {
   const moveByKey = new Map(moves.map((move) => [`${move.work_key}|${move.gate_name}`, move]));
@@ -290,5 +361,5 @@ module.exports = {
   LEVELING_GATES, GATE_GROUP, SHIFTS, SPECIAL_ACTIONS, NORMAL_VALID_FROM, NORMAL_VALID_TO, DEFAULT_SHIFT,
   ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid,
   loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
-  workKey, buildCards, occupancyCalendarRange, parsePlanPayload,
+  workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate,
 };

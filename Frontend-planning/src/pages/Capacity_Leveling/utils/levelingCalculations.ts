@@ -1,8 +1,10 @@
 import dayjs from "dayjs";
+import { isGateNeedWip, summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
 import type {
   ApiCard,
   DayGateLoad,
   GateCell,
+  GateArrivalRow,
   LevelingData,
   LevelingKpiData,
   LoadStatus,
@@ -43,47 +45,51 @@ export const isMoved = (lot: LotItem) => lot.plannedDate !== lot.baseDate;
 
 const siblingKey = (workKey: string, gate: string) => `${workKey}|${gate}`;
 
-/** Planned date of every card, used to compare a card with the same work's next gate. */
+const routeKey = (row: GateArrivalRow, gate: string) => JSON.stringify([row.prd_name, row.lot_no?.trim(), row.due_date, row.status, row.pri, gate]);
+
+/** Index each allocation's planned arrival and completion, including sibling gates. */
 export const plannedDateIndex = (lots: LotItem[], data?: LevelingData) => {
-  const index = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot.plannedDate]));
-  if (data) {
-    for (const lot of lots) {
-      const start = occupancyWindow(data, lot)?.startDate;
-      if (start) index.set(`${siblingKey(lot.workKey, lot.gate)}|start`, start);
+  const index = new Map<string, string>();
+  for (const lot of lots) {
+    const end = data ? occupancyWindow(data, lot)?.endDate : null;
+    for (const row of lot.allocations || []) {
+      index.set(routeKey(row, lot.gate), lot.plannedDate);
+      if (end) index.set(`${routeKey(row, lot.gate)}|end`, end);
     }
   }
   return index;
 };
 
-/**
- * A card moves at ONE gate only, so the other gates of the same work stay where they are.
- * Moving later than must-out eats into the next gate's time; reaching the next gate's date
- * makes the gate order impossible.
- */
+export const adjacentGateDates = (lot: LotItem, planned?: Map<string, string>) => {
+  const previous = (lot.allocations || []).map((row) => row.prev_gate ? planned?.get(`${routeKey(row, row.prev_gate)}|end`) ?? row.prev_must_out : null).filter((date): date is string => Boolean(date)).sort();
+  const next = (lot.allocations || []).map((row) => row.next_gate ? planned?.get(routeKey(row, row.next_gate)) ?? row.next_arrive_by : null).filter((date): date is string => Boolean(date)).sort();
+  return { previous: previous[previous.length - 1] ?? lot.prevDate, next: next[0] ?? lot.nextDate };
+};
+
+/** Arrival moves must leave time to complete this gate before the next gate starts. */
 export const moveWarning = (
   lot: LotItem,
   date: string,
   planned?: Map<string, string>,
   data?: LevelingData
 ): MoveWarning => {
-  const nextDate = lot.nextGate
-    ? planned?.get(siblingKey(lot.workKey, lot.nextGate)) ?? lot.nextDate
-    : null;
-  if (nextDate && date >= nextDate && date > lot.baseDate) return "order";
-  const nextStart = lot.nextGate ? planned?.get(`${siblingKey(lot.workKey, lot.nextGate)}|start`) : null;
-  if (nextStart && date >= nextStart && date > lot.baseDate) return "order";
-  if (date > lot.mustOut) return "late";
-  const start = data ? occupancyWindow(data, lot, date)?.startDate : null;
-  const previous = lot.prevGate ? planned?.get(siblingKey(lot.workKey, lot.prevGate)) ?? lot.prevDate : lot.arriveBy;
-  if (start && previous && start <= previous) return "early";
-  if (lot.arriveBy && date < lot.arriveBy) return "early";
-  return "none";
+  const end = data ? occupancyWindow(data, lot, date)?.endDate : date;
+  let late = Boolean(end && lot.mustOut && end > lot.mustOut);
+  for (const row of lot.allocations || []) {
+    const next = row.next_gate ? planned?.get(routeKey(row, row.next_gate)) ?? row.next_arrive_by : null;
+    const previous = row.prev_gate ? planned?.get(`${routeKey(row, row.prev_gate)}|end`) ?? row.prev_must_out : null;
+    if (next && end && end > next) return "order";
+    if (previous && date < previous) return "order";
+    if (row.must_out && end && end > row.must_out) late = true;
+  }
+  if (late) return "late";
+  return date < lot.baseDate ? "early" : "none";
 };
 
 export const WARNING_TEXT: Record<Exclude<MoveWarning, "none">, string> = {
-  early: "Before arrive-by: the previous gate must deliver early",
-  late: "After must-out: takes time from the next gate",
-  order: "On or after the next gate's date: gate order is impossible",
+  early: "Before the source arrival: confirm upstream availability",
+  late: "Projected completion is after must-out",
+  order: "Arrival or completion overlaps an adjacent gate",
 };
 
 const emptyCell = (capacity: LevelingData["capacity"][string][string] | undefined): GateCell => ({
@@ -94,6 +100,8 @@ const emptyCell = (capacity: LevelingData["capacity"][string][string] | undefine
   off: !capacity || capacity.off,
   hasOt: Boolean(capacity?.hasOt),
   lotCount: 0,
+  needCount: 0,
+  unidentifiedCount: 0,
   totalPcs: 0,
   totalSheets: 0,
   missingPlanning: 0,
@@ -125,28 +133,84 @@ const upperBound = (dates: string[], value: string) => {
   return low;
 };
 
-/** Release day is included. Preserve the master duration when the release is moved. */
-export const occupancyWindow = (data: LevelingData, lot: LotItem, release = lot.plannedDate) => {
-  if (!lot.leadDays || lot.loadMin === null) return null;
+/** Summary Gate completion is leadDays working days after arrival; same-day handoff is valid. */
+export const occupancyWindow = (data: LevelingData, lot: LotItem, arrival = lot.plannedDate) => {
+  if (!lot.leadDays || lot.leadDays < 1 || !Number.isInteger(lot.leadDays)) return null;
   const calendar = planningDates(data);
-  const dates = calendar.working;
-  const end = upperBound(dates, release);
-  const endsOnWorkday = dates[end - 1] === release;
-  const preceding = lot.leadDays - (endsOnWorkday ? 0 : 1);
-  if (end < preceding) return null;
-  const startDate = preceding > 0 ? dates[end - preceding] : release;
-  // Reservation persists on closed dates inside the window. Opening OT never changes demand.
-  const first = upperBound(calendar.all, startDate) - 1;
-  const last = upperBound(calendar.all, release);
-  if (first < 0 || calendar.all[first] !== startDate || calendar.all[last - 1] !== release) return null;
-  return { startDate, endDate: release, get dates() { return calendar.all.slice(first, last); } };
+  const first = upperBound(calendar.all, arrival) - 1;
+  if (first < 0 || calendar.all[first] !== arrival) return null;
+  const following = upperBound(calendar.working, arrival);
+  const endDate = calendar.working[following + lot.leadDays - 1];
+  if (!endDate) return null;
+  const last = upperBound(calendar.all, endDate);
+  return { startDate: arrival, endDate, get dates() { return calendar.all.slice(first, last); } };
 };
 
-/** Gate occupancy includes all process groups sharing its capacity. */
+/** Planned dates are arrival dates in the arrival-plan version. */
+export const plannedArrivalDate = (
+  arrival: string | null | undefined,
+  lot?: Pick<LotItem, "plannedDate" | "baseDate">,
+  useBaseDates = false
+): string | null => {
+  if (!arrival || !/^\d{4}-\d{2}-\d{2}$/.test(arrival) || !dayjs(arrival).isValid() || dayjs(arrival).format("YYYY-MM-DD") !== arrival) return null;
+  const date = !useBaseDates && lot ? lot.plannedDate : arrival;
+  return date && /^\d{4}-\d{2}-\d{2}$/.test(date) && dayjs(date).isValid() && dayjs(date).format("YYYY-MM-DD") === date ? date : null;
+};
+
+export const lotKind = (lot: LotItem) => lot.kind ?? (lot.gateState === "need_wip" || lot.label.trim().toUpperCase() === "NEED WIP" ? "need" : "lot");
+export const boardCounts = (lots: LotItem[]) => ({
+  lots: lots.filter((lot) => lotKind(lot) === "lot").length,
+  need: lots.filter((lot) => lotKind(lot) === "need").length,
+  unidentified: lots.filter((lot) => lotKind(lot) === "unidentified").length,
+});
+export const boardCountLabel = (lots: LotItem[]) => {
+  const counts = boardCounts(lots);
+  return `${counts.lots} lots / ${counts.need} need${counts.unidentified ? ` / ${counts.unidentified} no ID` : ""}`;
+};
+export const expandBoardLots = (allLots: LotItem[], selected: LotItem[]) => {
+  const ids = new Set(selected.flatMap((lot) => lot.sourceIds || [lot.id]));
+  return allLots.filter((lot) => ids.has(lot.id));
+};
+
+/** One visible card per physical lot/gate/planned arrival; retain every allocation. */
+export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: ProcessCategory = "ALL"): LotItem[] => {
+  const sources = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
+  const buckets = new Map<string, { rows: GateArrivalRow[]; members: Map<string, LotItem>; date: string }>();
+  for (const row of data.arrivalRows) {
+    if (row.gate_state === "passed" || (category !== "ALL" && row.process_group !== category)) continue;
+    const source = sources.get(siblingKey(row.workKey, row.gate_name));
+    const date = plannedArrivalDate(row.arrive_by, source);
+    if (!date || !source) continue;
+    const kind = isGateNeedWip(row) ? "need" : row.lot_no?.trim() ? "lot" : "unidentified";
+    const key = JSON.stringify([row.gate_name, date, kind, kind === "lot" ? row.lot_no!.trim() : row.workKey]);
+    const bucket = buckets.get(key) || { rows: [] as GateArrivalRow[], members: new Map<string, LotItem>(), date };
+    bucket.rows.push(row);
+    bucket.members.set(source.id, source);
+    buckets.set(key, bucket);
+  }
+  return [...buckets].map(([id, { rows, members, date }]): LotItem => {
+    const sources = [...members.values()];
+    const representative = sources.find(isMoved) || sources[0];
+    const summary = summarizeGateQuantities(rows);
+    const deadlines = rows.map((row) => row.must_out).filter(Boolean).sort();
+    const durations = sources.map((lot) => lot.leadDays);
+    return {
+      ...representative, id, plannedDate: date, product: new Set(rows.map((row) => row.prd_name)).size > 1 ? "Multiple products" : representative.product, qty: summary.total.piece, sheets: summary.total.sheet,
+      kind: summary.total.lot ? "lot" : summary.needCount ? "need" : "unidentified",
+      loadMin: summary.total.lot ? representative.loadMin : 0,
+      sourceIds: sources.map((lot) => lot.id), allocations: rows,
+      isHold: sources.some((lot) => lot.isHold), sourceChanged: sources.some((lot) => lot.sourceChanged),
+      mustOut: deadlines[0] || "", leadDays: durations.every((value) => value && value > 0) ? Math.max(...durations as number[]) : null,
+    };
+  }).sort((a, b) => a.plannedDate.localeCompare(b.plannedDate) || Number(lotKind(a) !== "lot") - Number(lotKind(b) !== "lot") || a.label.localeCompare(b.label));
+};
+
+/** Same arrival buckets and physical-lot counting helper as Summary Gate. */
 export const buildGrid = (
   data: LevelingData,
   lots: LotItem[],
-  useBaseDates = false
+  useBaseDates = false,
+  category: ProcessCategory = "ALL"
 ): DayGateLoad[] => {
   const grid: DayGateLoad[] = data.days.map((day) => {
     const gates: DayGateLoad["gates"] = {};
@@ -164,28 +228,32 @@ export const buildGrid = (
   });
   const byDate = new Map(grid.map((day) => [day.date, day]));
 
-  const seen = new Set<string>();
-  for (const lot of lots) {
-    const key = siblingKey(lot.workKey, lot.gate);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const release = useBaseDates ? lot.baseDate : lot.plannedDate;
-    const window = occupancyWindow(data, lot, release);
-    const visibleDates = window
-      ? grid.filter((day) => day.date >= window.startDate && day.date <= window.endDate).map((day) => day.date)
-      : [release];
-    for (const date of visibleDates) {
-      const cell = byDate.get(date)?.gates[lot.gate];
-      if (!cell) continue;
-      cell.lotCount += 1;
-      cell.totalPcs += lot.qty;
-      cell.totalSheets += lot.sheets ?? 0;
-      if (!window) cell.missingPlanning += 1;
-      else {
-        cell.loadMin += lot.loadMin!;
-        cell.shiftLoadMin.day += lot.standardShiftMin.day;
-        cell.shiftLoadMin.night += lot.standardShiftMin.night;
-      }
+  const cards = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
+  const buckets = new Map<GateCell, GateArrivalRow[]>();
+  for (const row of data.arrivalRows) {
+    if (row.gate_state === "passed" || (category !== "ALL" && row.process_group !== category)) continue;
+    const date = plannedArrivalDate(row.arrive_by, cards.get(siblingKey(row.workKey, row.gate_name)), useBaseDates);
+    const cell = date ? byDate.get(date)?.gates[row.gate_name] : undefined;
+    if (!cell) continue;
+    const rows = buckets.get(cell) ?? [];
+    rows.push(row);
+    buckets.set(cell, rows);
+  }
+  const standardByGate = new Map(data.gates.map((gate) => [gate.gate, gate.standardShiftMin]));
+  for (const [cell, rows] of buckets) {
+    const summary = summarizeGateQuantities(rows);
+    cell.lotCount = summary.total.lot;
+    cell.needCount = summary.needCount;
+    cell.unidentifiedCount = summary.unidentifiedCount;
+    cell.totalPcs = summary.total.piece;
+    cell.totalSheets = summary.total.sheet;
+    const standard = standardByGate.get(rows[0].gate_name);
+    if (!standard || !Number.isFinite(standard.day) || !Number.isFinite(standard.night) ||
+      standard.day < 0 || standard.night < 0 || standard.day + standard.night <= 0) {
+      cell.missingPlanning = cell.lotCount;
+    } else {
+      cell.shiftLoadMin = { day: cell.lotCount * standard.day, night: cell.lotCount * standard.night };
+      cell.loadMin = cell.shiftLoadMin.day + cell.shiftLoadMin.night;
     }
   }
 
@@ -213,12 +281,15 @@ export const computeMovePreview = (
   currentGrid: DayGateLoad[],
   allLots: LotItem[],
   movingLots: LotItem[],
-  targetDate: string
+  targetDate: string,
+  category: ProcessCategory = "ALL"
 ) => {
-  const movingIds = new Set(movingLots.map((lot) => lot.id));
+  const movingIds = new Set(movingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
   const projected = buildGrid(
     data,
-    allLots.map((lot) => (movingIds.has(lot.id) ? { ...lot, plannedDate: targetDate } : lot))
+    allLots.map((lot) => (movingIds.has(lot.id) ? { ...lot, plannedDate: targetDate } : lot)),
+    false,
+    category
   );
   const projectedByDate = new Map(projected.map((day) => [day.date, day]));
   const previewGrid = currentGrid.map((day) => ({
@@ -231,12 +302,13 @@ export const computeMovePreview = (
     ),
   }));
 
-  // Moving a release shifts the complete occupancy window at this gate only.
+  // Show changed arrival dates, which can differ from the target release date.
   const gate = movingLots[0]?.gate;
   const dates = currentGrid.filter((day) => {
     const before = day.gates[gate];
     const after = projectedByDate.get(day.date)?.gates[gate];
-    return before && after && (before.loadMin !== after.loadMin || before.lotCount !== after.lotCount || day.date === targetDate);
+    return before && after && (before.loadMin !== after.loadMin || before.lotCount !== after.lotCount ||
+      before.needCount !== after.needCount || before.totalPcs !== after.totalPcs || before.totalSheets !== after.totalSheets);
   }).map((day) => day.date);
   const impactRows = gate
     ? dates.flatMap((date) => {
@@ -289,12 +361,12 @@ export const calculateKpis = (
     orderCards: warnings.filter((warning) => warning === "order").length,
     lateDetail: late.length
       ? `${late[0].label} · ${late[0].product} @ ${late[0].gate}`
-      : "All cards are on or before must-out",
+      : "Projected completions are on or before must-out",
     movedCount: moved.length,
     totalCount: lots.length,
     movedEarlier: moved.filter((lot) => lot.plannedDate < lot.baseDate).length,
     movedLater: moved.filter((lot) => lot.plannedDate > lot.baseDate).length,
-    missingPlanningCards: lots.filter((lot) => lot.loadMin === null || (data && !occupancyWindow(data, lot))).length,
+    missingPlanningCards: lots.filter((lot) => isMoved(lot) && (!data || lot.plannedDate >= data.today) && (lot.loadMin === null || (data && !occupancyWindow(data, lot)))).length,
     unsetCapacityGates: [...unset],
   };
 };

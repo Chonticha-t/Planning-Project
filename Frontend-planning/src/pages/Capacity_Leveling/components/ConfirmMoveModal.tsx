@@ -1,13 +1,15 @@
+import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import { ArrowRight, Calendar, AlertCircle, CheckCircle2, X } from "lucide-react";
-import type { LotItem, DayGateLoad, LevelingData, MoveWarning } from "../types";
-import { computeMovePreview, moveWarning, occupancyWindow, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
+import type { LotItem, DayGateLoad, LevelingData, MoveWarning, ProcessCategory } from "../types";
+import { computeMovePreview, moveWarning, occupancyWindow, plannedArrivalDate, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 
 interface ConfirmMoveModalProps {
   isOpen: boolean;
   data: LevelingData;
+  category: ProcessCategory;
   /** Cards being moved; all belong to the same gate */
   lots: LotItem[];
   allLots: LotItem[];
@@ -48,6 +50,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
   allLots,
   targetDate,
   gridData,
+  category,
   plannedIndex,
   onConfirm,
   onCancel,
@@ -73,8 +76,9 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
   const count = (kind: MoveWarning) => warnings.filter((warning) => warning === kind).length;
   const worst: MoveWarning = count("order") ? "order" : count("late") ? "late" : count("early") ? "early" : "none";
   const shiftDays = dayjs(targetDate).diff(dayjs(lot.plannedDate), "day");
-  const slackDays = dayjs(lot.mustOut).diff(dayjs(targetDate), "day");
-  const { impactRows } = computeMovePreview(data, gridData, allLots, lots, targetDate);
+  const projectedEnd = occupancyWindow(data, lot, targetDate)?.endDate;
+  const slackDays = projectedEnd && lot.mustOut ? dayjs(lot.mustOut).diff(dayjs(projectedEnd), "day") : null;
+  const { impactRows } = computeMovePreview(data, gridData, allLots, lots, targetDate, category);
   const noLoadCount = lots.filter((item) => !occupancyWindow(data, item, targetDate)).length;
 
   return createPortal(
@@ -113,8 +117,8 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
               </div>
               <div className="text-xs text-base-content/60 mt-0.5">
                 {isBatch
-                  ? `${lots.reduce((sum, item) => sum + item.qty, 0).toLocaleString()} pcs total`
-                  : `${lot.qty.toLocaleString()} pcs · Must out ${dayjs(lot.mustOut).format("DD/MM/YYYY")}`}
+                  ? `${formatGateQuantity(lots.some((item) => item.qty === null) ? null : lots.reduce((sum, item) => sum + (item.qty ?? 0), 0), "piece")} pcs total`
+                  : `${formatGateQuantity(lot.qty, "piece")} pcs · Must out ${dayjs(lot.mustOut).format("DD/MM/YYYY")}`}
               </div>
             </div>
 
@@ -125,7 +129,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
                   ? "All cards fit"
                   : `${count("late") + count("order")} late · ${count("early")} early`
                 : worst === "none"
-                ? `Fits (+${slackDays}d slack)`
+                ? slackDays === null ? "Check completion" : `Fits (+${slackDays}d slack)`
                 : worst === "early"
                 ? "Early"
                 : `${WARNING_LABEL[worst]} (${slackDays}d)`}
@@ -136,7 +140,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl bg-base-200/50 border border-base-300 p-3.5">
             <div className="flex flex-col">
               <span className="text-[10.5px] font-bold uppercase text-base-content/45">
-                From Date
+                From Arrival
               </span>
               <span className="text-sm font-bold text-base-content/80 mt-0.5">
                 {sourceDates.size > 1 ? `${sourceDates.size} source dates` : dayjs(lot.plannedDate).format("ddd DD/MM/YYYY")}
@@ -154,7 +158,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
 
             <div className="flex flex-col text-right">
               <span className="text-[10.5px] font-bold uppercase text-base-content/45">
-                Move To
+                Arrival To
               </span>
               <span
                 className={`text-sm font-bold mt-0.5 ${
@@ -168,10 +172,10 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
 
           {/* What the warning means; the move is still allowed */}
           <div className="rounded-xl border border-base-300 px-3.5 py-2.5 text-xs text-base-content/70">
-            The entire occupancy window moves; each card keeps its planning-day duration. Other gates keep their dates.
+            This changes the arrival date. All allocations represented by each selected card move together. Completion follows the gate lead time; other gates keep their dates.
             {!isBatch && <div className="mt-1 font-semibold tabular-nums">
-              {occupancyWindow(data, lot)?.startDate ?? "Unknown"} – {lot.plannedDate}
-              {" → "}{occupancyWindow(data, lot, targetDate)?.startDate ?? "Unknown"} – {targetDate}
+              Arrival: {plannedArrivalDate(lot.arriveBy, lot) ?? "Unknown"}
+              {" → "}{plannedArrivalDate(lot.arriveBy, { ...lot, plannedDate: targetDate }) ?? "Unknown"}
               {" · "}{lot.leadDays ?? "Unknown"} planning day(s)
             </div>}
           </div>
@@ -197,12 +201,13 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
                 </thead>
                 <tbody>
                   {lots.map((item, index) => {
-                    const slack = dayjs(item.mustOut).diff(dayjs(targetDate), "day");
+                    const end = occupancyWindow(data, item, targetDate)?.endDate;
+                    const slack = end && item.mustOut ? dayjs(item.mustOut).diff(dayjs(end), "day") : null;
                     return <tr key={item.id} className="border-t border-base-200">
                       <td className="p-2"><strong className="break-all">{item.label}</strong><div className="text-base-content/60">{item.product}</div></td>
                       <td className="p-2 text-center">{dayjs(item.plannedDate).format("DD/MM")}</td>
                       <td className="p-2 text-center">{dayjs(item.mustOut).format("DD/MM")}</td>
-                      <td className={`p-2 text-center font-semibold ${slack < 0 ? "text-rose-600" : "text-emerald-600"}`}>{slack >= 0 ? "+" : ""}{slack}d</td>
+                      <td className={`p-2 text-center font-semibold ${slack !== null && slack < 0 ? "text-rose-600" : "text-emerald-600"}`}>{slack === null ? "N/A" : `${slack >= 0 ? "+" : ""}${slack}d`}</td>
                       <td className="p-2 text-center">
                         <span className={`inline-block rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${WARNING_BADGE[warnings[index]]}`}>
                           {WARNING_LABEL[warnings[index]]}
@@ -231,6 +236,9 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
+                  {impactRows.length === 0 && (
+                    <tr><td colSpan={4} className="p-3 text-base-content/60">No arrival totals change within the displayed period.</td></tr>
+                  )}
                   {impactRows.map((r) => (
                     <tr
                       key={r.date}
@@ -255,7 +263,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
             </div>
             {noLoadCount > 0 && (
               <div className="mt-1.5 text-[11px] text-amber-800">
-                {noLoadCount} card(s) have an incomplete occupancy window. Check gate lead time and normal shift minutes.
+                {noLoadCount} card(s) have an incomplete arrival-to-completion window. Check gate lead time and normal shift minutes.
               </div>
             )}
           </div>
@@ -273,7 +281,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
           <button
             type="button"
             aria-label="Confirm move"
-            disabled={noLoadCount > 0}
+            disabled={noLoadCount > 0 || worst === "order"}
             onClick={() => onConfirm(lots, targetDate)}
             className="btn btn-sm h-9 px-4 rounded-xl btn-primary text-xs font-semibold cursor-pointer tabular-nums"
           >
