@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { pool_smart } = require("../../config");
-const { createCalendarIndex, loadCalendar } = require("../../../../utils/workingCalendar");
-const { createGateCalendarCache } = require("../../../../utils/gateCalendarCache");
+const { createCalendarIndex, loadCalendar } = require("../WorkingDayCalendar/workingCalendar");
+const { createGateCalendarCache } = require("../WorkingDayCalendar/gateCalendarCache");
 const loadGateCalendar = createGateCalendarCache(loadCalendar);
-const { createGateTableProfiler } = require("../../../../utils/gateTablePerformance");
+const { createGateTableProfiler } = require("./gateTablePerformance");
 const profileGateTable = createGateTableProfiler(pool_smart);
 
 // Share one read-only monitor per process, and only while this gate has viewers.

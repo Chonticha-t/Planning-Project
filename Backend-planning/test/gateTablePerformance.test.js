@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const express = require("express");
 const compression = require("compression");
-const { createGateTableProfiler } = require("../utils/gateTablePerformance");
+const { createGateTableProfiler } = require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance");
 
 async function withServer(app, callback) {
   const server = app.listen(0, "127.0.0.1");

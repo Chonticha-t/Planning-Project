@@ -4,9 +4,9 @@ const express = require("express");
 const {
   LEVELING_GATES, DEFAULT_SHIFT, ValidationError, shiftMinutesPerMachine, effectiveShift, dayCapacity,
   loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, occupancyCalendarRange, parsePlanPayload, isDate, arrivalWorkKey, buildArrivalCards, arrivalEndDate,
-} = require("../utils/capacityLeveling");
-const { createCapacityLevelingRouter, PLAN_METHOD } = require("../utils/capacityLevelingRouter");
-const { buildSavedMoveHistory, HISTORY_LIMIT } = require("../utils/capacityLevelingHistory");
+} = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLeveling");
+const { createCapacityLevelingRouter, PLAN_METHOD } = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLevelingRouter");
+const { buildSavedMoveHistory, HISTORY_LIMIT } = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLevelingHistory");
 
 const shift = (overrides = {}) => ({ ...DEFAULT_SHIFT, mcLines: 1, specialDays: {}, ...overrides });
 const gate = (day = {}, night = {}) => ({ gate: "FVAC", group: "FPC", shifts: { day: shift(day), night: shift(night) } });

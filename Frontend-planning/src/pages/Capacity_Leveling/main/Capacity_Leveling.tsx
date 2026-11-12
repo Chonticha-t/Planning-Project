@@ -36,6 +36,7 @@ import { GateLoadGrid } from "../components/GateLoadGrid";
 import { ReleaseBoard } from "../components/ReleaseBoard";
 import { LotDetailSidePanel } from "../components/LotDetailSidePanel";
 import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
+import { ConfirmReorderModal } from "../components/ConfirmReorderModal";
 import { CapacityModal } from "../components/CapacityModal";
 import { SavePlanModal } from "../components/SavePlanModal";
 import { PlanHistoryModal } from "../components/PlanHistoryModal";
@@ -90,12 +91,21 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     lots: LotItem[];
     targetDate: string;
   } | null>(null);
+  const [pendingReorder, setPendingReorder] = useState<{
+    movingIds: string[];
+    targetId: string;
+    position: "before" | "after";
+    before: LotItem[];
+    after: LotItem[];
+  } | null>(null);
+  const handleCancelReorder = useCallback(() => setPendingReorder(null), []);
 
   const load = useCallback(async () => {
     if (snapshot) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
+    setPendingReorder(null);
     setLoading(true);
     try {
       const start = dayjs().format("YYYY-MM-DD");
@@ -220,6 +230,49 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     },
     [data, today]
   );
+
+  const handleStageReorder = useCallback((movingIds: string[], targetId: string, position: "before" | "after") => {
+    if (saving || loading || readOnly || !data) return;
+    const board = buildBoardLots(data, lots);
+    const next = reorderBoardCards(board, effectiveBoardCardOrder, movingIds, targetId, position);
+    if (next === effectiveBoardCardOrder) return;
+    const target = board.find((lot) => lot.id === targetId)!;
+    const sameDay = (lot: LotItem) => lot.gate === target.gate && lot.plannedDate === target.plannedDate;
+    setDraggedLot(null);
+    setHoverTargetDate(null);
+    setSelectedLotId(null);
+    setPendingReorder({ movingIds, targetId, position,
+      before: applyBoardCardOrder(board, effectiveBoardCardOrder).filter(sameDay),
+      after: applyBoardCardOrder(board, next).filter(sameDay) });
+  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder]);
+
+  const handleConfirmReorder = useCallback(() => {
+    if (saving || loading || readOnly || !data || !pendingReorder) return;
+    const { movingIds, targetId, position, before } = pendingReorder;
+    const board = buildBoardLots(data, lots);
+    const ordered = applyBoardCardOrder(board, effectiveBoardCardOrder);
+    const currentDay = ordered.filter((lot) => lot.gate === before[0].gate && lot.plannedDate === before[0].plannedDate);
+    // Do not apply a confirmation to cards whose order or merged source allocations have changed.
+    if (currentDay.length !== before.length || currentDay.some((lot, index) =>
+      lot.id !== before[index].id || JSON.stringify(lot.sourceIds) !== JSON.stringify(before[index].sourceIds))) {
+      setPendingReorder(null);
+      toast.error("The selected cards or their order have changed. Please try again.");
+      return;
+    }
+    const next = reorderBoardCards(board, effectiveBoardCardOrder, movingIds, targetId, position);
+    if (next === effectiveBoardCardOrder) {
+      setPendingReorder(null);
+      return;
+    }
+    const timestamp = Date.now();
+    const history = reorderMoveHistory(ordered, applyBoardCardOrder(board, next), movingIds,
+      { id: `mh-order-${timestamp}-${++moveSequenceRef.current}`, changedAt: new Date(timestamp).toISOString(),
+        changedBy: `${user?.full_name || user?.username || "Planner"} · Draft` });
+    setBoardCardOrder((current) => new Map([...current,
+      ...[...next].filter(([key, ids]) => ids !== effectiveBoardCardOrder.get(key))]));
+    setLots((current) => appendMoveHistory(current, history));
+    setPendingReorder(null);
+  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder, pendingReorder, user]);
 
   // Stage the whole group without changing dates until the confirmation succeeds.
   const handleStageMoveLots = useCallback(
@@ -519,20 +572,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 selectedLotIds={selectedLotIds}
                 onSelectionChange={(ids) => setSelectedLotIds(new Set(ids))}
                 onMoveLots={handleStageMoveLots}
-                onReorderLots={(movingIds, targetId, position) => {
-                  if (saving || loading || readOnly) return;
-                  const board = buildBoardLots(data, lots);
-                  const next = reorderBoardCards(board, effectiveBoardCardOrder, movingIds, targetId, position);
-                  if (next === effectiveBoardCardOrder) return;
-                  const history = reorderMoveHistory(
-                    applyBoardCardOrder(board, effectiveBoardCardOrder), applyBoardCardOrder(board, next), movingIds,
-                    { id: `mh-order-${Date.now()}-${++moveSequenceRef.current}`, changedAt: new Date().toISOString(),
-                      changedBy: `${user?.full_name || user?.username || "Planner"} · Draft` }
-                  );
-                  setBoardCardOrder((current) => new Map([...current,
-                    ...[...next].filter(([key, ids]) => ids !== effectiveBoardCardOrder.get(key))]));
-                  setLots((current) => appendMoveHistory(current, history));
-                }}
+                onReorderLots={handleStageReorder}
                 draggedLot={draggedLot}
                 onDragStart={setDraggedLot}
                 onDragEnd={() => setDraggedLot(null)}
@@ -567,6 +607,13 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           />
 
           {/* Confirm popup when a card is dropped on another date */}
+          {pendingReorder && <ConfirmReorderModal
+            before={pendingReorder.before}
+            after={pendingReorder.after}
+            movingIds={pendingReorder.movingIds}
+            onConfirm={handleConfirmReorder}
+            onCancel={handleCancelReorder}
+          />}
           <ConfirmMoveModal
             isOpen={Boolean(pendingMove)}
             data={data}

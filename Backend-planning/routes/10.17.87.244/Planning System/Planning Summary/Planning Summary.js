@@ -3,7 +3,7 @@ const router = express.Router();
 
 const { pool_smart } = require("../../config");
 const { verifyAdmin } = require("../Auth/Auth");
-const { refreshPoCalendarFields } = require("../../../../utils/workingCalendar");
+const { refreshPoCalendarFields } = require("../WorkingDayCalendar/workingCalendar");
 const query = (text, params) => pool_smart.query(text, params);
 
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX

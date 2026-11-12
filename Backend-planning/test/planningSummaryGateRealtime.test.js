@@ -29,9 +29,9 @@ function monitorHarness(router = null) {
         return query();
       } } };
       if (name.endsWith("/workingCalendar")) return {};
-      if (name.endsWith("/gateCalendarCache")) return require("../utils/gateCalendarCache");
+      if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name.endsWith("/gateTablePerformance")) return {
-        createGateTableProfiler: pool => require("../utils/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
+        createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
       throw new Error("Unexpected dependency");
     },
@@ -750,7 +750,7 @@ test("unmount before SSE opens prevents fallback work", async () => {
 });
 
 test("calendar cache shares reads, expires, forces refresh and does not cache failures", async () => {
-  const { createGateCalendarCache } = require("../utils/gateCalendarCache");
+  const { createGateCalendarCache } = require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
   let calls = 0;
   let clock = 0;
   let fail = false;
@@ -780,7 +780,7 @@ test("calendar cache shares reads, expires, forces refresh and does not cache fa
 });
 
 test("calendar cache bounds range entries without reviving evicted pending reads", async () => {
-  const { createGateCalendarCache } = require("../utils/gateCalendarCache");
+  const { createGateCalendarCache } = require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
   let calls = 0;
   const resolvers = [];
   const load = createGateCalendarCache(() => {
@@ -827,12 +827,12 @@ test("calendar endpoint shares cached ranges, supports forced reads and rejects 
     require(name) {
       if (name === "express") return { Router: () => ({ get: (url, handler) => routes.set(url, handler) }) };
       if (name.endsWith("/config")) return {};
-      if (name.endsWith("/gateCalendarCache")) return require("../utils/gateCalendarCache");
+      if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name.endsWith("/gateTablePerformance")) return {
-        createGateTableProfiler: pool => require("../utils/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
+        createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
       if (name.endsWith("/workingCalendar")) return {
-        createCalendarIndex: require("../utils/workingCalendar").createCalendarIndex,
+        createCalendarIndex: require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/workingCalendar").createCalendarIndex,
         loadCalendar: async () => {
           reads++;
           if (fail) throw new Error("Synthetic calendar outage");
@@ -1146,9 +1146,9 @@ test("table API returns the stored process group including null values", async (
         return { rows: expectedRows };
       } } };
       if (name.endsWith("/workingCalendar")) return {};
-      if (name.endsWith("/gateCalendarCache")) return require("../utils/gateCalendarCache");
+      if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name.endsWith("/gateTablePerformance")) return {
-        createGateTableProfiler: pool => require("../utils/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
+        createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
       throw new Error("Unexpected dependency");
     },
