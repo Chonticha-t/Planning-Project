@@ -10,8 +10,9 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry, LevelingData, ProcessCategory } from "../types";
-import { adjacentGateDates, expandBoardLots, occupancyWindow, buildGrid, cellPct, formatMinutes, moveWarning, plannedArrivalDate, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
+import { adjacentGateDates, expandBoardLots, occupancyWindow, buildGrid, cellPct, formatMinutes, lotKind, moveWarning, plannedArrivalDate, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
+import { mergeMoveHistory } from "../utils/moveHistory";
 
 interface LotDetailSidePanelProps {
   data: LevelingData;
@@ -104,10 +105,14 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   const pctWithout = cellPct(withoutCell);
   const { previous: prevPlanned, next: nextPlanned } = adjacentGateDates(activeLot, plannedIndex);
 
-  // Moves made in this draft, then the move stored in the last saved plan.
-  const historyEntries: MoveHistoryEntry[] = [
-    ...(activeLot.moveHistory || []),
-    ...(activeLot.savedDate !== activeLot.baseDate
+  const savedOrderId = JSON.stringify([activeLot.gate, activeLot.savedDate, lotKind(activeLot),
+    lotKind(activeLot) === "lot" ? activeLot.label.trim() : activeLot.workKey]);
+  const savedOrder = data.boardCardOrder?.find((group) => group.gate === activeLot.gate && group.date === activeLot.savedDate);
+  const savedPosition = (savedOrder?.cardIds.indexOf(savedOrderId) ?? -1) + 1;
+  // Older plans have snapshots but no audit events. Label these summaries explicitly.
+  const historyEntries: MoveHistoryEntry[] = mergeMoveHistory(
+    activeLot.moveHistory,
+    activeLot.savedDate !== activeLot.baseDate && !activeLot.moveHistory?.some((entry) => entry.planVersion && entry.kind !== "reorder")
       ? [{
           id: "mh-saved-plan",
           fromDate: activeLot.baseDate,
@@ -115,8 +120,13 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
           changedAt: "",
           changedBy: planVersion > 0 ? `Saved plan v${planVersion}` : "Saved plan",
         }]
-      : []),
-  ];
+      : [],
+    savedPosition > 0 && !activeLot.moveHistory?.some((entry) => entry.planVersion && entry.kind === "reorder")
+      ? [{ id: "mh-saved-order", kind: "reorder", fromDate: activeLot.savedDate, toDate: activeLot.savedDate,
+          toPosition: savedPosition, changedAt: data.plan?.savedAt ?? "", changedBy: data.plan?.savedBy ?? "Saved plan",
+          planVersion: planVersion || undefined, note: "Saved order snapshot; earlier changes were not recorded" }]
+      : []
+  );
 
   return createPortal(
     <>
@@ -355,7 +365,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
 
             {historyEntries.length === 0 ? (
               <div className="py-2.5 px-3 rounded-lg bg-base-200/40 border border-dashed border-base-300 text-base-content/55 text-xs flex items-center justify-between">
-                <span>Not moved (on its must-out date)</span>
+                <span>No date or order changes recorded</span>
                 <span className="font-semibold text-base-content/75">
                   {formatDate(activeLot.baseDate)}
                 </span>
@@ -364,33 +374,40 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
               <div className="flex flex-col gap-2">
                 {historyEntries.map((entry) => {
                   const delta = dayjs(entry.toDate).diff(dayjs(entry.fromDate), "day");
+                  const isReorder = entry.kind === "reorder";
                   return (
                     <div
                       key={entry.id}
                       className="p-2.5 rounded-lg bg-base-200/40 border border-base-200 flex flex-col gap-1"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 font-bold text-base-content">
-                          <span className="text-base-content/65">{formatDate(entry.fromDate)}</span>
-                          <ArrowRight size={12} className="text-primary shrink-0" />
-                          <span className="text-primary">{formatDate(entry.toDate)}</span>
+                        <div className="flex items-center gap-1.5 font-bold text-base-content"
+                          title={isReorder ? "Position among all process groups at this gate on this arrival day" : undefined}>
+                          {isReorder && <span className="text-base-content/65">{formatDate(entry.toDate)}</span>}
+                          {(!isReorder || entry.fromPosition) && <>
+                            <span className="text-base-content/65">{isReorder ? `#${entry.fromPosition}` : formatDate(entry.fromDate)}</span>
+                            <ArrowRight size={12} className="text-primary shrink-0" />
+                          </>}
+                          <span className="text-primary">{isReorder ? `#${entry.toPosition}` : formatDate(entry.toDate)}</span>
                         </div>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10.5px] font-semibold ${
-                            delta < 0
+                            isReorder || delta < 0
                               ? "bg-indigo-50 text-[#4f46e5]"
                               : "bg-amber-50 text-amber-800"
                           }`}
                         >
-                          {delta < 0 ? `${delta}d` : `+${delta}d`}
+                          {isReorder ? "Order" : delta < 0 ? `${delta}d` : `+${delta}d`}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-[11px] text-base-content/55">
-                        <span>
+                      <div className="flex items-start justify-between gap-2 text-[11px] text-base-content/55">
+                        <span className="min-w-0 break-words">
                           {entry.changedBy}
+                          {entry.planVersion ? ` · Plan v${entry.planVersion}` : ""}
                           {entry.note ? ` · ${entry.note}` : ""}
                         </span>
-                        <span>{entry.changedAt}</span>
+                        <span className="shrink-0 whitespace-nowrap">{entry.changedAt && dayjs(entry.changedAt).isValid()
+                          ? dayjs(entry.changedAt).format("DD/MM/YYYY HH:mm") : entry.changedAt}</span>
                       </div>
                     </div>
                   );

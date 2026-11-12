@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { mergeMoveHistory } from "./moveHistory.ts";
 import { isGateNeedWip, summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
 import type {
   ApiCard,
@@ -222,6 +223,7 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
       kind: summary.total.lot ? "lot" : summary.needCount ? "need" : "unidentified",
       loadMin: summary.total.lot ? representative.loadMin : 0,
       sourceIds: sources.map((lot) => lot.id), allocations: rows,
+      moveHistory: mergeMoveHistory(...sources.map((lot) => lot.moveHistory)),
       isHold: sources.some((lot) => lot.isHold), sourceChanged: sources.some((lot) => lot.sourceChanged),
       mustOut: deadlines[0] || "", leadDays: durations.every((value) => value && value > 0) ? Math.max(...durations as number[]) : null,
     };

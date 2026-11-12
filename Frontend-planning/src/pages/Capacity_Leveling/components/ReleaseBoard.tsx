@@ -43,6 +43,7 @@ interface ReleaseBoardProps {
   selectedLotIds: ReadonlySet<string>;
   onSelectionChange: (ids: string[]) => void;
   onMoveLots: (lots: LotItem[], targetDate: string) => void;
+  onReorderLots: (movingIds: string[], targetId: string, position: "before" | "after") => void;
   draggedLot: LotItem | null;
   onDragStart: (lot: LotItem) => void;
   onDragEnd: () => void;
@@ -93,6 +94,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   selectedLotIds,
   onSelectionChange,
   onMoveLots,
+  onReorderLots,
   draggedLot,
   onDragStart,
   onDragEnd,
@@ -106,6 +108,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
   const [batchTargetDate, setBatchTargetDate] = useState("");
+  const [reorderTarget, setReorderTarget] = useState<{
+    lotId: string;
+    position: "before" | "after";
+  } | null>(null);
   const [listDatePicker, setListDatePicker] = useState<{
     lot: LotItem;
     anchorEl: HTMLElement;
@@ -198,14 +204,59 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   };
 
   const handleCardDragEnd = () => {
+    setReorderTarget(null);
     onDragEnd();
     onHoverTargetDate(null);
   };
+
+  const getSameDayMovingLots = (target: LotItem) => {
+    if (!draggedLot) return [];
+    const moving = selectedLotIds.has(draggedLot.id) ? selectedLots : [draggedLot];
+    return moving.length > 0 && moving.every((lot) => lot.gate === target.gate && lot.plannedDate === target.plannedDate)
+      ? moving : [];
+  };
+
+  const getDropPosition = (e: React.DragEvent<HTMLDivElement>): "before" | "after" => {
+    const bounds = e.currentTarget.getBoundingClientRect();
+    return e.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+  };
+
+  const handleCardDragOver = (e: React.DragEvent<HTMLDivElement>, target: LotItem) => {
+    const moving = getSameDayMovingLots(target);
+    if (!moving.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onHoverTargetDate(null);
+    if (moving.some((lot) => lot.id === target.id)) {
+      e.dataTransfer.dropEffect = "none";
+      setReorderTarget(null);
+      return;
+    }
+    e.dataTransfer.dropEffect = "move";
+    const position = getDropPosition(e);
+    setReorderTarget((current) => current?.lotId === target.id && current.position === position
+      ? current : { lotId: target.id, position });
+  };
+
+  const handleCardDrop = (e: React.DragEvent<HTMLDivElement>, target: LotItem) => {
+    const moving = getSameDayMovingLots(target);
+    if (!moving.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onReorderLots(moving.map((lot) => lot.id), target.id, getDropPosition(e));
+    handleCardDragEnd();
+  };
+
+  const renderReorderIndicator = (lot: LotItem) => reorderTarget?.lotId === lot.id ? (
+    <div aria-hidden="true" data-reorder-position={reorderTarget.position}
+      className={`pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-primary ${reorderTarget.position === "before" ? "-top-1" : "-bottom-1"}`} />
+  ) : null;
 
   const handleColDragOver = (
     e: React.DragEvent<HTMLDivElement>,
     dayDate: string
   ) => {
+    setReorderTarget(null);
     if (!planningDates.has(dayDate)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -222,8 +273,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     if (draggedLot && planningDates.has(dayDate)) {
       onMoveLots(selectedLotIds.has(draggedLot.id) ? selectedLots : [draggedLot], dayDate);
     }
-    onDragEnd();
-    onHoverTargetDate(null);
+    handleCardDragEnd();
   };
 
   return (
@@ -396,6 +446,13 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         </div>
       </div>
 
+      {viewMode === "board" && (
+        <p className="text-[11px] text-base-content/60">
+          Drag above or below a card to reorder within the same day. Shift badges follow this order.
+          {" "}Use Save Plan to save dates and card order for everyone.
+        </p>
+      )}
+
       {isEditMode && selectedLots.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
           <span className="text-xs font-bold text-primary" role="status">
@@ -522,6 +579,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       {(index === 0 || lotKind(visibleLots[index - 1]) !== lotKind(lot)) && (
                         <div className="text-[10px] font-bold text-base-content/60 uppercase">{lotKind(lot) === "lot" ? "Actual lots" : lotKind(lot) === "need" ? "Need WIP (no load)" : "Missing lot ID"}</div>
                       )}
+                      <div className="relative shrink-0"
+                        onDragOver={(e) => handleCardDragOver(e, lot)}
+                        onDrop={(e) => handleCardDrop(e, lot)}>
+                      {renderReorderIndicator(lot)}
                       <LotCard
                         lot={lot}
                         shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
@@ -542,6 +603,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         onDragEnd={handleCardDragEnd}
                         onDateChange={onMoveLot}
                       />
+                      </div>
                       </React.Fragment>
                     );
                   })}
@@ -672,8 +734,11 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   {/* Week Lots Grid (2 columns of cards per week) */}
                   <div className="grid grid-cols-2 gap-2">
                     {weekLots.map((lot) => (
+                      <div key={lot.id} className="relative"
+                        onDragOver={(e) => handleCardDragOver(e, lot)}
+                        onDrop={(e) => handleCardDrop(e, lot)}>
+                      {renderReorderIndicator(lot)}
                       <LotCard
-                        key={lot.id}
                         lot={lot}
                         shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
                         showSelection={isEditMode}
@@ -691,6 +756,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         onDragEnd={handleCardDragEnd}
                         onDateChange={onMoveLot}
                       />
+                      </div>
                     ))}
                   </div>
                 </div>

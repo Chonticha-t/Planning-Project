@@ -354,12 +354,57 @@ const parsePlanPayload = (body, today) => {
     seen.add(key);
     return { workKey: move.workKey, gate: move.gate, plannedDate: move.plannedDate };
   });
-  return { baseVersion, note, moves };
+  let boardCardOrder;
+  if (body.boardCardOrder !== undefined) {
+    if (!Array.isArray(body.boardCardOrder) || body.boardCardOrder.length > 5000) {
+      throw new ValidationError("Board card order is invalid.");
+    }
+    const seenGroups = new Set();
+    const seenCards = new Set();
+    boardCardOrder = body.boardCardOrder.map((group) => {
+      const key = JSON.stringify([group?.gate, group?.date]);
+      if (!LEVELING_GATES.includes(group?.gate) || !isDate(group?.date) || group.date < today ||
+        seenGroups.has(key) || !Array.isArray(group.cardIds) || group.cardIds.length === 0 || group.cardIds.length > 5000) {
+        throw new ValidationError("Board order contains an invalid or repeated gate/day.");
+      }
+      seenGroups.add(key);
+      const cardIds = group.cardIds.map((id) => {
+        if (typeof id !== "string" || !id || id.length > 2048 || seenCards.has(id) || seenCards.size >= 5000) {
+          throw new ValidationError("Board order contains an invalid or repeated card.");
+        }
+        seenCards.add(id);
+        return id;
+      });
+      return { gate: group.gate, date: group.date, cardIds };
+    });
+  }
+  return { baseVersion, note, moves, boardCardOrder };
+};
+
+/** Match the frontend's physical-lot buckets; stale saved identities fall back to source priority. */
+const resolveBoardCardOrder = (groups, cards, today, strict = false) => {
+  const allowed = new Set(cards.map((card) => JSON.stringify([
+    card.gate, card.plannedDate, card.kind, card.kind === "lot" ? card.lotNo.trim() : card.workKey,
+  ])));
+  if (!Array.isArray(groups)) return [];
+  return groups.flatMap((group) => {
+    if (!group || !Array.isArray(group.cardIds) || group.date < today) return [];
+    const cardIds = group.cardIds.filter((id) => {
+      if (!allowed.has(id)) return false;
+      // The identity itself must belong to the submitted gate/day, not another group.
+      const identity = JSON.parse(id);
+      return identity[0] === group.gate && identity[1] === group.date;
+    });
+    if (strict && cardIds.length !== group.cardIds.length) {
+      throw new ValidationError("Board cards or arrival dates changed. Reload before saving their order.");
+    }
+    return cardIds.length ? [{ gate: group.gate, date: group.date, cardIds }] : [];
+  });
 };
 
 module.exports = {
   LEVELING_GATES, GATE_GROUP, SHIFTS, SPECIAL_ACTIONS, NORMAL_VALID_FROM, NORMAL_VALID_TO, DEFAULT_SHIFT,
   ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid,
   loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
-  workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate,
+  workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate, resolveBoardCardOrder,
 };

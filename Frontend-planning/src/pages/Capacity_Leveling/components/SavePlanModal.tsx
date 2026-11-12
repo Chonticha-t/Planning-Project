@@ -66,7 +66,7 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
                 Save Plan v{nextVersion}
               </h3>
               <p className="text-xs text-base-content/60 mt-0.5">
-                Saves the moved cards as a new version; earlier versions are kept
+                Saves arrival dates and card order as a new version; earlier versions are kept
               </p>
             </div>
           </div>

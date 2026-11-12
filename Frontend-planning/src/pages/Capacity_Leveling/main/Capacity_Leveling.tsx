@@ -11,6 +11,7 @@ import type {
   PlanMode,
   LotItem,
   LevelingData,
+  MoveHistoryEntry,
 } from "../types";
 import {
   buildGrid,
@@ -26,6 +27,8 @@ import {
   toLotItem,
 } from "../utils/levelingCalculations";
 import { allocateBoardShifts } from "../utils/boardShiftAllocation";
+import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, serializeBoardCardOrder, type BoardCardOrder } from "../utils/boardCardOrder";
+import { appendMoveHistory, mergeMoveHistory, reorderMoveHistory } from "../utils/moveHistory";
 import { fetchLevelingData, savePlan, toApiFailure, type ApiFailure } from "../hooks/api";
 
 import { LevelingHeader } from "../components/LevelingHeader";
@@ -51,9 +54,12 @@ const Capacity_Leveling: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<ApiFailure | null>(null);
   const [lots, setLots] = useState<LotItem[]>([]);
+  const [boardCardOrder, setBoardCardOrder] = useState<BoardCardOrder>(new Map());
   const [saving, setSaving] = useState(false);
   // Unsaved moves survive a reload (for example after capacity settings change).
   const draftRef = useRef(new Map<string, string>());
+  const draftHistoryRef = useRef(new Map<string, MoveHistoryEntry[]>());
+  const moveSequenceRef = useRef(0);
   const requestRef = useRef<AbortController | null>(null);
 
   const [boardGate, setBoardGate] = useState<string>("FVAC");
@@ -87,7 +93,8 @@ const Capacity_Leveling: React.FC = () => {
       setData(next);
       setLots(next.cards.map(toLotItem).map((lot) => {
         const draftDate = draft.get(lot.id);
-        return draftDate && draftDate >= next.today ? { ...lot, plannedDate: draftDate } : lot;
+        const restored = draftDate && draftDate >= next.today ? { ...lot, plannedDate: draftDate } : lot;
+        return { ...restored, moveHistory: mergeMoveHistory(draftHistoryRef.current.get(lot.id), lot.moveHistory) };
       }));
       setFailure(null);
     } catch (error) {
@@ -107,6 +114,10 @@ const Capacity_Leveling: React.FC = () => {
     draftRef.current = new Map(
       lots.filter((lot) => lot.plannedDate !== lot.savedDate).map((lot) => [lot.id, lot.plannedDate])
     );
+    draftHistoryRef.current = new Map(lots.flatMap((lot) => {
+      const entries = lot.moveHistory?.filter((entry) => !entry.planVersion) ?? [];
+      return entries.length ? [[lot.id, entries] as const] : [];
+    }));
   }, [lots]);
 
   const today = data?.today ?? dayjs().format("YYYY-MM-DD");
@@ -133,7 +144,14 @@ const Capacity_Leveling: React.FC = () => {
   const plannedIndex = useMemo(() => plannedDateIndex(lots, data ?? undefined), [lots, data]);
 
   const rangeDates = useMemo(() => new Set(grid.map((day) => day.date)), [grid]);
-  const allBoardLots = useMemo(() => data ? buildBoardLots(data, lots, category) : [], [data, lots, category]);
+  const savedBoardCardOrder = useMemo(() => readBoardCardOrder(data?.boardCardOrder), [data]);
+  const effectiveBoardCardOrder = useMemo(
+    () => new Map([...savedBoardCardOrder, ...boardCardOrder]), [savedBoardCardOrder, boardCardOrder]
+  );
+  const allBoardLots = useMemo(
+    () => data ? applyBoardCardOrder(buildBoardLots(data, lots, category), effectiveBoardCardOrder) : [],
+    [data, lots, category, effectiveBoardCardOrder]
+  );
   const gateLots = useMemo(() => allBoardLots.filter((lot) => lot.gate === boardGate), [allBoardLots, boardGate]);
   const boardLots = useMemo(
     () => gateLots.filter((lot) => rangeDates.has(lot.plannedDate)),
@@ -161,10 +179,10 @@ const Capacity_Leveling: React.FC = () => {
       const ids = new Set(activeMovingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
       const projectedLots = lots.map((lot) => ids.has(lot.id) ? { ...lot, plannedDate: activePreviewTargetDate } : lot);
       // Rebuild to merge physical lots and apply priority at the destination before allocating shifts.
-      projectedBoard = buildBoardLots(data, projectedLots, category);
+      projectedBoard = applyBoardCardOrder(buildBoardLots(data, projectedLots, category), effectiveBoardCardOrder);
     }
     return allocateBoardShifts(data, projectedBoard);
-  }, [data, allBoardLots, lots, category, activeMovingLots, activePreviewTargetDate]);
+  }, [data, allBoardLots, lots, category, effectiveBoardCardOrder, activeMovingLots, activePreviewTargetDate]);
 
   const displayGrid = useMemo(() => {
     if (data && activeMovingLots.length > 0 && activePreviewTargetDate) {
@@ -174,7 +192,13 @@ const Capacity_Leveling: React.FC = () => {
   }, [data, activeMovingLots, activePreviewTargetDate, grid, lots, category]);
 
   const kpis = useMemo(() => calculateKpis(grid, requiredGrid, lots, data ?? undefined), [grid, requiredGrid, lots, data]);
-  const isDraftModified = useMemo(() => lots.some((lot) => lot.plannedDate !== lot.savedDate), [lots]);
+  const isDraftModified = useMemo(() => {
+    if (lots.some((lot) => lot.plannedDate !== lot.savedDate)) return true;
+    if (!data || boardCardOrder.size === 0) return false;
+    const board = buildBoardLots(data, lots);
+    const saved = applyBoardCardOrder(board, savedBoardCardOrder);
+    return applyBoardCardOrder(board, effectiveBoardCardOrder).some((lot, index) => lot.id !== saved[index].id);
+  }, [lots, data, boardCardOrder, savedBoardCardOrder, effectiveBoardCardOrder]);
   const sourceChangedCount = useMemo(() => lots.filter((lot) => lot.sourceChanged).length, [lots]);
 
   // A card can only land on a day from today on which its gate is open.
@@ -269,7 +293,9 @@ const Capacity_Leveling: React.FC = () => {
         return;
       }
       const moveTimestamp = Date.now();
-      const changedAt = dayjs().format("DD/MM/YYYY HH:mm");
+      const eventId = `mh-${moveTimestamp}-${++moveSequenceRef.current}`;
+      const boardIds = new Map(lotsToMove.flatMap((lot) => (lot.sourceIds ?? [lot.id]).map((id) => [id, lot.id] as const)));
+      const changedAt = new Date(moveTimestamp).toISOString();
       const changedBy = `${user?.full_name || user?.username || "Planner"} · Draft`;
       setLots((prevLots) => prevLots.map((lot) => {
         if (!ids.has(lot.id) || lot.plannedDate === targetDate) return lot;
@@ -278,7 +304,8 @@ const Capacity_Leveling: React.FC = () => {
           ...lot,
           plannedDate: targetDate,
           moveHistory: [{
-            id: `mh-${moveTimestamp}-${lot.id}`,
+            id: `${eventId}-${boardIds.get(lot.id) ?? lot.id}`,
+            kind: "date" as const,
             fromDate: lot.plannedDate,
             toDate: targetDate,
             changedAt,
@@ -307,11 +334,14 @@ const Capacity_Leveling: React.FC = () => {
           const moves = lots.filter((lot) => isMoved(lot) && lot.plannedDate >= today).map((lot) => ({
             workKey: lot.workKey, gate: lot.gate, plannedDate: lot.plannedDate,
           }));
-          const { plan, movedCount } = await savePlan(data.plan?.version ?? 0, moves, reason);
+          const order = serializeBoardCardOrder(buildBoardLots(data, lots), effectiveBoardCardOrder, today);
+          const { plan, movedCount, orderedGroupCount } = await savePlan(data.plan?.version ?? 0, moves, reason, order);
           draftRef.current = new Map();
+          draftHistoryRef.current = new Map();
           setSaveModalOpen(false);
-          toast.success(`Plan v${plan.version} saved with ${movedCount} moved card(s).`, { duration: 3500 });
+          toast.success(`Plan v${plan.version} saved: ${movedCount} moved card(s), ${orderedGroupCount} ordered gate/day group(s).`, { duration: 3500 });
           await load();
+          setBoardCardOrder(new Map());
         } catch (error) {
           const failed = toApiFailure(error);
           toast.error(failed.message, { duration: 6000 });
@@ -325,7 +355,7 @@ const Capacity_Leveling: React.FC = () => {
         }
       });
     },
-    [data, saving, requireAdmin, lots, today, load]
+    [data, saving, requireAdmin, lots, today, load, effectiveBoardCardOrder]
   );
 
   const dateRangeText = grid.length
@@ -488,6 +518,20 @@ const Capacity_Leveling: React.FC = () => {
                 selectedLotIds={selectedLotIds}
                 onSelectionChange={(ids) => setSelectedLotIds(new Set(ids))}
                 onMoveLots={handleStageMoveLots}
+                onReorderLots={(movingIds, targetId, position) => {
+                  if (saving || loading) return;
+                  const board = buildBoardLots(data, lots);
+                  const next = reorderBoardCards(board, effectiveBoardCardOrder, movingIds, targetId, position);
+                  if (next === effectiveBoardCardOrder) return;
+                  const history = reorderMoveHistory(
+                    applyBoardCardOrder(board, effectiveBoardCardOrder), applyBoardCardOrder(board, next), movingIds,
+                    { id: `mh-order-${Date.now()}-${++moveSequenceRef.current}`, changedAt: new Date().toISOString(),
+                      changedBy: `${user?.full_name || user?.username || "Planner"} · Draft` }
+                  );
+                  setBoardCardOrder((current) => new Map([...current,
+                    ...[...next].filter(([key, ids]) => ids !== effectiveBoardCardOrder.get(key))]));
+                  setLots((current) => appendMoveHistory(current, history));
+                }}
                 draggedLot={draggedLot}
                 onDragStart={setDraggedLot}
                 onDragEnd={() => setDraggedLot(null)}

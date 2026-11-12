@@ -6,6 +6,7 @@ const {
   loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, occupancyCalendarRange, parsePlanPayload, isDate, arrivalWorkKey, buildArrivalCards, arrivalEndDate,
 } = require("../utils/capacityLeveling");
 const { createCapacityLevelingRouter, PLAN_METHOD } = require("../utils/capacityLevelingRouter");
+const { buildSavedMoveHistory, HISTORY_LIMIT } = require("../utils/capacityLevelingHistory");
 
 const shift = (overrides = {}) => ({ ...DEFAULT_SHIFT, mcLines: 1, specialDays: {}, ...overrides });
 const gate = (day = {}, night = {}) => ({ gate: "FVAC", group: "FPC", shifts: { day: shift(day), night: shift(night) } });
@@ -133,6 +134,19 @@ test("plan payload rejects past dates, unknown gates and repeated cards", () => 
   assert.throws(() => parsePlanPayload({ moves: [move, move] }, "2026-11-12"), ValidationError);
 });
 
+test("board order payload rejects invalid groups, duplicate cards and oversized input", () => {
+  const group = { gate: "FADL", date: "2026-11-16", cardIds: ["card-1"] };
+  for (const boardCardOrder of [null, {}, [null], [group, group],
+    [{ ...group, gate: "UNKNOWN" }], [{ ...group, date: "2026-11-11" }],
+    [{ ...group, date: "2026-02-30" }], [{ ...group, cardIds: [] }],
+    [{ ...group, cardIds: ["card-1", "card-1"] }], [{ ...group, cardIds: [null] }],
+    [{ ...group, cardIds: ["x".repeat(2049)] }], Array(5001).fill(group),
+  ]) {
+    assert.throws(() => parsePlanPayload({ moves: [], boardCardOrder }, "2026-11-12"), ValidationError);
+  }
+  assert.deepEqual(parsePlanPayload({ moves: [], boardCardOrder: [group] }, "2026-11-12").boardCardOrder, [group]);
+});
+
 // A scripted pool: each query is answered by the first matching rule and recorded.
 function fakePool(rules) {
   const log = [];
@@ -166,6 +180,125 @@ async function withApi(pool, callback, { admin = true } = {}) {
     await new Promise((resolve) => server.close(resolve));
   }
 }
+
+const orderId = (row, date = row.arrive_by) => JSON.stringify([
+  row.gate_name, date, "lot", row.lot_no.trim(),
+]);
+
+test("saved history distinguishes date moves from same-day reorder and keeps server identity and version", () => {
+  const rows = [work({ lot_no: "L001" }), work({ lot_no: "L002" }), work({ lot_no: "L003" })];
+  const cards = buildArrivalCards(rows, [], "2026-11-12").cards;
+  const order = [{ gate: "FADL", date: rows[0].arrive_by, cardIds: [orderId(rows[2]), orderId(rows[0]), orderId(rows[1])] }];
+  const meta = { planId: "plan-1", planVersion: 1, changedBy: "planner", changedAt: "2026-11-12T03:00:00Z", note: "" };
+  const history = buildSavedMoveHistory(cards, cards, [], order, {}, meta);
+  assert.deepEqual([history[cards[2].id][0].kind, history[cards[2].id][0].fromPosition, history[cards[2].id][0].toPosition], ["reorder", 3, 1]);
+  assert.equal(history[cards[2].id][0].changedBy, "planner");
+  assert.equal(history[cards[2].id][0].planVersion, 1);
+  const unchanged = buildSavedMoveHistory(cards, cards, order, order, history, { ...meta, planVersion: 2 });
+  assert.equal(unchanged[cards[2].id].length, 1);
+  const moved = cards.map((card, index) => index === 2 ? { ...card, plannedDate: "2026-11-18" } : card);
+  const movedHistory = buildSavedMoveHistory(cards, moved, order, [], history, { ...meta, planId: "plan-2", planVersion: 2 });
+  assert.deepEqual(movedHistory[cards[2].id].map(entry => entry.kind), ["date", "reorder"]);
+  const returned = buildSavedMoveHistory(moved, cards, [], order, movedHistory, { ...meta, planId: "plan-3", planVersion: 3 });
+  assert.deepEqual([returned[cards[2].id][0].fromDate, returned[cards[2].id][0].toDate], ["2026-11-18", "2026-11-16"]);
+});
+
+test("history respects source priority and merged physical cards, bounds saved entries and removes departed sources", () => {
+  const rows = [work({ lot_no: "L001", pri: 1 }), work({ lot_no: "L002", pri: 2, proc_disp: "FADL" })];
+  const cards = buildArrivalCards(rows, [], "2026-11-12").cards;
+  const original = [{ gate: "FADL", date: "2026-11-16", cardIds: [orderId(rows[1]), orderId(rows[0])] }];
+  const meta = { planId: "plan-1", planVersion: 1, changedBy: "planner", changedAt: "2026-11-12T03:00:00Z" };
+  assert.equal(Object.keys(buildSavedMoveHistory(cards, cards, [], original, {}, meta)).length, 0);
+  const saved = Array.from({ length: HISTORY_LIMIT + 1 }, (_, i) => ({ id: `entry-${i}` }));
+  const history = buildSavedMoveHistory(cards, cards, [], [], { [cards[0].id]: saved, removed: saved }, meta);
+  assert.equal(history[cards[0].id].length, HISTORY_LIMIT);
+  assert.equal(history.removed, undefined);
+  const duplicate = { ...cards[0], id: "allocation-2", workKey: "allocation-2" };
+  const merged = [cards[0], duplicate, cards[1]];
+  const reordered = [{ ...original[0], cardIds: [orderId(rows[0]), orderId(rows[1])] }];
+  const mergedHistory = buildSavedMoveHistory(merged, merged, [], reordered, {}, meta);
+  assert.equal(mergedHistory[cards[0].id][0].id, mergedHistory[duplicate.id][0].id);
+  assert.deepEqual([mergedHistory[cards[0].id][0].fromPosition, mergedHistory[cards[0].id][0].toPosition], [2, 1]);
+});
+
+test("same-day order saves as an immutable version and reloads in another session without date moves", async () => {
+  const rows = [work(), work({ lot_no: "L002" })];
+  const group = { gate: "FADL", date: "2026-11-16", cardIds: rows.map(row => orderId(row)).reverse() };
+  let header;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/planning_summary_gate/, rows],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      header = { plan_id: params[0], plan_group_id: params[1], version_no: params[2],
+        created_by: params[8], saved_at: "2026-11-12 12:00", board_card_order: JSON.parse(params[9]).boardCardOrder,
+        move_history: JSON.parse(params[9]).moveHistory };
+      return [];
+    }],
+  ]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [], boardCardOrder: [group] } });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.orderedGroupCount, 1);
+  });
+  await withApi(pool, async api => {
+    const { data } = await (await api("/load?startdate=2026-11-12&stopdate=2026-11-20")).json();
+    assert.deepEqual(data.boardCardOrder, [group]);
+    assert.deepEqual([data.cards[1].moveHistory[0].kind, data.cards[1].moveHistory[0].fromPosition,
+      data.cards[1].moveHistory[0].toPosition], ["reorder", 2, 1]);
+    assert.equal(data.cards[1].moveHistory[0].changedBy, "planner");
+    assert.ok(data.cards.every(card => card.plannedDate === card.baseDate && !card.moved));
+    // A stale planner cannot overwrite another user's saved order.
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [], boardCardOrder: [] } })).status, 409);
+    // Clients predating card order preserve the latest sequence.
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 1, moves: [] } })).status, 200);
+    assert.deepEqual(header.board_card_order, [group]);
+    assert.equal(header.version_no, 2);
+    assert.equal(header.move_history[data.cards[1].id].length, 1);
+  });
+  assert.ok(!pool.log.some(entry => /INSERT INTO planning\.work_plan_gate_item|^(UPDATE|DELETE)/.test(entry.sql)));
+  await withApi(pool, async api => {
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 2, moves: [], boardCardOrder: [] } })).status, 401);
+  }, { admin: false });
+});
+
+test("forged or stale board identities and mismatched gate/day groups roll back before inserts", async () => {
+  const row = work();
+  for (const group of [
+    { gate: "FADL", date: row.arrive_by, cardIds: ["forged"] },
+    { gate: "FIN", date: row.arrive_by, cardIds: [orderId(row)] },
+    { gate: "FADL", date: "2026-11-17", cardIds: [orderId(row)] },
+  ]) {
+    const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, [row]]]);
+    await withApi(pool, async api => {
+      assert.equal((await api("/plan", { method: "POST", body: { moves: [], boardCardOrder: [group] } })).status, 400);
+    });
+    assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
+    assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+  }
+});
+
+test("source changes prune stale saved order and moving a card saves its order at the destination", async () => {
+  const row = work({ next_arrive_by: "2026-11-25" });
+  const group = { gate: "FADL", date: row.arrive_by, cardIds: [orderId(row), "removed"] };
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, [{ plan_id: "p1", plan_group_id: "p1", version_no: 1, board_card_order: [group] }]],
+    [/planning_summary_gate/, [row]],
+  ]);
+  await withApi(pool, async api => {
+    const { data } = await (await api("/load?startdate=2026-11-12&stopdate=2026-11-20")).json();
+    assert.deepEqual(data.boardCardOrder[0].cardIds, [orderId(row)]);
+    const target = "2026-11-18";
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 1,
+      moves: [{ workKey: arrivalWorkKey(row), gate: row.gate_name, plannedDate: target }],
+      boardCardOrder: [{ gate: row.gate_name, date: target, cardIds: [orderId(row, target)] }],
+    } });
+    assert.equal(response.status, 200);
+  });
+  const header = pool.log.find(entry => entry.sql.startsWith("INSERT INTO planning.work_plan ("));
+  assert.deepEqual(JSON.parse(header.params[9]).boardCardOrder[0].cardIds, [orderId(row, "2026-11-18")]);
+});
 
 test("load endpoint returns capacity per gate and day with cards from the latest plan", async () => {
   const pool = fakePool([

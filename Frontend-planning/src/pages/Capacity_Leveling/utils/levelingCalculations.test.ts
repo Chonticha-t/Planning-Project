@@ -4,6 +4,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
 import { allocateBoardShifts } from "./boardShiftAllocation.ts";
+import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, serializeBoardCardOrder } from "./boardCardOrder.ts";
+import { appendMoveHistory, mergeMoveHistory, reorderMoveHistory } from "./moveHistory.ts";
 import type { ApiCard, CapacityDay, GateArrivalRow, LevelingData, ShiftConfig } from "../types";
 import {
   buildGrid,
@@ -75,6 +77,85 @@ const cellOf = (grid: ReturnType<typeof buildGrid>, date: string, gate: string) 
 const shiftDay = (day: number | null, night: number | null): CapacityDay => ({
   off: false, hasOt: false, capacityMin: day === null || night === null ? null : day + night,
   shifts: { day: { open: true, otOn: false, capacityMin: day }, night: { open: true, otOn: false, capacityMin: night } },
+});
+
+test("same-day reordering changes shift priority without changing dates, quantities or the load grid", () => {
+  const source = data([0, 1, 2].map(i => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
+  source.capacity.FADL["2026-11-16"] = shiftDay(950, 950);
+  const lots = source.cards.map(toLotItem);
+  const board = buildBoardLots(source, lots);
+  const original = structuredClone(board);
+  const order = reorderBoardCards(board, new Map(), [board[2].id], board[0].id, "before");
+  const reordered = applyBoardCardOrder(board, order);
+  assert.deepEqual(reordered.map(lot => lot.label), ["LOT-2", "LOT-0", "LOT-1"]);
+  const shifts = allocateBoardShifts(source, reordered);
+  assert.deepEqual(reordered.map(lot => shifts.get(lot.id)?.status), ["day", "night", "over"]);
+  assert.deepEqual(buildGrid(source, reordered), buildGrid(source, board));
+  assert.deepEqual(board, original);
+  assert.deepEqual(applyBoardCardOrder(board, reorderBoardCards(board, order, [board[2].id], board[0].id, "after"))
+    .map(lot => lot.label), ["LOT-0", "LOT-2", "LOT-1"]);
+});
+
+test("same-day reorder history records the moved card's old and new positions and survives board rebuilding", () => {
+  const source = data([0, 1, 2].map(i => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
+  const lots = source.cards.map(toLotItem);
+  const board = buildBoardLots(source, lots);
+  const order = reorderBoardCards(board, new Map(), [board[2].id], board[0].id, "before");
+  const events = reorderMoveHistory(board, applyBoardCardOrder(board, order), [board[2].id],
+    { id: "drag-1", changedAt: "2026-11-16T02:00:00Z", changedBy: "Planner - Draft" });
+  const rebuilt = buildBoardLots(source, appendMoveHistory(lots, events));
+  const history = rebuilt.find(lot => lot.id === board[2].id)!.moveHistory!;
+  assert.equal(history.length, 1);
+  assert.deepEqual([history[0].kind, history[0].fromPosition, history[0].toPosition], ["reorder", 3, 1]);
+  assert.equal(history[0].fromDate, history[0].toDate);
+  assert.equal(lots[2].moveHistory, undefined);
+  assert.equal(rebuilt[0].moveHistory?.length, 0);
+  assert.equal(reorderMoveHistory(board, board, [board[0].id],
+    { id: "no-op", changedAt: "2026-11-16T02:00:00Z", changedBy: "Planner" }).size, 0);
+});
+
+test("merged board cards preserve all members' histories without duplicating a shared move", () => {
+  const source = data([card(), card({ id: "other", workKey: "other", arriveBy: "2026-11-17" })]);
+  const event = { id: "shared", kind: "reorder" as const, fromDate: "2026-11-16", toDate: "2026-11-16",
+    fromPosition: 2, toPosition: 1, changedAt: "2026-11-16T02:00:00Z", changedBy: "Planner" };
+  const earlier = { ...event, id: "earlier", changedAt: "2026-11-16T01:00:00Z", planVersion: 1 };
+  const lots = source.cards.map(toLotItem).map((lot, i) => ({ ...lot, plannedDate: "2026-11-16",
+    moveHistory: i === 0 ? [event] : [event, earlier] }));
+  const merged = buildBoardLots(source, lots);
+  assert.equal(merged.length, 1);
+  assert.deepEqual(merged[0].moveHistory?.map(entry => entry.id), ["shared", "earlier"]);
+  assert.deepEqual(mergeMoveHistory([earlier], [event]).map(entry => entry.id), ["shared", "earlier"]);
+  // API adaptation must preserve saved history, including server actor and version.
+  assert.deepEqual(toLotItem({ ...source.cards[0], moveHistory: [earlier] }).moveHistory, [earlier]);
+});
+
+test("batch reordering preserves the visible selection order and rejects cross-day, cross-gate and stale selections", () => {
+  const source = data([0, 1, 2, 3].map(i => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const empty = new Map<string, string[]>();
+  const order = reorderBoardCards(board, empty, [board[2].id, board[0].id], board[3].id, "after");
+  assert.deepEqual(applyBoardCardOrder(board, order).map(lot => lot.label), ["LOT-1", "LOT-3", "LOT-0", "LOT-2"]);
+  for (const invalid of [
+    [board[0].id], ["missing"], [board[1].id, "missing"], [],
+  ]) assert.equal(reorderBoardCards(board, empty, invalid, board[0].id, "before"), empty);
+  for (const patch of [{ plannedDate: "2026-11-17" }, { gate: "FIN" }]) {
+    const mixed = board.map((lot, i) => i === 1 ? { ...lot, ...patch } : lot);
+    assert.equal(reorderBoardCards(mixed, empty, [mixed[1].id], mixed[0].id, "before"), empty);
+  }
+});
+
+test("saved order survives a JSON round trip, retains other groups and appends new cards in source priority", () => {
+  const source = data([0, 1, 2].map(i => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const order = reorderBoardCards(board.slice(0, 2), new Map(), [board[1].id], board[0].id, "before");
+  const saved = serializeBoardCardOrder(board, order, source.today);
+  const restored = readBoardCardOrder(JSON.parse(JSON.stringify(saved)));
+  assert.deepEqual(applyBoardCardOrder([...board].reverse(), restored).map(lot => lot.label), ["LOT-1", "LOT-0", "LOT-2"]);
+  const filtered = board.filter(lot => lot.id !== board[0].id);
+  assert.deepEqual(applyBoardCardOrder(filtered, restored).map(lot => lot.label), ["LOT-1", "LOT-2"]);
+  const moved = board.map((lot, i) => i === 0 ? { ...lot, plannedDate: "2026-11-17" } : lot);
+  assert.deepEqual(serializeBoardCardOrder(moved, restored, source.today)[0].cardIds, [board[1].id, board[2].id]);
+  assert.deepEqual(serializeBoardCardOrder(board, restored, "2026-11-17"), []);
 });
 
 test("shift allocation fills day before night and leaves excess work on its planned date", () => {

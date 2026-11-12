@@ -1,6 +1,6 @@
 import axios from "axios";
 import { getApiBaseUrl } from "@/utils/apiConfig";
-import type { GateShiftConfig, LevelingData, PlanInfo } from "../types";
+import type { BoardCardOrderGroup, GateShiftConfig, LevelingData, PlanInfo } from "../types";
 
 const BASE = `${getApiBaseUrl()}/capacity_leveling`;
 
@@ -33,8 +33,8 @@ export const fetchLevelingData = async (startdate: string, stopdate: string, sig
   if (!next || next.calculationMethod !== "gate_arrival_max_target_v1" ||
     next.loadBasis !== "summary_gate_arrivals_v1" || !Array.isArray(next.arrivalRows) ||
     !Array.isArray(next.gates) || next.gates.some((gate) => !gate.standardShiftMin) ||
-    !Array.isArray(next.calendarDays) || !Array.isArray(next.cards)) {
-    const error = new Error("Max Target data is unavailable. Reload after the planning server is updated.");
+    !Array.isArray(next.calendarDays) || !Array.isArray(next.cards) || !Array.isArray(next.boardCardOrder)) {
+    const error = new Error("Arrival planning data is unavailable. Reload after the planning server is updated.");
     error.name = "PlanningDataError";
     throw error;
   }
@@ -57,12 +57,13 @@ export interface PlanMove {
   plannedDate: string;
 }
 
-export const savePlan = async (baseVersion: number, moves: PlanMove[], note: string) => {
-  const { data } = await axios.post<{ data: { plan: PlanInfo; movedCount: number } }>(`${BASE}/plan`, {
+export const savePlan = async (baseVersion: number, moves: PlanMove[], note: string, boardCardOrder: BoardCardOrderGroup[]) => {
+  const { data } = await axios.post<{ data: { plan: PlanInfo; movedCount: number; orderedGroupCount: number } }>(`${BASE}/plan`, {
     calculationMethod: "gate_arrival_max_target_v1",
     baseVersion,
     moves,
     note,
+    boardCardOrder,
   });
   return data.data;
 };

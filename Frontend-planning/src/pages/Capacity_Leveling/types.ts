@@ -20,6 +20,10 @@ export type MoveWarning = "none" | "early" | "late" | "order";
 
 export interface MoveHistoryEntry {
   id: string;
+  kind?: "date" | "reorder";
+  fromPosition?: number;
+  toPosition?: number;
+  planVersion?: number;
   fromDate: string; // YYYY-MM-DD
   toDate: string; // YYYY-MM-DD
   changedAt: string;
@@ -109,6 +113,12 @@ export interface PlanInfo {
   savedAt: string;
 }
 
+export interface BoardCardOrderGroup {
+  gate: string;
+  date: string;
+  cardIds: string[];
+}
+
 export interface OrphanMove {
   workKey: string;
   gate: string;
@@ -135,10 +145,11 @@ export interface LevelingData {
   calculationMethod: string;
   legacyPlanAvailable: boolean;
   plan: PlanInfo | null;
+  boardCardOrder?: BoardCardOrderGroup[];
 }
 
 /** Card as returned by the API before it is adapted for the board. */
-export interface ApiCard extends Omit<LotItem, "label" | "product" | "savedDate" | "moveHistory"> {
+export interface ApiCard extends Omit<LotItem, "label" | "product" | "savedDate"> {
   prdName: string;
   lotNo: string | null;
   moved: boolean;
