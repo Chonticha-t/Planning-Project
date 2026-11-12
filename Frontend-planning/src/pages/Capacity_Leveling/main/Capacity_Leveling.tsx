@@ -464,9 +464,9 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   return (
     <div className="planning-summary-gate flex flex-col gap-3 w-full">
       {readOnly && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-        <span>กำลังดู Plan v{data?.plan?.version} · อ่านอย่างเดียว · แผนปัจจุบัน v{activeVersion}</span>
+        <span>Viewing Plan v{data?.plan?.version} · Read-only · Current Plan v{activeVersion}</span>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span>ช่วงวันที่บันทึกไว้</span>
+          <span>Saved Date Range</span>
           <input aria-label="History start date" type="date" className="input input-sm w-auto" value={data?.days[0]?.date ?? ""}
             min={snapshot?.days[0]?.date} max={data?.days.at(-1)?.date}
             onChange={(event) => {
@@ -475,7 +475,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
               if (snapshot && end && start >= snapshot.days[0].date && start <= end)
                 setData({ ...snapshot, days: snapshot.days.filter((day) => day.date >= start && day.date <= end) });
             }} />
-          <span>ถึง</span>
+          <span>to</span>
           <input aria-label="History end date" type="date" className="input input-sm w-auto" value={data?.days.at(-1)?.date ?? ""}
             min={data?.days[0]?.date} max={snapshot?.days.at(-1)?.date}
             onChange={(event) => {
@@ -485,7 +485,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 setData({ ...snapshot, days: snapshot.days.filter((day) => day.date >= start && day.date <= end) });
             }} />
         </div>
-        <button type="button" onClick={onExitPreview} className="btn btn-sm rounded-lg">กลับแผนปัจจุบัน</button>
+        <button type="button" onClick={onExitPreview} className="btn btn-sm rounded-lg">Back to Current Plan</button>
       </div>}
       {/* 1. Header Bar matching GateFilterBar */}
       <LevelingHeader

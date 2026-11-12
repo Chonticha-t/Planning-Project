@@ -213,7 +213,7 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
                 <p className="text-xs text-base-content/60">Saved date overrides and card order. Viewing this version keeps the active plan unchanged.</p>
                 {detail.snapshot ? (
                   <button type="button" className={`${button} btn-primary`} onClick={() => onPreview(detail.snapshot!)}>
-                    <Eye size={15} /> ดูแผนเวอร์ชันนี้
+                    <Eye size={15} /> View This Version
                   </button>
                 ) : <p className="rounded-lg bg-base-200 p-3 text-sm">เวอร์ชันนี้ยังไม่มี Snapshot จึงดูได้เฉพาะรายละเอียดที่บันทึกไว้ การ Save ครั้งใหม่จะเก็บกระดานย้อนหลังให้ด้วย</p>}
                 <section>
@@ -252,7 +252,7 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
                     <td className="whitespace-nowrap">{plan.savedAt}</td><td>{plan.savedBy}</td><td className="max-w-64 whitespace-pre-wrap break-words">{plan.note || "—"}</td>
                     <td><div className="flex gap-1">
                       {plan.hasSnapshot && <button type="button" disabled={openingPlan !== null} onClick={() => void openSavedPlan(plan)} className={`${button} btn-primary`}>
-                        {openingPlan === plan.planId ? <span className="loading loading-spinner loading-xs" /> : <Eye size={14} />} ดูแผน
+                        {openingPlan === plan.planId ? <span className="loading loading-spinner loading-xs" /> : <Eye size={14} />} View Plan
                       </button>}
                       <button type="button" onClick={() => setSelected(plan)} className={`${button} btn-ghost`} aria-label={`View Plan v${plan.version}`}><Eye size={14} /> View</button>
                       {!plan.isActive && <button type="button" onClick={() => setConfirm(plan)} className={`${button} btn-ghost text-error`} aria-label={`Delete Plan v${plan.version}`}><Trash2 size={14} /> Delete</button>}
