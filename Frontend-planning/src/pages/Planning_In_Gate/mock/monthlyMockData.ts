@@ -101,14 +101,16 @@ export const buildMonthSummary = (
       const r1 = rnd();
       const r2 = rnd();
       const r3 = rnd();
+      const noNight = d.dow === 6 && r3 < 0.6; // Saturday often runs day shift only
+      const planDs = noNight ? plan : Math.round(plan * 0.6);
+      const planNs: number | null = noNight ? null : plan - planDs;
       if (d.phase === "future") {
-        cells[d.date] = { plan, ds: null, ns: null };
+        cells[d.date] = { plan, planDs, planNs, ds: null, ns: null };
         return;
       }
-      // ~30% of cells miss the plan a little, a few beat it
-      const ratio = r1 < 0.3 ? 0.9 + r2 * 0.08 : r1 < 0.85 ? 1 : 1 + r2 * 0.05;
+      // ~35% of cells miss the plan a little, a few beat it so Plan vs Actual differences are clear
+      const ratio = r1 < 0.35 ? 0.85 + r2 * 0.1 : r1 < 0.82 ? 1 : 1 + r2 * 0.08;
       let total = Math.max(1, Math.round(plan * ratio));
-      const noNight = d.dow === 6 && r3 < 0.6; // Saturday often runs day shift only
       let ds = noNight ? total : Math.round(total * (0.58 + r3 * 0.08));
       let ns: number | null = noNight ? null : total - ds;
       if (d.phase === "today") {
@@ -118,7 +120,7 @@ export const buildMonthSummary = (
         ns = nowHour >= 20 && ns !== null ? Math.round(ns * Math.min(1, (nowHour - 20) / 12 + 0.1)) : null;
         total = ds + (ns ?? 0);
       }
-      cells[d.date] = { plan, ds, ns };
+      cells[d.date] = { plan, planDs, planNs, ds, ns };
     });
     return { product, cells };
   });
