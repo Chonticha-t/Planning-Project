@@ -15,6 +15,7 @@ import { DatePickerPopover } from "./DatePickerPopover";
 import { mergeMoveHistory } from "../utils/moveHistory";
 
 interface LotDetailSidePanelProps {
+  readOnly?: boolean;
   data: LevelingData;
   allLots: LotItem[];
   category: ProcessCategory;
@@ -54,6 +55,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   onCancel,
   onOpenCapacityModal,
   isDraggingCard = false,
+  readOnly = false,
 }) => {
   const releaseBoxRef = useRef<HTMLDivElement>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -222,7 +224,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
             </label>
             <div
               ref={releaseBoxRef}
-              onClick={() => setPopoverOpen((prev) => !prev)}
+              onClick={() => { if (!readOnly) setPopoverOpen((prev) => !prev); }}
               className="relative flex items-center justify-between border-[1.5px] border-primary rounded-xl px-3 py-2.5 bg-base-100 cursor-pointer hover:bg-base-200/30 transition-colors select-none"
             >
               <div className="flex items-center gap-2">
@@ -278,6 +280,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
               </span>
               <button
                 type="button"
+                disabled={readOnly}
                 onClick={onOpenCapacityModal}
                 className="text-primary hover:underline font-semibold text-[11.5px] inline-flex items-center gap-1 cursor-pointer"
               >

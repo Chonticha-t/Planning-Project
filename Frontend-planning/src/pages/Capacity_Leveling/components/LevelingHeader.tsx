@@ -18,6 +18,7 @@ const PROCESS_GROUP_OPTIONS: { value: ProcessCategory; label: string }[] = [
 ];
 
 interface LevelingHeaderProps {
+  readOnly?: boolean;
   category: ProcessCategory;
   onCategoryChange: (cat: ProcessCategory) => void;
   dateRangeText: string;
@@ -34,6 +35,7 @@ interface LevelingHeaderProps {
 }
 
 export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
+  readOnly = false,
   category,
   onCategoryChange,
   dateRangeText,
@@ -122,6 +124,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         <button
           type="button"
           onClick={onOpenCapacityModal}
+          disabled={readOnly}
           className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer"
         >
           <Settings size={13} className="text-base-content/70" />
@@ -132,7 +135,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         <button
           type="button"
           onClick={onReload}
-          disabled={isLoading}
+          disabled={isLoading || readOnly}
           title="Reload work and capacity. Unsaved moves are kept."
           className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer"
         >

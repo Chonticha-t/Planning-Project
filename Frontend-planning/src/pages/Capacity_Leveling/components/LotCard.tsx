@@ -26,6 +26,7 @@ const SHIFT_THEMES = {
 } as const;
 
 interface LotCardProps {
+  readOnly?: boolean;
   lot: LotItem;
   shiftAllocation?: BoardShiftAllocation;
   isSelected: boolean;
@@ -53,6 +54,7 @@ export const LotCard: React.FC<LotCardProps> = ({
   isBatchSelected,
   showSelection,
   compact = false,
+  readOnly = false,
   onToggleSelection,
   isBeingDragged,
   isMovingPreview = false,
@@ -141,7 +143,7 @@ export const LotCard: React.FC<LotCardProps> = ({
         {/* Ghost placeholder (keeps the card's place in the column) */}
         <div
           ref={ghostRef}
-          draggable
+          draggable={!readOnly}
           onDragStart={(e) => onDragStart(e, lot)}
           onDragEnd={onDragEnd}
           onClick={() => onSelect(lot)}
@@ -204,11 +206,11 @@ export const LotCard: React.FC<LotCardProps> = ({
       data-lot-id={lot.id}
       data-planned-shift={shiftAllocation?.status}
       style={{ background: !isSelected && !isLate && !isEarly ? shiftTheme?.background : undefined }}
-      draggable
+      draggable={!readOnly}
       onDragStart={(e) => onDragStart(e, lot)}
       onDragEnd={onDragEnd}
       onClick={() => onSelect(lot)}
-      className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all cursor-grab active:cursor-grabbing select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
+      className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
     >
       {/* Top Row: PO · Product & Drag Grip */}
       <div className="flex items-start justify-between gap-1">
@@ -248,12 +250,13 @@ export const LotCard: React.FC<LotCardProps> = ({
       <div className={`${compact ? "mt-1" : "mt-2"} relative flex items-center gap-1`}>
         <button
           ref={chipBtnRef}
+          disabled={readOnly}
           type="button"
           title={`${lot.gate} date: ${releaseDisplay}`}
           aria-label={`Change ${lot.gate} date for ${lot.label}, ${releaseDisplay}`}
           onClick={(e) => {
             e.stopPropagation();
-            setPopoverOpen((prev) => !prev);
+            if (!readOnly) setPopoverOpen((prev) => !prev);
           }}
           className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold tabular-nums border transition-colors cursor-pointer whitespace-nowrap min-w-0 ${
             isSelected

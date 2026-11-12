@@ -4,7 +4,7 @@ import { ArrowLeft, Eye, History, RefreshCw, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 import { deletePlanVersion, fetchPlanHistory, fetchPlanHistoryDetail, toApiFailure } from "../hooks/api";
-import type { PlanHistoryDetail, PlanHistoryInfo } from "../types";
+import type { LevelingData, PlanHistoryDetail, PlanHistoryInfo } from "../types";
 
 const cardLabel = (id: string) => {
   try {
@@ -18,9 +18,10 @@ const cardLabel = (id: string) => {
 
 interface Props {
   onClose: () => void;
+  onPreview: (snapshot: LevelingData) => void;
 }
 
-export const PlanHistoryModal: React.FC<Props> = ({ onClose }) => {
+export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
   const { requireAdmin } = useAuth();
   const [plans, setPlans] = useState<PlanHistoryInfo[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
@@ -34,6 +35,8 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose }) => {
   const [confirm, setConfirm] = useState<PlanHistoryInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
   const listRequest = useRef<AbortController | null>(null);
+  const previewRequest = useRef<AbortController | null>(null);
+  const [openingPlan, setOpeningPlan] = useState<string | null>(null);
   const deleteLock = useRef(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -59,7 +62,7 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose }) => {
 
   useEffect(() => {
     void loadHistory();
-    return () => listRequest.current?.abort();
+    return () => { listRequest.current?.abort(); previewRequest.current?.abort(); };
   }, [loadHistory]);
 
   useEffect(() => {
@@ -147,6 +150,23 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose }) => {
 
   const button = "btn btn-sm rounded-lg normal-case";
 
+  const openSavedPlan = async (plan: PlanHistoryInfo) => {
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    setOpeningPlan(plan.planId);
+    try {
+      const next = await fetchPlanHistoryDetail(plan.planId, controller.signal);
+      if (controller.signal.aborted) return;
+      if (next.snapshot) onPreview(next.snapshot);
+      else setSelected(plan);
+    } catch (failure) {
+      if (!controller.signal.aborted) toast.error(toApiFailure(failure).message);
+    } finally {
+      if (!controller.signal.aborted) setOpeningPlan(null);
+    }
+  };
+
   return createPortal(
     <div className="planning-summary-gate fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/45 p-3 sm:p-6" onClick={close}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="plan-history-title"
@@ -191,6 +211,11 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose }) => {
                   <p className="whitespace-pre-wrap break-words">{detail.plan.note || "No note"}</p>
                 </div>
                 <p className="text-xs text-base-content/60">Saved date overrides and card order. Viewing this version keeps the active plan unchanged.</p>
+                {detail.snapshot ? (
+                  <button type="button" className={`${button} btn-primary`} onClick={() => onPreview(detail.snapshot!)}>
+                    <Eye size={15} /> ดูแผนเวอร์ชันนี้
+                  </button>
+                ) : <p className="rounded-lg bg-base-200 p-3 text-sm">เวอร์ชันนี้ยังไม่มี Snapshot จึงดูได้เฉพาะรายละเอียดที่บันทึกไว้ การ Save ครั้งใหม่จะเก็บกระดานย้อนหลังให้ด้วย</p>}
                 <section>
                   <h3 className="mb-2 text-sm font-bold">Saved date overrides ({detail.moves.length})</h3>
                   <div className="overflow-x-auto rounded-xl border border-base-300">
@@ -226,6 +251,9 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose }) => {
                     <td className="whitespace-nowrap"><strong>v{plan.version}</strong>{plan.isActive && <span className="badge badge-primary badge-sm ml-2">Active</span>}</td>
                     <td className="whitespace-nowrap">{plan.savedAt}</td><td>{plan.savedBy}</td><td className="max-w-64 whitespace-pre-wrap break-words">{plan.note || "—"}</td>
                     <td><div className="flex gap-1">
+                      {plan.hasSnapshot && <button type="button" disabled={openingPlan !== null} onClick={() => void openSavedPlan(plan)} className={`${button} btn-primary`}>
+                        {openingPlan === plan.planId ? <span className="loading loading-spinner loading-xs" /> : <Eye size={14} />} ดูแผน
+                      </button>}
                       <button type="button" onClick={() => setSelected(plan)} className={`${button} btn-ghost`} aria-label={`View Plan v${plan.version}`}><Eye size={14} /> View</button>
                       {!plan.isActive && <button type="button" onClick={() => setConfirm(plan)} className={`${button} btn-ghost text-error`} aria-label={`Delete Plan v${plan.version}`}><Trash2 size={14} /> Delete</button>}
                     </div></td>

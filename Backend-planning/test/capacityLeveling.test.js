@@ -160,13 +160,13 @@ function fakePool(rules) {
   return { log, query, connect: async () => ({ query, release() {} }) };
 }
 
-async function withApi(pool, callback, { admin = true } = {}) {
+async function withApi(pool, callback, { admin = true, loadCalendar } = {}) {
   const app = express();
   app.use(express.json());
   app.use(createCapacityLevelingRouter({
     pool,
     verifyAdmin: (req, res, next) => (admin ? (req.user = { username: "planner" }, next()) : res.status(401).json({ status: "ERROR" })),
-    loadCalendar: async () => ({ calendar: { isWorking: (date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 } }),
+    loadCalendar: loadCalendar ?? (async () => ({ calendar: { isWorking: (date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 } })),
   }));
   const server = app.listen(0, "127.0.0.1");
   try {
@@ -808,4 +808,78 @@ test("history schema errors explain setup and failed deletions roll back", async
     }
   });
   assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+});
+
+
+test("saved view survives changed source, capacity and calendar without reading live inputs", async () => {
+  let header;
+  let stored;
+  let sourceRows = [work()];
+  let settings = [row({ resource_count: 2 }), row({ setting_id: "night", shift_code: "night", is_working_day: false })];
+  const group = { gate: "FADL", date: "2026-11-16", cardIds: [orderId(sourceRows[0])] };
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan p/, () => [{ ...header, view_snapshot: stored.viewSnapshot }]],
+    [/FROM planning\.work_plan\b/, () => header ? [header] : []],
+    [/planning_summary_gate/, () => sourceRows],
+    [/FROM planning\.capacity_setting/, () => settings],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      stored = JSON.parse(params[9]);
+      header = { ...historyRow(params[2]), plan_id: params[0], has_snapshot: true };
+      return [];
+    }],
+  ]);
+  await withApi(pool, async api => {
+    const saved = await api("/plan", { method: "POST", body: {
+      baseVersion: 0, moves: [], boardCardOrder: [group], viewSnapshot: { version: 1, data: { forged: true } },
+    } });
+    assert.equal(saved.status, 200);
+    assert.equal(stored.viewSnapshot.version, 1);
+    assert.ok(stored.viewSnapshot.capturedAt);
+    const view = stored.viewSnapshot.data;
+    assert.equal(view.days.length, 28);
+    assert.equal(view.today, "2026-11-12");
+    assert.equal(view.days[27].date, "2026-12-09");
+    assert.equal(view.capacity.FADL["2026-11-16"].capacityMin, 950);
+    assert.equal(view.arrivalRows[0].lot_no, "L001");
+    assert.deepEqual(view.boardCardOrder, [group]);
+    assert.equal(view.forged, undefined);
+    const historyResponse = await api("/plans");
+    const history = (await historyResponse.json()).data;
+    assert.equal(history.plans[0].hasSnapshot, true);
+  });
+  sourceRows = [work({ lot_no: "NEW-LOT", qty: 9999 })];
+  settings = [row({ resource_count: 9 })];
+  const readStart = pool.log.length;
+  await withApi(pool, async api => {
+    const response = await api(`/plans/${header.plan_id}`);
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.snapshot.arrivalRows[0].lot_no, "L001");
+    assert.equal(data.snapshot.arrivalRows[0].qty, 1000);
+    assert.equal(data.snapshot.capacity.FADL["2026-11-16"].capacityMin, 950);
+    assert.equal(data.snapshot.plan.planId, header.plan_id);
+    assert.equal(data.snapshot.plan.version, 1);
+    assert.deepEqual(data.snapshot.boardCardOrder, [group]);
+  }, { loadCalendar: async () => { throw new Error("Live calendar must not be read"); } });
+  assert.ok(!pool.log.slice(readStart).some(entry => /planning_summary_gate|capacity_setting/.test(entry.sql)));
+});
+
+test("a version predating snapshots returns details with no invented historical board", async () => {
+  const pool = fakePool([[/FROM planning\.work_plan p/, [historyRow(1)]]]);
+  await withApi(pool, async api => {
+    const response = await api(`/plans/${historyId(1)}`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.snapshot, null);
+  });
+});
+
+test("snapshot capture failure rolls back the save before any version or item is inserted", async () => {
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, [work()]]]);
+  await withApi(pool, async api => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } });
+    assert.equal(response.status, 503);
+  }, { loadCalendar: async () => { throw new Error("Calendar unavailable"); } });
+  assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+  assert.ok(!pool.log.some(entry => /^INSERT/.test(entry.sql)));
 });

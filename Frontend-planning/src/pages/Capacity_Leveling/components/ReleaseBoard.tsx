@@ -19,6 +19,7 @@ import { LotCard } from "./LotCard";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 interface ReleaseBoardProps {
+  readOnly?: boolean;
   data: LevelingData;
   gates: GateInfo[];
   /** The board shows the cards of one gate; a move changes that gate only */
@@ -103,6 +104,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   activeMovingLots,
   activePreviewTargetDate,
   focusedDate = null,
+  readOnly = false,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -198,6 +200,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     e: React.DragEvent<HTMLDivElement>,
     lot: LotItem
   ) => {
+    if (readOnly) { e.preventDefault(); return; }
     e.dataTransfer.setData("text/plain", lot.id);
     e.dataTransfer.effectAllowed = "move";
     onDragStart(lot);
@@ -342,7 +345,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </div>
           )}
 
-          <button type="button" aria-pressed={isEditMode}
+          <button type="button" disabled={readOnly} aria-pressed={isEditMode}
             onClick={() => {
               if (isEditMode) {
                 onSelectionChange([]);
@@ -584,6 +587,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         onDrop={(e) => handleCardDrop(e, lot)}>
                       {renderReorderIndicator(lot)}
                       <LotCard
+                        readOnly={readOnly}
                         lot={lot}
                         shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
                         showSelection={isEditMode}
@@ -739,6 +743,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         onDrop={(e) => handleCardDrop(e, lot)}>
                       {renderReorderIndicator(lot)}
                       <LotCard
+                        readOnly={readOnly}
                         lot={lot}
                         shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
                         showSelection={isEditMode}
@@ -942,7 +947,9 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     <td onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
+                        disabled={readOnly}
                         onClick={(e) => {
+                          if (readOnly) return;
                           if (isPickerOpen) {
                             setListDatePicker(null);
                           } else {

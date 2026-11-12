@@ -44,17 +44,26 @@ import { useAuth } from "@/context/AuthContext";
 /** Days shown from today, inclusive. */
 const RANGE_DAYS = 28;
 
-const Capacity_Leveling: React.FC = () => {
+interface CapacityLevelingProps {
+  snapshot?: LevelingData;
+  onExitPreview?: () => void;
+  onViewSnapshot?: (snapshot: LevelingData) => void;
+  activeVersion?: number;
+}
+
+const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPreview, onViewSnapshot, activeVersion }) => {
+  const readOnly = Boolean(snapshot);
+  const [preview, setPreview] = useState<LevelingData | null>(null);
   const { user, requireAdmin } = useAuth();
   const [category, setCategory] = useState<ProcessCategory>("EFPC_GEN");
   const [planMode, setPlanMode] = useState<PlanMode>("planned");
   const [viewMode, setViewMode] = useState<ViewMode>("board");
   const [granularity, setGranularity] = useState<Granularity>("days");
 
-  const [data, setData] = useState<LevelingData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<LevelingData | null>(snapshot ?? null);
+  const [loading, setLoading] = useState(!snapshot);
   const [failure, setFailure] = useState<ApiFailure | null>(null);
-  const [lots, setLots] = useState<LotItem[]>([]);
+  const [lots, setLots] = useState<LotItem[]>(() => snapshot?.cards.map(toLotItem) ?? []);
   const [boardCardOrder, setBoardCardOrder] = useState<BoardCardOrder>(new Map());
   const [saving, setSaving] = useState(false);
   // Unsaved moves survive a reload (for example after capacity settings change).
@@ -83,6 +92,7 @@ const Capacity_Leveling: React.FC = () => {
   } | null>(null);
 
   const load = useCallback(async () => {
+    if (snapshot) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
@@ -105,7 +115,7 @@ const Capacity_Leveling: React.FC = () => {
     } finally {
       if (requestRef.current === controller) setLoading(false);
     }
-  }, []);
+  }, [snapshot]);
 
   useEffect(() => {
     void load();
@@ -214,6 +224,7 @@ const Capacity_Leveling: React.FC = () => {
   // Stage the whole group without changing dates until the confirmation succeeds.
   const handleStageMoveLots = useCallback(
     (lotsToStage: LotItem[], targetDate: string) => {
+      if (readOnly) return;
       setDraggedLot(null);
       setHoverTargetDate(null);
       const ids = new Set(lotsToStage.flatMap((lot) => lot.sourceIds || [lot.id]));
@@ -228,7 +239,7 @@ const Capacity_Leveling: React.FC = () => {
       setSelectedLotId(null);
       setPendingMove({ lots: changedLots, targetDate });
     },
-    [lots, isValidMoveTarget, data, plannedIndex]
+    [lots, isValidMoveTarget, data, plannedIndex, readOnly]
   );
 
   const handleStageMoveLot = useCallback((lot: LotItem, targetDate: string) => {
@@ -285,6 +296,7 @@ const Capacity_Leveling: React.FC = () => {
 
   const handleMoveLots = useCallback(
     (lotsToMove: LotItem[], targetDate: string) => {
+      if (readOnly) return;
       const ids = new Set(lotsToMove.flatMap((lot) => lot.sourceIds || [lot.id]));
       const stagedDates = new Map(lotsToMove.flatMap((lot) => (lot.sourceIds || [lot.id]).map((id) => [id, lot.plannedDate] as const)));
       const currentLots = expandBoardLots(lots, lotsToMove);
@@ -322,12 +334,12 @@ const Capacity_Leveling: React.FC = () => {
         { id: "move-lots", duration: 2500 }
       );
     },
-    [lots, isValidMoveTarget, user, data, plannedIndex]
+    [lots, isValidMoveTarget, user, data, plannedIndex, readOnly]
   );
 
   const handleConfirmSave = useCallback(
     async (reason: string) => {
-      if (!data || saving) return;
+      if (!data || saving || readOnly) return;
       await requireAdmin(async () => {
         setSaving(true);
         try {
@@ -356,17 +368,47 @@ const Capacity_Leveling: React.FC = () => {
         }
       });
     },
-    [data, saving, requireAdmin, lots, today, load, effectiveBoardCardOrder]
+    [data, saving, requireAdmin, lots, today, load, effectiveBoardCardOrder, readOnly]
   );
 
   const dateRangeText = grid.length
     ? `${dayjs(grid[0].date).format("DD/MM")} - ${dayjs(grid[grid.length - 1].date).format("DD/MM/YYYY")}`
     : "-";
 
+  // Keep the live editor mounted, including its unsaved dates, order and history.
+  // A separate editor instance displays only the immutable server snapshot.
+  if (preview) return <Capacity_Leveling key={preview.plan?.planId} snapshot={preview}
+    activeVersion={data?.plan?.version ?? 0} onExitPreview={() => setPreview(null)} onViewSnapshot={setPreview} />;
+
   return (
     <div className="planning-summary-gate flex flex-col gap-3 w-full">
+      {readOnly && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+        <span>กำลังดู Plan v{data?.plan?.version} · อ่านอย่างเดียว · แผนปัจจุบัน v{activeVersion}</span>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span>ช่วงวันที่บันทึกไว้</span>
+          <input aria-label="History start date" type="date" className="input input-sm w-auto" value={data?.days[0]?.date ?? ""}
+            min={snapshot?.days[0]?.date} max={data?.days.at(-1)?.date}
+            onChange={(event) => {
+              const start = event.target.value;
+              const end = data?.days.at(-1)?.date;
+              if (snapshot && end && start >= snapshot.days[0].date && start <= end)
+                setData({ ...snapshot, days: snapshot.days.filter((day) => day.date >= start && day.date <= end) });
+            }} />
+          <span>ถึง</span>
+          <input aria-label="History end date" type="date" className="input input-sm w-auto" value={data?.days.at(-1)?.date ?? ""}
+            min={data?.days[0]?.date} max={snapshot?.days.at(-1)?.date}
+            onChange={(event) => {
+              const end = event.target.value;
+              const start = data?.days[0]?.date;
+              if (snapshot && start && end >= start && end <= snapshot.days.at(-1)!.date)
+                setData({ ...snapshot, days: snapshot.days.filter((day) => day.date >= start && day.date <= end) });
+            }} />
+        </div>
+        <button type="button" onClick={onExitPreview} className="btn btn-sm rounded-lg">กลับแผนปัจจุบัน</button>
+      </div>}
       {/* 1. Header Bar matching GateFilterBar */}
       <LevelingHeader
+        readOnly={readOnly}
         category={category}
         onCategoryChange={(next) => {
           setCategory(next);
@@ -389,7 +431,7 @@ const Capacity_Leveling: React.FC = () => {
           setSelectedLotId(null);
           setSaveModalOpen(true);
         }}
-        canSave={Boolean(data) && !loading && kpis.missingPlanningCards === 0}
+        canSave={!readOnly && Boolean(data) && !loading && kpis.missingPlanningCards === 0}
         planVersion={data?.plan?.version ?? 0}
         planSavedAt={data?.plan?.savedAt ?? null}
         isDraftModified={isDraftModified}
@@ -452,6 +494,7 @@ const Capacity_Leveling: React.FC = () => {
           {planMode === "planned" && (
             <div className="w-full min-w-0">
               <ReleaseBoard
+                readOnly={readOnly}
                 gates={gates}
                 boardGate={boardGate}
                 onBoardGateChange={(gate) => {
@@ -477,7 +520,7 @@ const Capacity_Leveling: React.FC = () => {
                 onSelectionChange={(ids) => setSelectedLotIds(new Set(ids))}
                 onMoveLots={handleStageMoveLots}
                 onReorderLots={(movingIds, targetId, position) => {
-                  if (saving || loading) return;
+                  if (saving || loading || readOnly) return;
                   const board = buildBoardLots(data, lots);
                   const next = reorderBoardCards(board, effectiveBoardCardOrder, movingIds, targetId, position);
                   if (next === effectiveBoardCardOrder) return;
@@ -504,6 +547,7 @@ const Capacity_Leveling: React.FC = () => {
 
           {/* 4. Right Navigation Drawer (details of one card) */}
           <LotDetailSidePanel
+            readOnly={readOnly}
             data={data}
             allLots={lots}
             category={category}
@@ -548,7 +592,16 @@ const Capacity_Leveling: React.FC = () => {
       )}
 
       {/* Capacity settings (usable even when work data could not be loaded) */}
-      {historyModalOpen && <PlanHistoryModal onClose={() => setHistoryModalOpen(false)} />}
+      {historyModalOpen && <PlanHistoryModal onClose={() => setHistoryModalOpen(false)} onPreview={(next) => {
+        if (saving || loading) return;
+        setHistoryModalOpen(false);
+        setSelectedLotId(null);
+        setSelectedLotIds(new Set());
+        setPendingMove(null);
+        setDraggedLot(null);
+        setHoverTargetDate(null);
+        (onViewSnapshot ?? setPreview)(next);
+      }} />}
       <CapacityModal
         isOpen={capacityModalOpen}
         onClose={() => setCapacityModalOpen(false)}

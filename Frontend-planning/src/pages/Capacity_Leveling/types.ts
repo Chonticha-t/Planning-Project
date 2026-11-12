@@ -120,6 +120,7 @@ export interface BoardCardOrderGroup {
 }
 
 export interface PlanHistoryInfo extends PlanInfo {
+  hasSnapshot: boolean;
   isActive: boolean;
 }
 
@@ -129,6 +130,7 @@ export interface PlanHistoryPage {
 }
 
 export interface PlanHistoryDetail {
+  snapshot: LevelingData | null;
   plan: PlanHistoryInfo;
   moves: OrphanMove[];
   boardCardOrder: BoardCardOrderGroup[];

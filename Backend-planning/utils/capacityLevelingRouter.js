@@ -1,10 +1,11 @@
 const express = require("express");
 const { randomUUID } = require("node:crypto");
+const { buildLevelingView } = require("./capacityLevelingView");
 const { buildSavedMoveHistory } = require("./capacityLevelingHistory");
 const {
   LEVELING_GATES, SHIFTS, NORMAL_VALID_FROM, NORMAL_VALID_TO, ValidationError,
-  isDate, dateRange, capacityGrid, dayCapacity, shiftMinutesPerMachine, buildCapacityConfig, parseSettingsPayload, sameShift,
-  arrivalWorkKey, buildArrivalCards, arrivalEndDate, occupancyCalendarRange, parsePlanPayload, resolveBoardCardOrder,
+  isDate, dayCapacity, buildCapacityConfig, parseSettingsPayload, sameShift,
+  arrivalWorkKey, buildArrivalCards, arrivalEndDate, parsePlanPayload, resolveBoardCardOrder,
 } = require("./capacityLeveling");
 
 // Arrival dates must never reuse plans saved as release dates.
@@ -93,10 +94,11 @@ const planInfo = (row) => (row ? {
 // The highest version stays active: only older versions may be soft-deleted.
 // Include deleted versions when determining the head so version numbers are never reused.
 const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
+  (p.baseline_snapshot->'viewSnapshot'->>'version' = '1') AS has_snapshot,
   to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS saved_at,
   (SELECT head.plan_id FROM planning.work_plan head
    WHERE head.calculation_method = $1 ORDER BY head.version_no DESC LIMIT 1) AS current_plan_id`;
-const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id });
+const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id, hasSnapshot: Boolean(row.has_snapshot) });
 const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
@@ -169,7 +171,8 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
     try {
       if (!isPlanId(req.params.planId)) throw new ValidationError("The plan ID is invalid.");
       const { rows } = await pool.query(`SELECT ${HISTORY_COLUMNS},
-          p.baseline_snapshot->'boardCardOrder' AS board_card_order
+          p.baseline_snapshot->'boardCardOrder' AS board_card_order,
+          p.baseline_snapshot->'viewSnapshot' AS view_snapshot
         FROM planning.work_plan p
         WHERE p.calculation_method = $1 AND p.plan_id = $2 AND p.deleted_at IS NULL`,
       [PLAN_METHOD, req.params.planId]);
@@ -182,6 +185,8 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
           prdName: move.prd_name, lotNo: move.lot_no, dueDate: move.due_date,
           originalDate: move.original_date, plannedDate: move.planned_date })),
         boardCardOrder: rows[0].board_card_order ?? [],
+        snapshot: rows[0].view_snapshot?.version === 1 && rows[0].view_snapshot?.data
+          ? { ...rows[0].view_snapshot.data, plan: planInfo(rows[0]) } : null,
       } });
     } catch (error) {
       return historyFail(res, error);
@@ -286,30 +291,10 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
       const latest = plan.rows[0];
       const moves = latest ? (await pool.query(MOVES_SQL, [latest.plan_id])).rows : [];
       const legacy = latest ? false : (await Promise.all(LEGACY_PLAN_METHODS.map((method) => pool.query(LATEST_PLAN_SQL, [method])))).some((result) => result.rows.length > 0);
-      const { cards, orphanMoves, undated, duplicates } = buildArrivalCards(works.rows, moves, today, config);
-      const range = occupancyCalendarRange(cards, start, end);
-      const maxLead = cards.reduce((max, card) => Math.max(max, card.leadDays || 1), 1);
-      range.end = new Date(Date.parse(`${range.end}T00:00:00Z`) + (maxLead * 7 + 14) * 86400000).toISOString().slice(0, 10);
-      const { calendar } = await loadCalendar(range.start, range.end);
-      const days = dateRange(start, end).map((date) => ({ date, isWorking: calendar.isWorking(date) }));
-      const calendarDays = dateRange(range.start, range.end).map((date) => ({ date, isWorking: calendar.isWorking(date) }));
-      return res.json({ status: "OK", data: {
-        today, days, calendarDays,
-        gates: config.map(({ gate, group, shifts }) => ({ gate, group,
-          standardShiftMin: Object.fromEntries(SHIFTS.map((code) => [code, shiftMinutesPerMachine(shifts[code], false)])),
-        })),
-        capacity: capacityGrid(config, days),
-        cards: cards.map((card) => ({ ...card,
-          moveHistory: Array.isArray(latest?.move_history?.[card.id]) ? latest.move_history[card.id] : [],
-        })), orphanMoves, undatedCount: undated,
-        // The board and grid use the same source arrival identity and never clamp overdue arrivals.
-        arrivalRows: works.rows.map((row, index) => ({ ...row, workKey: arrivalWorkKey(row, index) })),
-        undatedArrivalCount: works.rows.filter((row) => !isDate(row.arrive_by)).length,
-        loadBasis: "summary_gate_arrivals_v1",
-        duplicateWorkCount: duplicates, calculationMethod: PLAN_METHOD,
-        legacyPlanAvailable: Boolean(legacy), plan: planInfo(latest),
-        boardCardOrder: resolveBoardCardOrder(latest?.board_card_order, cards, today),
-      } });
+      const data = await buildLevelingView({ sourceRows: works.rows, moves, config, today, start, end,
+        loadCalendar, history: latest?.move_history, order: latest?.board_card_order,
+        plan: planInfo(latest), legacy, calculationMethod: PLAN_METHOD });
+      return res.json({ status: "OK", data });
     } catch (error) {
       return fail(res, error, "Unable to load gate capacity data. Please try again.");
     }
@@ -378,13 +363,19 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
           latest?.move_history, { planId, planVersion: baseVersion + 1, changedBy: actorOf(req),
             changedAt: new Date().toISOString(), note });
         const dates = [today, ...moves.map((move) => move.plannedDate), ...order.map((group) => group.date)].sort();
+        const end = new Date(Date.parse(`${today}T00:00:00Z`) + 27 * 86400000).toISOString().slice(0, 10);
+        const view = await buildLevelingView({ sourceRows, config, today, start: today, end, loadCalendar,
+          moves: moves.map((move) => ({ work_key: move.workKey, gate_name: move.gate,
+            original_date: source.get(`${move.workKey}|${move.gate}`).baseDate, planned_date: move.plannedDate })),
+          history, order, calculationMethod: PLAN_METHOD });
         await client.query(`INSERT INTO planning.work_plan (
             plan_id, plan_group_id, version_no, previous_plan_id, plan_name, product_group, status,
             horizon_start, horizon_end, source_as_of, calculation_method, note, created_by, baseline_snapshot
           ) VALUES ($1, $2, $3, $4, 'Capacity Leveling', 'ALL', 'draft', $5, $6, CURRENT_TIMESTAMP, $7, $8, $9, $10::jsonb)`,
         [planId, latest?.plan_group_id ?? planId, baseVersion + 1, latest?.plan_id ?? null,
           dates[0], dates[dates.length - 1], PLAN_METHOD, note || null, actorOf(req),
-          JSON.stringify({ boardCardOrderVersion: 1, boardCardOrder: order, moveHistory: history })]);
+          JSON.stringify({ boardCardOrderVersion: 1, boardCardOrder: order, moveHistory: history,
+            viewSnapshot: { version: 1, capturedAt: new Date().toISOString(), data: view } })]);
         for (const move of moves) {
           const row = source.get(`${move.workKey}|${move.gate}`);
           await client.query(`INSERT INTO planning.work_plan_gate_item (
