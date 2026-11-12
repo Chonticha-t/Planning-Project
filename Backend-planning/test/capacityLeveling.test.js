@@ -894,6 +894,43 @@ test("a version predating snapshots returns details with no invented historical 
   });
 });
 
+test("saving a Required reset with zero moves and empty order clears prior overrides in a new version", async () => {
+  const source = work();
+  let latest = { plan_id: "old-plan", version_no: 5, plan_group_id: "group",
+    board_card_order: [{ gate: source.gate_name, date: "2026-11-18", cardIds: [orderId(source, "2026-11-18")] }] };
+  const previousMove = { work_key: arrivalWorkKey(source), gate_name: source.gate_name,
+    original_date: source.arrive_by, planned_date: "2026-11-18" };
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/planning_summary_gate/, [source]],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD ? [latest] : []],
+    [/FROM planning\.work_plan_gate_item/, params => params[0] === "old-plan" ? [previousMove] : []],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      const snapshot = JSON.parse(params[9]);
+      assert.deepEqual(snapshot.boardCardOrder, []);
+      latest = { plan_id: params[0], plan_group_id: params[1], version_no: params[2],
+        board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, note: params[7] };
+      return [];
+    }],
+  ]);
+  await withApi(pool, async api => {
+    const url = "/load?startdate=2026-11-12&stopdate=2026-11-20";
+    assert.equal((await (await api(url)).json()).data.cards[0].plannedDate, "2026-11-18");
+    const saved = await api("/plan", { method: "POST", body: {
+      baseVersion: 5, moves: [], boardCardOrder: [], note: "Reset to Required",
+    } });
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).data.plan.version, 6);
+    const reloaded = (await (await api(url)).json()).data;
+    assert.equal(reloaded.cards[0].plannedDate, source.arrive_by);
+    assert.deepEqual(reloaded.boardCardOrder, []);
+    assert.equal(reloaded.plan.note, "Reset to Required");
+    assert.equal(reloaded.cards[0].moveHistory[0].toDate, source.arrive_by);
+  });
+  assert.ok(!pool.log.some(entry => /DELETE|UPDATE planning\.work_plan/.test(entry.sql)));
+  assert.ok(!pool.log.some(entry => /INSERT INTO planning\.work_plan_gate_item/.test(entry.sql)));
+});
+
 test("snapshot capture failure rolls back the save before any version or item is inserted", async () => {
   const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, [work()]]]);
   await withApi(pool, async api => {

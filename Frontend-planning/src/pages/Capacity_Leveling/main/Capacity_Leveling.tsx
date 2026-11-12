@@ -25,6 +25,7 @@ import {
   occupancyWindow,
   plannedDateIndex,
   toLotItem,
+  requiredLots,
 } from "../utils/levelingCalculations";
 import { allocateBoardShifts } from "../utils/boardShiftAllocation";
 import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, serializeBoardCardOrder, type BoardCardOrder } from "../utils/boardCardOrder";
@@ -39,6 +40,7 @@ import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
 import { ConfirmReorderModal } from "../components/ConfirmReorderModal";
 import { CapacityModal } from "../components/CapacityModal";
 import { SavePlanModal } from "../components/SavePlanModal";
+import { ResetRequiredModal } from "../components/ResetRequiredModal";
 import { PlanHistoryModal } from "../components/PlanHistoryModal";
 import { useAuth } from "@/context/AuthContext";
 import { useEditingPresence } from "../hooks/useEditingPresence";
@@ -70,6 +72,9 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const [lots, setLots] = useState<LotItem[]>(() => snapshot?.cards.map(toLotItem) ?? []);
   const [boardCardOrder, setBoardCardOrder] = useState<BoardCardOrder>(new Map());
   const [saving, setSaving] = useState(false);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [requiredReset, setRequiredReset] = useState(false);
+  const requiredResetRef = useRef(false);
   // Unsaved moves survive a reload (for example after capacity settings change).
   const draftRef = useRef(new Map<string, string>());
   const draftHistoryRef = useRef(new Map<string, MoveHistoryEntry[]>());
@@ -104,7 +109,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   } | null>(null);
   const handleCancelReorder = useCallback(() => setPendingReorder(null), []);
 
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async (refresh = false, mode: "keep" | "reset" | "saved" = "keep") => {
     if (snapshot) return;
     requestRef.current?.abort();
     const controller = new AbortController();
@@ -115,17 +120,40 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       const start = dayjs().format("YYYY-MM-DD");
       const stop = dayjs().add(RANGE_DAYS - 1, "day").format("YYYY-MM-DD");
       const next = await fetchLevelingData(start, stop, controller.signal, refresh);
-      const draft = draftRef.current;
+      if (controller.signal.aborted || requestRef.current !== controller) return false;
+      const draft = mode === "keep" ? draftRef.current : new Map<string, string>();
+      const reset = mode === "reset" || (mode === "keep" && requiredResetRef.current);
+      const sourceLots = reset ? requiredLots(next.cards) : next.cards.map(toLotItem);
       setData(next);
-      setLots(next.cards.map(toLotItem).map((lot) => {
+      setLots(sourceLots.map((lot) => {
         const draftDate = draft.get(lot.id);
         const restored = draftDate && draftDate >= next.today ? { ...lot, plannedDate: draftDate } : lot;
-        return { ...restored, moveHistory: mergeMoveHistory(draftHistoryRef.current.get(lot.id), lot.moveHistory) };
+        return { ...restored, moveHistory: mergeMoveHistory(mode === "keep" ? draftHistoryRef.current.get(lot.id) : undefined, lot.moveHistory) };
       }));
+      if (mode !== "keep") {
+        requiredResetRef.current = reset;
+        setRequiredReset(reset);
+        draftRef.current = new Map();
+        draftHistoryRef.current = new Map();
+        setBoardCardOrder(new Map());
+      }
+      if (mode === "reset") {
+        setSelectedLotId(null);
+        setSelectedLotIds(new Set());
+        setPendingMove(null);
+        setDraggedLot(null);
+        setHoverTargetDate(null);
+        setSelectedGridGate(null);
+        setSelectedGridDate(null);
+        setFocusedBoardDate(null);
+        setPlanMode("planned");
+      }
       setFailure(null);
+      return true;
     } catch (error) {
       if (controller.signal.aborted) return;
       setFailure(toApiFailure(error));
+      return false;
     } finally {
       if (requestRef.current === controller) setLoading(false);
     }
@@ -138,13 +166,13 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
 
   useEffect(() => {
     draftRef.current = new Map(
-      lots.filter((lot) => lot.plannedDate !== lot.savedDate).map((lot) => [lot.id, lot.plannedDate])
+      lots.filter((lot) => lot.plannedDate !== (requiredReset ? lot.baseDate : lot.savedDate)).map((lot) => [lot.id, lot.plannedDate])
     );
     draftHistoryRef.current = new Map(lots.flatMap((lot) => {
       const entries = lot.moveHistory?.filter((entry) => !entry.planVersion) ?? [];
       return entries.length ? [[lot.id, entries] as const] : [];
     }));
-  }, [lots]);
+  }, [lots, requiredReset]);
 
   const today = data?.today ?? dayjs().format("YYYY-MM-DD");
   const gates = useMemo(() => data?.gates ?? [], [data]);
@@ -172,7 +200,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const rangeDates = useMemo(() => new Set(grid.map((day) => day.date)), [grid]);
   const savedBoardCardOrder = useMemo(() => readBoardCardOrder(data?.boardCardOrder), [data]);
   const effectiveBoardCardOrder = useMemo(
-    () => new Map([...savedBoardCardOrder, ...boardCardOrder]), [savedBoardCardOrder, boardCardOrder]
+    () => new Map([...(requiredReset ? [] : savedBoardCardOrder), ...boardCardOrder]), [savedBoardCardOrder, boardCardOrder, requiredReset]
   );
   const allBoardLots = useMemo(
     () => data ? applyBoardCardOrder(buildBoardLots(data, lots, category), effectiveBoardCardOrder) : [],
@@ -219,12 +247,13 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
 
   const kpis = useMemo(() => calculateKpis(grid, requiredGrid, lots, data ?? undefined), [grid, requiredGrid, lots, data]);
   const isDraftModified = useMemo(() => {
+    if (requiredReset) return true;
     if (lots.some((lot) => lot.plannedDate !== lot.savedDate)) return true;
     if (!data || boardCardOrder.size === 0) return false;
     const board = buildBoardLots(data, lots);
     const saved = applyBoardCardOrder(board, savedBoardCardOrder);
     return applyBoardCardOrder(board, effectiveBoardCardOrder).some((lot, index) => lot.id !== saved[index].id);
-  }, [lots, data, boardCardOrder, savedBoardCardOrder, effectiveBoardCardOrder]);
+  }, [lots, data, boardCardOrder, savedBoardCardOrder, effectiveBoardCardOrder, requiredReset]);
 
   const editingScopes = useMemo(() => {
     const scopes: EditingScope[] = [...capacityEditingScopes];
@@ -434,7 +463,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           draftHistoryRef.current = new Map();
           setSaveModalOpen(false);
           toast.success(`Plan v${plan.version} saved: ${movedCount} moved card(s), ${orderedGroupCount} ordered gate/day group(s).`, { duration: 3500 });
-          await load(true);
+          await load(true, "saved");
           setBoardCardOrder(new Map());
         } catch (error) {
           const failed = toApiFailure(error);
@@ -508,12 +537,21 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           setCapacityModalOpen(true);
         }}
         onReload={() => void load(true)}
-        isLoading={loading}
+        isLoading={loading || saving}
+        canReset={!readOnly && Boolean(data) && !loading && !saving}
+        onResetRequired={() => {
+          if (readOnly || loading || saving) return;
+          void requirePlanner(() => {
+            setSelectedLotId(null);
+            setFailure(null);
+            setResetModalOpen(true);
+          });
+        }}
         onSavePlan={() => {
           setSelectedLotId(null);
           setSaveModalOpen(true);
         }}
-        canSave={!readOnly && Boolean(data) && !loading && kpis.missingPlanningCards === 0}
+        canSave={!readOnly && Boolean(data) && !loading && !saving && kpis.missingPlanningCards === 0}
         planVersion={data?.plan?.version ?? 0}
         planSavedAt={data?.plan?.savedAt ?? null}
         isDraftModified={isDraftModified}
@@ -522,6 +560,20 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           setHistoryModalOpen(true);
         }}
       />
+
+      {requiredReset && !readOnly && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        Reset to Required · Draft not saved. All process groups and gates were reset to source arrivals and default card order.
+        Review any further changes, then save a new plan version.
+      </div>}
+      {resetModalOpen && !readOnly && <ResetRequiredModal busy={loading} error={failure?.message}
+        onCancel={() => setResetModalOpen(false)} onConfirm={() => {
+          void load(true, "reset").then(success => {
+            if (success) {
+              setResetModalOpen(false);
+              toast.success("Reset to Required. Review the draft and save a new plan version.");
+            }
+          });
+        }} />}
 
       {failure && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
@@ -663,6 +715,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             nextVersion={(data.plan?.version ?? 0) + 1}
             isSaving={saving}
             kpis={kpis}
+            resetToRequired={requiredReset}
           />
         </>
       )}
