@@ -1,15 +1,33 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
-import { History, RotateCcw, Save, SlidersHorizontal } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import "../../Planning_Summary_Gate/gateTheme.css";
 import { useAuth } from "@/context/AuthContext";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
-import type { CountUnit, InGateCategory, InGateLot, InGateView, OrderBy, OrderHistoryEntry, SavedOrder } from "../types";
-import { buildWorkList, tabsForCategory } from "../mock/inGateMockData";
+import type {
+  CountUnit,
+  FinishedTodaySummary,
+  GateGroup,
+  InGateCategory,
+  InGateLot,
+  InGateView,
+  OrderBy,
+  OrderHistoryEntry,
+  SavedOrder,
+  SavedPlanInfo,
+  WorkMode,
+} from "../types";
+import {
+  buildFinishedToday,
+  buildWorkList,
+  PCS_PER_SHEET,
+  routeGatesForGroup,
+  tabsForCategory,
+} from "../mock/inGateMockData";
 import {
   appendOrderHistory,
   loadOrderHistory,
@@ -18,7 +36,14 @@ import {
   orderKey,
   saveOrder,
 } from "../planStore";
-import { applySavedOrder, diffOrder, movedLotIds, moveItem, splitByCapacity, sumMinutes } from "../utils";
+import {
+  applySavedOrder,
+  autoArrangeLots,
+  diffOrder,
+  movedLotIds,
+  moveItem,
+  splitByCapacity,
+} from "../utils";
 import { InGateHeader } from "../components/InGateHeader";
 import { WorkListTable } from "../components/WorkListTable";
 import { MoveSummary } from "../components/MoveSummary";
@@ -33,6 +58,21 @@ const fmt = (n: number) => n.toLocaleString();
 
 const CATEGORIES: InGateCategory[] = ["ALL", "EFPC_GEN", "EFPC_AUTO", "SMT"];
 
+const DEFAULT_MOCK_PLAN: SavedPlanInfo = {
+  version: 1,
+  savedAt: "2026-11-12T08:00:00.000Z",
+  savedBy: "Planner",
+  sourceCategory: "EFPC_AUTO",
+};
+
+const loadPlansWithFallback = (): Record<GateGroup, SavedPlanInfo> => {
+  const stored = loadSavedPlans();
+  return {
+    FPC: stored.FPC ?? DEFAULT_MOCK_PLAN,
+    SMT: stored.SMT ?? DEFAULT_MOCK_PLAN,
+  };
+};
+
 const Planning_In_Gate: React.FC = () => {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -40,11 +80,12 @@ const Planning_In_Gate: React.FC = () => {
   const todayStr = dayjs().format("YYYY-MM-DD");
 
   const [searchParams, setSearchParams] = useSearchParams();
-  // ?cat=ALL|EFPC_GEN|EFPC_AUTO|SMT (old ?group=SMT links still work)
-  const catParam = searchParams.get("cat") ?? (searchParams.get("group") === "SMT" ? "SMT" : "");
+  // ?cat=ALL|EFPC_GEN|EFPC_AUTO|SMT (defaults to EFPC_AUTO matching the mockup)
+  const catParam =
+    searchParams.get("cat") ?? (searchParams.get("group") === "SMT" ? "SMT" : "");
   const category: InGateCategory = CATEGORIES.includes(catParam as InGateCategory)
     ? (catParam as InGateCategory)
-    : "EFPC_GEN";
+    : "EFPC_AUTO";
 
   // ?view=month → Summary · Month (mock data)
   const view: InGateView = searchParams.get("view") === "month" ? "month" : "day";
@@ -59,11 +100,17 @@ const Planning_In_Gate: React.FC = () => {
   const [unit, setUnit] = useState<CountUnit>("lots");
 
   const [date, setDate] = useState(todayStr);
-  const [gateId, setGateId] = useState(() => tabsForCategory(category)[0].gate.id);
+  const [gateId, setGateId] = useState(() => {
+    const catTabs = tabsForCategory(category);
+    const fvac = catTabs.find((t) => t.gate.id === "FVAC");
+    return (fvac ?? catTabs[0]).gate.id;
+  });
   const [orderBy, setOrderBy] = useState<OrderBy>("plan");
   const [search, setSearch] = useState("");
+  const [workMode, setWorkMode] = useState<WorkMode>("edit");
+  const [tvMode, setTvMode] = useState(false);
 
-  const [plans, setPlans] = useState(loadSavedPlans);
+  const [plans, setPlans] = useState<Record<GateGroup, SavedPlanInfo>>(loadPlansWithFallback);
   const [savedOrders, setSavedOrders] = useState<Record<string, SavedOrder>>(loadSavedOrders);
   const [drafts, setDrafts] = useState<Record<string, string[]>>({});
   const [draftChanges, setDraftChanges] = useState<Record<string, string[]>>({});
@@ -75,7 +122,7 @@ const Planning_In_Gate: React.FC = () => {
   // Pick up a plan saved from Capacity Leveling in another tab
   useEffect(() => {
     const onStorage = () => {
-      setPlans(loadSavedPlans());
+      setPlans(loadPlansWithFallback());
       setSavedOrders(loadSavedOrders());
       setHistory(loadOrderHistory());
     };
@@ -83,31 +130,25 @@ const Planning_In_Gate: React.FC = () => {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Only gates whose FPC / SMT plan has been saved from Capacity Leveling
-  const tabs = useMemo(
-    () => tabsForCategory(category).filter((t) => plans[t.group]),
-    [category, plans]
-  );
+  const tabs = useMemo(() => tabsForCategory(category), [category]);
 
   // Keep the selected gate valid when switching process group
   useEffect(() => {
-    if (tabs.length && !tabs.some((t) => t.gate.id === gateId)) setGateId(tabs[0].gate.id);
+    if (tabs.length && !tabs.some((t) => t.gate.id === gateId)) {
+      setGateId(tabs[0].gate.id);
+    }
   }, [tabs, gateId]);
 
   const tab = tabs.find((t) => t.gate.id === gateId) ?? tabs[0];
-  const plan = tab ? plans[tab.group] : undefined;
+  const plan = tab ? plans[tab.group] : DEFAULT_MOCK_PLAN;
   const gate = tab?.gate ?? tabsForCategory(category)[0].gate;
   const key = orderKey(tab?.scope ?? category, gate.id, date);
-  const missingGroups = Array.from(new Set(tabsForCategory(category).map((t) => t.group))).filter(
-    (g) => !plans[g]
-  );
 
-  // Mock work list for every tab (tabs need the counts)
+  // Mock work list + finished summary for every tab
   const listsByGate = useMemo(() => {
     const out: Record<string, InGateLot[]> = {};
     tabs.forEach((t) => {
       const p = plans[t.group];
-      if (!p) return;
       const k = orderKey(t.scope, t.gate.id, date);
       out[t.gate.id] = applySavedOrder(
         buildWorkList(t.group, t.gate, date, p.version, t.scope),
@@ -117,22 +158,56 @@ const Planning_In_Gate: React.FC = () => {
     return out;
   }, [tabs, plans, date, drafts, savedOrders]);
 
+  const finishedByGate = useMemo(() => {
+    const out: Record<string, FinishedTodaySummary> = {};
+    tabs.forEach((t) => {
+      const qLen = (listsByGate[t.gate.id] ?? []).length;
+      out[t.gate.id] = buildFinishedToday(t.group, t.gate, date, qLen);
+    });
+    return out;
+  }, [tabs, listsByGate, date]);
+
   const planOrder = useMemo(() => listsByGate[gate.id] ?? [], [listsByGate, gate.id]);
-  const needMin = sumMinutes(planOrder);
-  const carriedCount = planOrder.filter((l) => l.status === "carried").length;
+  const finishedToday = useMemo(
+    () => finishedByGate[gate.id] ?? buildFinishedToday(tab.group, gate, date, planOrder.length),
+    [finishedByGate, gate, tab.group, date, planOrder.length]
+  );
+  const routeGates = useMemo(() => routeGatesForGroup(tab.group), [tab.group]);
+
+  const { over } = useMemo(
+    () => splitByCapacity(planOrder, gate.capacityMin),
+    [planOrder, gate.capacityMin]
+  );
+
+  const holdCount = useMemo(
+    () => planOrder.filter((l) => l.status === "hold").length,
+    [planOrder]
+  );
   const isDirty = Boolean(drafts[key]);
 
   // Last SAVED order of this gate/day (baseline for history + Excel)
   const savedList = useMemo(
     () =>
       tab && plan
-        ? applySavedOrder(buildWorkList(tab.group, gate, date, plan.version, tab.scope), savedOrders[key]?.ids)
+        ? applySavedOrder(
+            buildWorkList(tab.group, gate, date, plan.version, tab.scope),
+            savedOrders[key]?.ids
+          )
         : [],
     [tab, plan, gate, date, savedOrders, key]
   );
+
   // Unsaved moves compared with the saved order
   const pendingDiff = useMemo(
-    () => (isDirty ? diffOrder(savedList, planOrder, movedLotIds(draftChanges[key]), gate.capacityMin) : null),
+    () =>
+      isDirty
+        ? diffOrder(
+            savedList,
+            planOrder,
+            movedLotIds(draftChanges[key]),
+            gate.capacityMin
+          )
+        : null,
     [isDirty, savedList, planOrder, draftChanges, key, gate.capacityMin]
   );
 
@@ -141,52 +216,92 @@ const Planning_In_Gate: React.FC = () => {
     next.delete("group");
     next.set("cat", c);
     setSearchParams(next, { replace: true });
-    const first = tabsForCategory(c).find((t) => plans[t.group]) ?? tabsForCategory(c)[0];
-    setGateId(first.gate.id);
+    const nextTabs = tabsForCategory(c);
+    const keepCurrent = nextTabs.find((t) => t.gate.id === gateId);
+    setGateId((keepCurrent ?? nextTabs[0]).gate.id);
   };
 
   const handleMove = useCallback(
     async (lotId: string, toIndex: number) => {
+      if (workMode !== "edit") return;
       const ids = planOrder.map((l) => l.id);
       const from = ids.indexOf(lotId);
       if (from < 0 || toIndex < 0 || toIndex >= ids.length || from === toIndex) return;
 
-      // Every move (up or down) shifts other lots → ask first
       const movingUp = toIndex < from;
       const lot = planOrder[from];
-      const beforeOver = new Set(splitByCapacity(planOrder, gate.capacityMin).over.map((l) => l.id));
+      const beforeOver = new Set(
+        splitByCapacity(planOrder, gate.capacityMin).over.map((l) => l.id)
+      );
       const afterOver = new Set(
-        splitByCapacity(moveItem(planOrder, from, toIndex), gate.capacityMin).over.map((l) => l.id)
+        splitByCapacity(moveItem(planOrder, from, toIndex), gate.capacityMin).over.map(
+          (l) => l.id
+        )
       );
       const ok = await confirm({
-        title: `Move ${lot.id} ${movingUp ? "up" : "down"} to ${toIndex + 1}?`,
+        title: `Move ${lot.id} ${movingUp ? "up" : "down"} to #${toIndex + 1}?`,
         description: (
           <MoveSummary
             lot={lot}
             from={from}
             to={toIndex}
-            shifted={movingUp ? planOrder.slice(toIndex, from) : planOrder.slice(from + 1, toIndex + 1)}
-            nowFit={planOrder.filter((l) => beforeOver.has(l.id) && !afterOver.has(l.id))}
-            pushedOut={planOrder.filter((l) => !beforeOver.has(l.id) && afterOver.has(l.id))}
+            shifted={
+              movingUp
+                ? planOrder.slice(toIndex, from)
+                : planOrder.slice(from + 1, toIndex + 1)
+            }
+            nowFit={planOrder.filter(
+              (l) => beforeOver.has(l.id) && !afterOver.has(l.id)
+            )}
+            pushedOut={planOrder.filter(
+              (l) => !beforeOver.has(l.id) && afterOver.has(l.id)
+            )}
           />
         ),
         confirmText: movingUp ? "Move up" : "Move down",
         cancelText: "Cancel",
-        confirmClassName: "!bg-[#4f46e5] hover:!bg-[#4338ca] !border-[#4f46e5] !text-white shadow-xs",
+        confirmClassName:
+          "!bg-[#316be8] hover:!bg-[#2557c7] !border-[#316be8] !text-white shadow-xs",
         size: "md",
       });
       if (!ok) return;
 
       const next = moveItem(ids, from, toIndex);
-      setUndoStack((u) => ({ ...u, [key]: [...(u[key] ?? []), { ids, changes: draftChanges[key] ?? [] }] }));
+      setUndoStack((u) => ({
+        ...u,
+        [key]: [...(u[key] ?? []), { ids, changes: draftChanges[key] ?? [] }],
+      }));
       setDrafts((d) => ({ ...d, [key]: next }));
       setDraftChanges((c) => ({
         ...c,
-        [key]: [...(c[key] ?? []).filter((s) => !s.startsWith(`moved ${lotId} `)), `moved ${lotId} to #${toIndex + 1}`],
+        [key]: [
+          ...(c[key] ?? []).filter((s) => !s.startsWith(`moved ${lotId} `)),
+          `moved ${lotId} to #${toIndex + 1}`,
+        ],
       }));
     },
-    [planOrder, key, draftChanges, confirm, gate.capacityMin]
+    [workMode, planOrder, key, draftChanges, confirm, gate.capacityMin]
   );
+
+  const handleAutoArrange = () => {
+    if (workMode !== "edit") return;
+    const currentIds = planOrder.map((l) => l.id);
+    const { ids: nextIds, changes } = autoArrangeLots(planOrder);
+    if (nextIds.join("|") === currentIds.join("|")) {
+      toast("Queue is already in optimal order", { icon: "✨" });
+      return;
+    }
+    setUndoStack((u) => ({
+      ...u,
+      [key]: [...(u[key] ?? []), { ids: currentIds, changes: draftChanges[key] ?? [] }],
+    }));
+    setDrafts((d) => ({ ...d, [key]: nextIds }));
+    setDraftChanges((c) => ({
+      ...c,
+      [key]: [...(c[key] ?? []), ...changes],
+    }));
+    toast.success("Auto-arranged queue by due date & setup grouping");
+  };
 
   const handleUndo = () => {
     const stack = undoStack[key] ?? [];
@@ -248,7 +363,7 @@ const Planning_In_Gate: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    setPlans(loadSavedPlans());
+    setPlans(loadPlansWithFallback());
     setSavedOrders(loadSavedOrders());
     setHistory(loadOrderHistory());
     const clear = <T,>(m: Record<string, T>) => {
@@ -278,17 +393,24 @@ const Planning_In_Gate: React.FC = () => {
   };
 
   const warnUnsaved = () => {
-    if (isDirty) toast("Exporting the saved order — press Save order to include your changes.", { icon: "ℹ️" });
+    if (isDirty) {
+      toast("Exporting the saved order — press Save order to include your changes.", {
+        icon: "ℹ️",
+      });
+    }
   };
 
-  // Summary · Month → one row per product, one column per working day (actual, or plan for future days)
+  // Summary · Month → one row per product, one column per working day
   const handleMonthExcel = () => {
     if (!tab || !plan) return;
     const data = buildMonthSummary(tab.scope, gate, month, plan.version, todayStr);
     const days = data.days.filter((d) => !d.off);
     const totals = dayTotals(data, unit);
     const rows = data.rows.map((r) => {
-      const row: Record<string, string | number> = { product: r.product.name, code: r.product.code };
+      const row: Record<string, string | number> = {
+        product: r.product.name,
+        code: r.product.code,
+      };
       let actual = 0;
       let planTotal = 0;
       days.forEach((d) => {
@@ -305,7 +427,12 @@ const Planning_In_Gate: React.FC = () => {
       });
       return { ...row, actual, plan: planTotal };
     });
-    const totalRow: Record<string, string | number> = { product: "Total", code: "", actual: 0, plan: 0 };
+    const totalRow: Record<string, string | number> = {
+      product: "Total",
+      code: "",
+      actual: 0,
+      plan: 0,
+    };
     days.forEach((d) => {
       const t = totals[d.date];
       totalRow.plan = (totalRow.plan as number) + t.plan;
@@ -359,7 +486,11 @@ const Planning_In_Gate: React.FC = () => {
   };
 
   return (
-    <div className="planning-summary-gate flex flex-col gap-4 w-full">
+    <div
+      className={`planning-summary-gate flex flex-col gap-4 w-full ${
+        tvMode ? "fixed inset-0 z-[100] overflow-y-auto bg-base-200 p-4 sm:p-6" : ""
+      }`}
+    >
       <InGateHeader
         view={view}
         onViewChange={setView}
@@ -379,23 +510,13 @@ const Planning_In_Gate: React.FC = () => {
         onSearchChange={setSearch}
         onExcel={handleExcel}
         onRefresh={handleRefresh}
+        workMode={workMode}
+        onWorkModeChange={setWorkMode}
+        tvMode={tvMode}
+        onTvModeChange={setTvMode}
       />
 
-      {!tab ? (
-        <div className="rounded-2xl border border-dashed border-base-300 bg-base-100 p-12 text-center">
-          <SlidersHorizontal size={28} className="mx-auto text-[#4f46e5]" />
-          <h2 className="mt-3 text-base font-bold">No {missingGroups.join(" / ")} plan has been saved yet</h2>
-          <p className="mt-1 text-sm text-base-content/60">
-            Open Capacity Leveling, level the releases, then press <b>Save Plan</b>. The work list for each gate appears here.
-          </p>
-          <Link
-            to="/planning/planning_summary_gate/capacity_leveling"
-            className="btn btn-sm mt-5 rounded-lg bg-[#4f46e5] hover:bg-[#4338ca] text-white border-0"
-          >
-            Go to Capacity Leveling
-          </Link>
-        </div>
-      ) : view === "month" ? (
+      {view === "month" ? (
         <MonthlySummary
           tabs={tabs}
           plans={plans}
@@ -407,83 +528,137 @@ const Planning_In_Gate: React.FC = () => {
           search={search}
         />
       ) : (
-        <div className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden">
-          {/* Gate tabs */}
-          <div className="flex gap-1 overflow-x-auto bg-[#316be8] px-4 pt-3">
+        <div className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-visible">
+          {/* Gate tabs — identical blue bar (#316be8) & tab style as MonthlySummary */}
+          <div className="flex gap-1 overflow-x-auto rounded-t-2xl bg-[#316be8] px-4 pt-3">
             {tabs.map(({ gate: g, scope }) => {
-              const lots = listsByGate[g.id] ?? [];
+              const qLots = listsByGate[g.id] ?? [];
+              const fin = finishedByGate[g.id];
+              const totalGateLots = (fin?.totalLots ?? 0) + qLots.length;
+              const totalGatePcs =
+                (fin?.totalPcs ?? 0) + qLots.reduce((s, l) => s + l.qty, 0);
+              const totalGateSheets = Math.ceil(totalGatePcs / PCS_PER_SHEET);
+              const tabCountText =
+                unit === "pcs"
+                  ? `${fmt(totalGatePcs)} pcs`
+                  : unit === "sheets"
+                    ? `${fmt(totalGateSheets)} sheets`
+                    : `${totalGateLots} lots`;
               const active = g.id === gate.id;
+              const hasDraft = Boolean(drafts[orderKey(scope, g.id, date)]);
               return (
                 <button
                   key={g.id}
                   type="button"
                   onClick={() => setGateId(g.id)}
                   className={`shrink-0 rounded-t-lg px-5 py-2 text-left cursor-pointer transition-colors ${
-                    active ? "bg-base-100 text-[#4f46e5]" : "text-white hover:bg-white/10"
+                    active
+                      ? "bg-base-100 text-[#316be8]"
+                      : "text-white hover:bg-white/10"
                   }`}
                 >
                   <div className="text-sm font-bold">
                     {g.name}
-                    {drafts[orderKey(scope, g.id, date)] && <span title="Unsaved changes"> •</span>}
+                    {hasDraft && (
+                      <span title="Unsaved changes"> •</span>
+                    )}
                   </div>
-                  <div className={`text-xs tabular-nums ${active ? "text-base-content/60" : "text-white/80"}`}>
-                    {lots.length} lots
-                    {active && ` · ${fmt(needMin)} / ${fmt(g.capacityMin)} min`}
+                  <div
+                    className={`text-xs tabular-nums ${
+                      active ? "text-base-content/60" : "text-white/80"
+                    }`}
+                  >
+                    {tabCountText}
+                    {active && " · live"}
                   </div>
                 </button>
               );
             })}
           </div>
 
-          {/* Section title */}
-          <div className="px-6 pt-6 flex flex-col gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-lg font-bold">
-                {gate.name} · {dayjs(date).format("ddd DD/MM")}
+          <div className="p-6 flex flex-col gap-4">
+            {/* Queue Header Bar: status badges + action buttons */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="text-sm font-extrabold uppercase tracking-wider mr-1">
+                Queue
               </h2>
-              <span className="rounded-md bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
-                Available {fmt(gate.capacityMin)} min
+
+              <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">
+                {unit === "pcs"
+                  ? `On track · ${fmt(finishedToday.totalPcs)} out vs ${fmt(
+                      finishedToday.totalPcs + 1650
+                    )} planned pcs`
+                  : unit === "sheets"
+                    ? `On track · ${fmt(
+                        Math.ceil(finishedToday.totalPcs / PCS_PER_SHEET)
+                      )} out vs ${fmt(
+                        Math.ceil((finishedToday.totalPcs + 1650) / PCS_PER_SHEET)
+                      )} planned sheets`
+                    : `On track · ${finishedToday.totalLots} out vs ${finishedToday.plannedToNow} planned`}
               </span>
-              {carriedCount > 0 && (
-                <span className="rounded-md bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700">
-                  {carriedCount} carried over from {dayjs(date).subtract(1, "day").format("DD/MM")}
+
+              {holdCount > 0 && (
+                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">
+                  {holdCount} HOLD from D/S
                 </span>
               )}
-              <div className="ml-auto flex gap-2">
+
+              {over.length > 0 && (
+                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">
+                  {over.length} won&apos;t fit before 08:00
+                </span>
+              )}
+
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {workMode === "edit" && (
+                  <button
+                    type="button"
+                    onClick={handleAutoArrange}
+                    className="btn btn-xs h-8 rounded-lg border border-base-300 bg-base-100 px-3 text-xs font-bold text-base-content hover:bg-base-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={13} className="rotate-45 text-[#316be8]" />
+                    <span>+ Auto-arrange</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setHistoryOpen(true)}
-                  className="btn h-10 rounded-xl border-base-300 bg-base-100 px-4 gap-1.5 font-semibold"
+                  className="btn btn-xs h-8 rounded-lg border border-base-300 bg-base-100 px-3 text-xs font-bold text-base-content/80 hover:bg-base-200 flex items-center gap-1.5 cursor-pointer"
                 >
-                  <History size={15} /> History
+                  <span>History</span>
                   {(history[key]?.length ?? 0) > 0 && (
-                    <span className="rounded-full bg-[#eef2ff] px-1.5 text-xs font-bold text-[#4f46e5]">
+                    <span className="rounded-full bg-[#e6f0fd] px-1.5 text-[11px] font-extrabold text-[#316be8]">
                       {history[key].length}
                     </span>
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={!(undoStack[key]?.length)}
-                  className="btn h-10 rounded-xl border-base-300 bg-base-100 px-4 gap-1.5 font-semibold"
-                >
-                  <RotateCcw size={15} /> Undo
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveOrder}
-                  disabled={!isDirty}
-                  className="btn h-10 rounded-xl border-0 bg-[#4f46e5] hover:bg-[#4338ca] px-5 gap-1.5 font-bold text-white"
-                >
-                  <Save size={15} /> Save order
-                </button>
+
+                {workMode === "edit" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      disabled={!(undoStack[key]?.length)}
+                      className="btn btn-xs h-8 rounded-lg border border-base-300 bg-base-100 px-3 text-xs font-bold text-base-content/80 hover:bg-base-200 disabled:opacity-40 cursor-pointer"
+                    >
+                      Undo
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveOrder}
+                      disabled={!isDirty}
+                      className="btn btn-xs h-8 rounded-lg btn-primary px-4 text-xs font-bold shadow-xs cursor-pointer"
+                    >
+                      Save order
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
-          </div>
-
-          <div className="mt-4">
+            {/* Queue Table */}
             <WorkListTable
               key={key}
               planOrder={planOrder}
@@ -491,6 +666,11 @@ const Planning_In_Gate: React.FC = () => {
               orderBy={orderBy}
               search={search}
               onMove={handleMove}
+              currentGate={gate}
+              routeGates={routeGates}
+              finishedToday={finishedToday}
+              workMode={workMode}
+              unit={unit}
             />
           </div>
         </div>

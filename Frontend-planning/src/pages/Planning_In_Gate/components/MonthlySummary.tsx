@@ -136,7 +136,7 @@ export const MonthlySummary: React.FC<MonthlySummaryProps> = ({
               type="button"
               onClick={() => onGateChange(g.id)}
               className={`shrink-0 rounded-t-lg px-5 py-2 text-left cursor-pointer transition-colors ${
-                active ? "bg-base-100 text-[#4f46e5]" : "text-white hover:bg-white/10"
+                active ? "bg-base-100 text-[#316be8]" : "text-white hover:bg-white/10"
               }`}
             >
               <div className="text-sm font-bold">{g.name}</div>
@@ -295,24 +295,6 @@ export const MonthlySummary: React.FC<MonthlySummaryProps> = ({
               </tfoot>
             )}
           </table>
-        </div>
-
-        {/* Cell legend */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-base-content/60">
-          <span className="inline-flex items-center gap-1">
-            <b className={`rounded px-1.5 ${DS_CHIP}`}>12</b>
-            <b className={`rounded px-1.5 ${NS_CHIP}`}>8</b>
-            <b className="ml-0.5 text-[13px] font-medium text-base-content/85">20</b>
-          </span>
-          <span>
-            Last number = total (TTL) · <b className="text-[#c98a00]">yellow</b> = D/S · <b className="text-[#6d4fd8]">purple</b> = N/S
-          </span>
-          <span>
-            <b className="text-rose-500">red</b> = below plan
-          </span>
-          <span>
-            <span className="text-base-content/30">20</span> = plan (future days)
-          </span>
         </div>
       </div>
 
