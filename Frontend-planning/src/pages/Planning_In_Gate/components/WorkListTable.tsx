@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Check, GripVertical } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, GripVertical } from "lucide-react";
 import type {
   CountUnit,
   FinishedTodaySummary,
@@ -404,7 +404,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           onDragEnd={resetDrag}
           className="h-14"
         >
-          <td colSpan={17} className="p-0">
+          <td colSpan={10} className="p-0">
             <div className="mx-3 flex h-11 items-center justify-center rounded-xl border-2 border-dashed border-[#316be8] bg-[#e6f0fd]/70 text-xs font-bold text-[#316be8]">
               Drop {lot.id} here → becomes #{rowNo}
             </div>
@@ -489,12 +489,12 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           {renderStatusBadge(lot, isOver)}
         </td>
 
-        {/* 3) SHEET/LOT */}
+        {/* 4) SHEET/LOT */}
         <td className="px-2.5 text-right font-bold text-xs tabular-nums whitespace-nowrap text-base-content/85 border-r border-base-200">
           {lot.sheet.toLocaleString()}
         </td>
 
-        {/* 4) PCS/LOT */}
+        {/* 5) PCS/LOT */}
         <td className="px-2.5 text-right font-bold text-xs tabular-nums whitespace-nowrap text-base-content/85 border-r border-base-200">
           {lot.qty.toLocaleString()}
         </td>
@@ -515,7 +515,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
         </td>
 
         {/* 9) CAPACITY USED — follows D/S (amber) and N/S (purple from Month view) shift colors with target tick */}
-        <td className="px-3 whitespace-nowrap tabular-nums">
+        <td className="px-3 whitespace-nowrap tabular-nums border-r border-base-200">
           {(() => {
             const pct = etaInfo?.shiftPct ?? 0;
             const usedMin = etaInfo?.shiftUsedMin ?? 0;
@@ -542,11 +542,44 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
             );
           })()}
         </td>
+
+        {/* 10) ORDER */}
+        <td className="px-2 text-center whitespace-nowrap">
+          <div className="inline-flex items-center justify-center gap-1">
+            <button
+              type="button"
+              disabled={!isRowDraggable || planIdx <= 0}
+              onClick={() => onMove(lot.id, planIdx - 1)}
+              title="Move up"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/80 transition-colors hover:bg-base-200 disabled:pointer-events-none disabled:opacity-30 cursor-pointer"
+            >
+              <ArrowUp size={13} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              disabled={!isRowDraggable || planIdx >= planOrder.length - 1}
+              onClick={() => onMove(lot.id, planIdx + 1)}
+              title="Move down"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/80 transition-colors hover:bg-base-200 disabled:pointer-events-none disabled:opacity-30 cursor-pointer"
+            >
+              <ArrowDown size={13} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              disabled={!isRowDraggable || planIdx <= 0}
+              onClick={() => onMove(lot.id, 0)}
+              title="Move to top (#1)"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/80 transition-colors hover:bg-base-200 disabled:pointer-events-none disabled:opacity-30 cursor-pointer"
+            >
+              <ArrowUpToLine size={13} strokeWidth={2} />
+            </button>
+          </div>
+        </td>
       </tr>
     );
   };
 
-  // Aggregate metrics for Total, D/S, N/S, Output, and Plan Min woven into the 16 columns
+  // Aggregate metrics for Total, D/S, N/S, Output, and Plan Min woven into the 10 columns
   const allDayLots = useMemo(
     () => [...dayDoneLots, ...dayHoldLots],
     [dayDoneLots, dayHoldLots]
@@ -595,7 +628,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
   let body: React.ReactNode[] = [];
 
   if (orderBy === "plan" && !q) {
-    // 0) Pinned TOTAL SUMMARY row inside the table aligned with all 9 columns
+    // 0) Pinned TOTAL SUMMARY row inside the table aligned with all 10 columns
     body.push(
       <tr
         key="__total_summary_row"
@@ -622,7 +655,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
         <td className="px-2.5 text-right font-extrabold text-xs text-base-content border-r border-base-200 whitespace-nowrap">
           {planTotalMin.toLocaleString()}
         </td>
-        <td className="px-3 whitespace-nowrap">
+        <td className="px-3 whitespace-nowrap border-r border-base-200">
           <div className="flex items-center gap-2">
             <div className="relative flex h-2 w-18 shrink-0 items-center rounded-full bg-slate-200/85">
               <div
@@ -636,10 +669,11 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
             </span>
           </div>
         </td>
+        <td className="px-2 text-center text-base-content/40">—</td>
       </tr>
     );
 
-    // 1) DAY SHIFT section — aligned with all 9 columns
+    // 1) DAY SHIFT section — aligned with all 10 columns
     if (dayShiftLots.length > 0) {
       const dsHoldCount = dayShiftLots.filter((l) => l.status === "hold").length;
       body.push(
@@ -671,7 +705,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           <td className="px-2.5 text-right text-xs font-extrabold text-[#8a5a00] border-r border-[#f5c542]/50">
             {planDsMin}
           </td>
-          <td className="px-3">
+          <td className="px-3 border-r border-[#f5c542]/50">
             <div className="flex items-center gap-2">
               <div className="relative flex h-2 w-18 shrink-0 items-center rounded-full bg-[#f5c542]/45">
                 <div
@@ -685,12 +719,13 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
               </span>
             </div>
           </td>
+          <td className="px-2 text-center text-xs text-[#8a5a00]/40">—</td>
         </tr>,
         ...dayShiftLots.map(renderRow)
       );
     }
 
-    // 2) NIGHT SHIFT section — aligned with all 9 columns (purple palette matching Month view)
+    // 2) NIGHT SHIFT section — aligned with all 10 columns (purple palette matching Month view)
     if (nightFitLots.length > 0 || visibleOverLots.length > 0) {
       const nsLeftCount = nightFitLots.filter((l) => l.status !== "done").length;
       body.push(
@@ -722,7 +757,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           <td className="px-2.5 text-right text-xs font-extrabold text-[#5a3fc0] border-r border-[#c4b5fd]/60">
             {planNsMin}
           </td>
-          <td className="px-3">
+          <td className="px-3 border-r border-[#c4b5fd]/60">
             <div className="flex items-center gap-2">
               <div className="relative flex h-2 w-18 shrink-0 items-center rounded-full bg-[#c4b5fd]/55">
                 <div
@@ -736,6 +771,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
               </span>
             </div>
           </td>
+          <td className="px-2 text-center text-xs text-[#5a3fc0]/40">—</td>
         </tr>,
         ...nightFitLots.map(renderRow)
       );
@@ -749,7 +785,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
           className="bg-base-100 border-y border-base-300"
         >
           <td
-            colSpan={9}
+            colSpan={10}
             className="py-2 px-4 text-center text-xs font-extrabold text-rose-600"
           >
             Shift full at 08:00 · {visibleOverLots.length}{" "}
@@ -765,7 +801,7 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
     if (listRows.length === 0) {
       body.push(
         <tr key="__empty">
-          <td colSpan={9} className="py-10 text-center text-base-content/50">
+          <td colSpan={10} className="py-10 text-center text-base-content/50">
             No lots match “{search}”
           </td>
         </tr>
@@ -843,19 +879,20 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
         </div>
       </div>
 
-      {/* Bordered table with 9 clean columns */}
+      {/* Bordered table with 10 clean columns */}
       <div className="overflow-x-auto rounded-xl border border-base-300">
-        <table className="w-full min-w-[900px] table-fixed text-sm text-base-content tabular-nums">
+        <table className="w-full min-w-[980px] table-fixed text-sm text-base-content tabular-nums">
           <colgroup>
-            <col className="w-[6%]" />
-            <col className="w-[13%]" />
+            <col className="w-[5.5%]" />
+            <col className="w-[12.5%]" />
+            <col className="w-[9.5%]" />
+            <col className="w-[8.5%]" />
+            <col className="w-[8.5%]" />
+            <col className="w-[17%]" />
+            <col className="w-[7.5%]" />
+            <col className="w-[7.5%]" />
+            <col className="w-[13.5%]" />
             <col className="w-[10%]" />
-            <col className="w-[9.5%]" />
-            <col className="w-[9.5%]" />
-            <col className="w-[19%]" />
-            <col className="w-[8.5%]" />
-            <col className="w-[8.5%]" />
-            <col className="w-[16%]" />
           </colgroup>
           <thead>
             <tr className="whitespace-nowrap bg-slate-100 border-b border-base-300 text-[11px] font-extrabold tracking-wide text-slate-700 uppercase">
@@ -898,8 +935,11 @@ export const WorkListTable: React.FC<WorkListTableProps> = ({
                   (min)
                 </div>
               </th>
-              <th className="px-3 py-2.5 text-left">
+              <th className="px-3 py-2.5 text-left border-r border-base-300">
                 CAPACITY USED
+              </th>
+              <th className="px-2.5 py-2.5 text-center">
+                ORDER
               </th>
             </tr>
           </thead>
