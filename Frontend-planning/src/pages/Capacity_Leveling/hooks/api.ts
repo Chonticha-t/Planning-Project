@@ -24,9 +24,9 @@ export const toApiFailure = (error: unknown): ApiFailure => {
   return { code: "UNKNOWN", message: "Something went wrong. Please try again." };
 };
 
-export const fetchLevelingData = async (startdate: string, stopdate: string, signal?: AbortSignal) => {
+export const fetchLevelingData = async (startdate: string, stopdate: string, signal?: AbortSignal, refresh = false) => {
   const { data } = await axios.get<{ data: LevelingData }>(`${BASE}/load`, {
-    params: { startdate, stopdate },
+    params: { startdate, stopdate, refresh },
     signal,
   });
   const next = data?.data;

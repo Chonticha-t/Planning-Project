@@ -104,7 +104,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   } | null>(null);
   const handleCancelReorder = useCallback(() => setPendingReorder(null), []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (refresh = false) => {
     if (snapshot) return;
     requestRef.current?.abort();
     const controller = new AbortController();
@@ -114,7 +114,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     try {
       const start = dayjs().format("YYYY-MM-DD");
       const stop = dayjs().add(RANGE_DAYS - 1, "day").format("YYYY-MM-DD");
-      const next = await fetchLevelingData(start, stop, controller.signal);
+      const next = await fetchLevelingData(start, stop, controller.signal, refresh);
       const draft = draftRef.current;
       setData(next);
       setLots(next.cards.map(toLotItem).map((lot) => {
@@ -434,7 +434,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           draftHistoryRef.current = new Map();
           setSaveModalOpen(false);
           toast.success(`Plan v${plan.version} saved: ${movedCount} moved card(s), ${orderedGroupCount} ordered gate/day group(s).`, { duration: 3500 });
-          await load();
+          await load(true);
           setBoardCardOrder(new Map());
         } catch (error) {
           const failed = toApiFailure(error);
@@ -442,7 +442,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           // Another planner saved first, or Summary Gate changed: show the latest data, keep the draft.
           if (failed.code === "PLAN_VERSION_CONFLICT" || failed.code === "WORK_NOT_FOUND") {
             setSaveModalOpen(false);
-            void load();
+            void load(true);
           }
         } finally {
           setSaving(false);
@@ -507,7 +507,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           setSelectedLotId(null);
           setCapacityModalOpen(true);
         }}
-        onReload={() => void load()}
+        onReload={() => void load(true)}
         isLoading={loading}
         onSavePlan={() => {
           setSelectedLotId(null);
@@ -532,7 +532,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
               {data ? " Showing the last loaded data." : ""}
             </span>
           </div>
-          <button type="button" onClick={() => void load()}
+          <button type="button" onClick={() => void load(true)}
             className="btn btn-xs h-8 rounded-lg border border-rose-300 bg-base-100 px-3 text-xs font-semibold text-rose-800">
             <RefreshCw size={13} />
             Try again
@@ -682,7 +682,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         isOpen={capacityModalOpen}
         onEditingChange={setCapacityEditingScopes}
         onClose={() => setCapacityModalOpen(false)}
-        onSaved={() => void load()}
+        onSaved={() => void load(true)}
       />
     </div>
   );

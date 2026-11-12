@@ -6,6 +6,13 @@ const { createGateCalendarCache } = require("../WorkingDayCalendar/gateCalendarC
 const loadGateCalendar = createGateCalendarCache(loadCalendar);
 const { createGateTableProfiler } = require("./gateTablePerformance");
 const profileGateTable = createGateTableProfiler(pool_smart);
+const { createGateTableCache } = require("./gateTableCache");
+const configuredCacheTtl = Number(process.env.PLANNING_GATE_CACHE_TTL_MS ?? 60000);
+const configuredCacheMaxMb = Number(process.env.PLANNING_GATE_CACHE_MAX_MB ?? 64);
+const gateTableCache = createGateTableCache({
+  ttlMs: Number.isFinite(configuredCacheTtl) && configuredCacheTtl >= 0 ? configuredCacheTtl : 60000,
+  maxBytes: (Number.isFinite(configuredCacheMaxMb) && configuredCacheMaxMb >= 0 ? configuredCacheMaxMb : 64) * 1024 * 1024,
+});
 
 // Share one read-only monitor per process, and only while this gate has viewers.
 const gateClients = new Set();
@@ -32,12 +39,16 @@ const checkGateChanges = async () => {
     if (!row) throw new Error("Missing gate monitor result");
     const next = `${row.row_count}|${row.content_hash}`;
     const changed = gateFingerprint !== null && next !== gateFingerprint;
+    // Reuse the previous fingerprint across navigation; discard data on first check or recovery.
+    if (gateFingerprint === null || changed) gateTableCache.invalidate();
     gateFingerprint = next;
     for (const client of gateClients) {
       client.send(changed ? "PLANNING_SUMMARY_GATE_UPDATED" : "GATE_MONITOR_OK");
     }
   } catch {
     if (generation === gateMonitorGeneration) {
+      gateTableCache.invalidate();
+      gateFingerprint = null;
       for (const client of gateClients) client.send("GATE_MONITOR_UNAVAILABLE");
     }
   } finally {
@@ -63,7 +74,6 @@ router.get("/stream", (req, res) => {
     if (gateClients.size === 0) {
       clearInterval(gatePollTimer);
       gatePollTimer = null;
-      gateFingerprint = null;
       gateMonitorGeneration += 1;
     }
     res.destroy();
@@ -234,10 +244,17 @@ router.get("/table", async (req, res) => {
       ORDER BY gate_order ASC, pri ASC
     `;
 
-    const result = await profile.query(sql, params);
+    const cached = await gateTableCache.read(JSON.stringify([sql, params]), async () => {
+      const result = await profile.query(sql, params);
+      return result.rows;
+    }, { force: asStr(req.query.refresh) === "true" });
+    res.set("X-Gate-Cache", cached.status);
+    res.set("X-Gate-Cache-Reason", cached.reason);
+    res.set("X-Gate-Cache-Age-Ms", String(cached.ageMs));
+    profile.cache(cached, params.length > 0);
     return profile.json({
       status: "OK",
-      data: result.rows,
+      data: cached.value,
       message: "Data retrieved successfully",
     });
   } catch {

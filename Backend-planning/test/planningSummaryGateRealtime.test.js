@@ -17,6 +17,7 @@ function monitorHarness(router = null) {
   let query = async () => ({ rows: [{ row_count: "2", content_hash: "100" }] });
   const context = {
     module: { exports: {} },
+    process: { env: {} },
     require(name) {
       if (name === "express") return { Router: () => ({ get: (url, handler) => {
         routes.set(url, handler);
@@ -30,6 +31,7 @@ function monitorHarness(router = null) {
       } } };
       if (name.endsWith("/workingCalendar")) return {};
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
+      if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
       if (name.endsWith("/gateTablePerformance")) return {
         createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
@@ -652,6 +654,7 @@ test("calendar expires independently and manual refresh bypasses its cache", asy
     h.render().refreshData();
     const batch = h.requests.slice(start);
     assert.deepEqual(batch.map(request => request.url), ["table", "calendar"]);
+    assert.equal(batch[0].options.params.refresh, true);
     assert.equal(batch[1].options.params.refresh, true);
     await h.succeed(batch);
     assert.equal(h.render().refreshWarning, null);
@@ -824,10 +827,12 @@ test("calendar endpoint shares cached ranges, supports forced reads and rejects 
   let fail = false;
   const context = {
     module: { exports: {} },
+    process: { env: {} },
     require(name) {
       if (name === "express") return { Router: () => ({ get: (url, handler) => routes.set(url, handler) }) };
       if (name.endsWith("/config")) return {};
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
+      if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
       if (name.endsWith("/gateTablePerformance")) return {
         createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
@@ -1138,6 +1143,7 @@ test("table API returns the stored process group including null values", async (
   let queryText;
   const context = {
     module: { exports: {} },
+    process: { env: {} },
     require(name) {
       if (name === "express") return { Router: () => ({ get: (url, handler) => routes.set(url, handler) }) };
       if (name.endsWith("/config")) return { pool_smart: { query: async (sql, params) => {
@@ -1147,6 +1153,7 @@ test("table API returns the stored process group including null values", async (
       } } };
       if (name.endsWith("/workingCalendar")) return {};
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
+      if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
       if (name.endsWith("/gateTablePerformance")) return {
         createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };

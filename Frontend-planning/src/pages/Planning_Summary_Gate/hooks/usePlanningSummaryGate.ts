@@ -166,7 +166,7 @@ export const usePlanningSummaryGate = () => {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch data (fetch all categories and all stage dates for complete lot stage timelines)
-  const fetchData = useCallback(async function loadData(options: { silent?: boolean } = {}) {
+  const fetchData = useCallback(async function loadData(options: { silent?: boolean; force?: boolean } = {}) {
     const silent = options.silent === true;
     // Coalesce notifications during a request into one trailing refresh.
     if (silent && abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
@@ -192,7 +192,7 @@ export const usePlanningSummaryGate = () => {
       const tableRes = await axios.get<{ status: string; data: PlanningSummaryGateRow[] }>(
         PLANNING_SUMMARY_GATE_TABLE_API,
         {
-          params: { skip_holidays: filters.skipHolidays },
+          params: { skip_holidays: filters.skipHolidays, refresh: options.force === true },
           signal: controller.signal,
           timeout: 10000,
         }
@@ -309,7 +309,7 @@ export const usePlanningSummaryGate = () => {
   }, [fetchData, refreshCalendar, todayStr]);
 
   const refreshData = useCallback(() => {
-    void fetchData();
+    void fetchData({ force: true });
     void refreshCalendar(true);
   }, [fetchData, refreshCalendar]);
 

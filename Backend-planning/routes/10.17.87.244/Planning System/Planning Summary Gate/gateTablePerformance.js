@@ -16,13 +16,14 @@ const createGateTableProfiler = (pool, {
   const windows = { filtered: [], unfiltered: [] };
   return res => {
     if (!(typeof enabled === "function" ? enabled() : enabled)) {
-      return { query: (sql, params) => pool.query(sql, params), json: body => res.json(body) };
+      return { query: (sql, params) => pool.query(sql, params), json: body => res.json(body), cache() {} };
     }
     const started = now();
     const metrics = {
       requestId: randomUUID(), filtered: false,
       poolWaitMs: null, queryMs: null, jsonMs: null,
       responseBytes: null, rowCount: null,
+      cacheStatus: null, cacheReason: null, cachePreviousAgeMs: null, cacheAgeMs: null, cacheStats: null,
       poolWaitingAtStart: pool.waitingCount ?? null,
       poolTotalAtStart: pool.totalCount ?? null,
       poolIdleAtStart: pool.idleCount ?? null,
@@ -59,6 +60,15 @@ const createGateTableProfiler = (pool, {
     res.once("close", onClose);
 
     return {
+      cache({ value, status, reason, previousAgeMs, ageMs, stats }, filtered) {
+        metrics.cacheStatus = status;
+        metrics.cacheReason = reason;
+        metrics.cachePreviousAgeMs = previousAgeMs;
+        metrics.cacheAgeMs = ageMs;
+        metrics.cacheStats = stats;
+        metrics.filtered = filtered;
+        metrics.rowCount = value.length;
+      },
       async query(sql, params) {
         metrics.filtered = params.length > 0;
         const waiting = now();

@@ -160,11 +160,12 @@ function fakePool(rules) {
   return { log, query, connect: async () => ({ query, release() {} }) };
 }
 
-async function withApi(pool, callback, { admin = true, loadCalendar } = {}) {
+async function withApi(pool, callback, { admin = true, loadCalendar, cacheOptions, logLoadPerformance = () => {} } = {}) {
   const app = express();
   app.use(express.json());
   app.use(createCapacityLevelingRouter({
     pool,
+    cacheOptions, logLoadPerformance,
     verifyPlanner: (req, res, next) => (admin ? (req.user = { username: "planner" }, next()) : res.status(401).json({ status: "ERROR" })),
     loadCalendar: loadCalendar ?? (async () => ({ calendar: { isWorking: (date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 } })),
   }));
@@ -901,4 +902,153 @@ test("snapshot capture failure rolls back the save before any version or item is
   }, { loadCalendar: async () => { throw new Error("Calendar unavailable"); } });
   assert.equal(pool.log.at(-1).sql, "ROLLBACK");
   assert.ok(!pool.log.some(entry => /^INSERT/.test(entry.sql)));
+});
+
+test("load cache reuses a complete view, reports metadata, and expires against the configured clock", async () => {
+  let clock = 0;
+  const records = [];
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, [work()]]]);
+  await withApi(pool, async api => {
+    const url = "/load?startdate=2026-11-12&stopdate=2026-11-20";
+    const first = await api(url);
+    const initial = await first.json();
+    assert.equal(first.headers.get("x-capacity-cache"), "MISS");
+    clock = 15000;
+    const hit = await api(url);
+    assert.equal(hit.headers.get("x-capacity-cache"), "HIT");
+    assert.equal(hit.headers.get("x-capacity-cache-age-ms"), "15000");
+    assert.match(hit.headers.get("cache-control"), /no-store/);
+    assert.deepEqual(await hit.json(), initial);
+    assert.equal(pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length, 1);
+    await new Promise(resolve => setImmediate(resolve));
+    const record = records.find(record => record.cacheStatus === "HIT");
+    assert.equal(record.queryCount, 3); // Current DB date, current capacity and latest plan.
+    assert.equal(record.rowCount, 1);
+    assert.ok(record.responseBytes > 0);
+    assert.ok(record.totalMs >= 0);
+    assert.doesNotMatch(JSON.stringify(records), /PRD-A|L001|SELECT|gate_arrival_max_target_v1/);
+    clock = 60000;
+    const expired = await api(url);
+    assert.equal(expired.headers.get("x-capacity-cache-reason"), "EXPIRED");
+    assert.equal(pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length, 2);
+    await api("/load?startdate=2026-11-12&stopdate=2026-11-21");
+    assert.equal(pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length, 3);
+  }, { cacheOptions: { now: () => clock }, logLoadPerformance: record => records.push(record) });
+});
+
+test("Refresh rereads external source rows and bypasses the working calendar cache", async () => {
+  let rows = [work()];
+  const calendarCalls = [];
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, () => rows]]);
+  await withApi(pool, async api => {
+    const url = "/load?startdate=2026-11-12&stopdate=2026-11-20";
+    await api(url);
+    rows = [work({ qty: 77 })];
+    assert.equal((await (await api(url)).json()).data.arrivalRows[0].qty, 1000);
+    const refreshed = await api(`${url}&refresh=true`);
+    assert.equal(refreshed.headers.get("x-capacity-cache"), "REFRESH");
+    assert.equal((await refreshed.json()).data.arrivalRows[0].qty, 77);
+    assert.equal(calendarCalls.at(-1).force, true);
+    assert.equal((await api(url)).headers.get("x-capacity-cache"), "HIT");
+  }, { loadCalendar: async (_from, _to, options = {}) => {
+    calendarCalls.push(options);
+    return { calendar: { isWorking: () => true } };
+  } });
+});
+
+test("fresh capacity, plan head and DB day prevent sharing an obsolete view across processes or midnight", async () => {
+  let today = "2026-11-12", settings = [row()], header = null;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today }]],
+    [/capacity_setting/, () => settings],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/planning_summary_gate/, [work()]],
+  ]);
+  await withApi(pool, async api => {
+    const url = "/load?startdate=2026-11-12&stopdate=2026-11-20";
+    await api(url);
+    settings = [row({ resource_count: 9 })];
+    const capacityChanged = await api(url);
+    assert.equal(capacityChanged.headers.get("x-capacity-cache"), "MISS");
+    header = { plan_id: "other-process-plan", version_no: 2 };
+    const planChanged = await api(url);
+    assert.equal(planChanged.headers.get("x-capacity-cache"), "MISS");
+    assert.equal((await planChanged.json()).data.plan.version, 2);
+    today = "2026-11-13";
+    const nextDay = await api(url);
+    assert.equal(nextDay.headers.get("x-capacity-cache"), "MISS");
+    assert.equal((await nextDay.json()).data.today, today);
+    assert.equal((await api(url)).headers.get("x-capacity-cache"), "HIT");
+  });
+});
+
+test("capacity and plan writes invalidate only after COMMIT and retain uncached save validation", async () => {
+  for (const target of ["capacity", "plan"]) {
+    const pool = fakePool([
+      [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+      [/planning_summary_gate/, [work()]],
+    ]);
+    await withApi(pool, async api => {
+      const url = "/load?startdate=2026-11-12&stopdate=2026-11-20";
+      await api(url);
+      const before = pool.log.length;
+      const saved = await api(`/${target}`, {
+        method: target === "capacity" ? "PUT" : "POST",
+        body: target === "capacity"
+          ? { gates: [{ gate: "FADL", shifts: { day: shiftInput, night: shiftInput } }] }
+          : { baseVersion: 0, moves: [] },
+      });
+      assert.equal(saved.status, 200);
+      assert.ok(pool.log.slice(before).some(entry => entry.sql === "COMMIT"));
+      if (target === "plan") assert.ok(pool.log.slice(before).some(entry => /planning_summary_gate/.test(entry.sql)));
+      assert.equal((await api(url)).headers.get("x-capacity-cache"), "MISS");
+      assert.equal((await api(url)).headers.get("x-capacity-cache"), "HIT");
+    });
+  }
+});
+
+test("failed transactions do not discard a valid cached view", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/planning_summary_gate/, [work()]],
+    [/^COMMIT$/, new Error("Synthetic commit failure")],
+  ]);
+  await withApi(pool, async api => {
+    await api("/load");
+    const failed = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } });
+    assert.equal(failed.status, 503);
+    assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+    assert.equal((await api("/load")).headers.get("x-capacity-cache"), "HIT");
+  });
+});
+
+test("concurrent capacity viewers share the expensive query and retry failed calendar loads", async () => {
+  let calendarReads = 0, failCalendar = true;
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, [work()]]]);
+  await withApi(pool, async api => {
+    assert.equal((await api("/load")).status, 503);
+    failCalendar = false;
+    const before = pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length;
+    const responses = await Promise.all(Array.from({ length: 10 }, () => api("/load")));
+    assert.ok(responses.every(response => response.status === 200));
+    assert.ok(responses.some(response => response.headers.get("x-capacity-cache") === "SHARED"));
+    assert.equal(pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length - before, 1);
+    assert.equal(calendarReads, 2);
+  }, { loadCalendar: async () => {
+    calendarReads++;
+    await new Promise(resolve => setTimeout(resolve, 25));
+    if (failCalendar) throw new Error("Synthetic calendar outage");
+    return { calendar: { isWorking: () => true } };
+  } });
+});
+
+test("invalid date ranges never run works SQL and disabled load caching remains observable", async () => {
+  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, [work()]]]);
+  await withApi(pool, async api => {
+    assert.equal((await api("/load?startdate=invalid")).status, 400);
+    assert.ok(!pool.log.some(entry => /planning_summary_gate/.test(entry.sql)));
+    assert.equal((await api("/load")).headers.get("x-capacity-cache"), "BYPASS");
+    assert.equal((await api("/load")).headers.get("x-capacity-cache"), "BYPASS");
+    assert.equal(pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length, 2);
+  }, { cacheOptions: { ttlMs: 0 } });
 });

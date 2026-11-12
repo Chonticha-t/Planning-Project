@@ -1,5 +1,8 @@
 const express = require("express");
 const { randomUUID, createHash } = require("node:crypto");
+const { performance } = require("node:perf_hooks");
+const { createGateTableCache } = require("../Planning Summary Gate/gateTableCache");
+const { createCapacityLoadProfiler } = require("./capacityLoadPerformance");
 const { createPresenceRouter } = require("./capacityLevelingPresence");
 const { buildLevelingView } = require("./capacityLevelingView");
 const { buildSavedMoveHistory } = require("./capacityLevelingHistory");
@@ -102,8 +105,15 @@ const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
 const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id, hasSnapshot: Boolean(row.has_snapshot) });
 const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => {
+const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cacheOptions = {}, logLoadPerformance }) => {
   const router = express.Router();
+  const configuredTtl = Number(process.env.PLANNING_CAPACITY_CACHE_TTL_MS ?? 60000);
+  const configuredMb = Number(process.env.PLANNING_CAPACITY_CACHE_MAX_MB ?? 128);
+  const loadCache = createGateTableCache({
+    ttlMs: Number.isFinite(configuredTtl) && configuredTtl >= 0 ? configuredTtl : 60000,
+    maxBytes: (Number.isFinite(configuredMb) && configuredMb >= 0 ? configuredMb : 128) * 1024 * 1024,
+    ...cacheOptions,
+  });
   router.use(createPresenceRouter({ pool, verifyPlanner }));
   const capacityRevision = (gates) => createHash("sha256").update(JSON.stringify(gates, (_key, value) =>
     value && typeof value === "object" && !Array.isArray(value)
@@ -215,6 +225,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
         message: "The active plan cannot be deleted. Only older versions can be deleted." });
       if (outcome === "PLAN_NOT_FOUND") return res.status(404).json({ status: "ERROR", code: outcome,
         message: "This plan was deleted or is no longer available." });
+      loadCache.invalidate();
       return res.json({ status: "OK", message: "Plan removed from history. The active plan is unchanged." });
     } catch (error) {
       return historyFail(res, error);
@@ -273,6 +284,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
         }
         return readConfig(client);
       });
+      loadCache.invalidate();
       return res.json({ status: "OK", data: { gates: config, revision: capacityRevision(config) }, message: "Capacity settings saved." });
     } catch (error) {
       if (error.code === "CAPACITY_VERSION_CONFLICT") return res.status(409).json({ status: "ERROR", code: error.code, message: error.message });
@@ -283,8 +295,10 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
   // Capacity per gate and day plus one card per work item and gate, with the latest saved plan applied.
   router.get("/load", async (req, res) => {
     res.set("Cache-Control", "no-store");
+    const profile = createCapacityLoadProfiler(res, pool, { log: logLoadPerformance });
+    const db = profile.db;
     try {
-      const today = (await pool.query("SELECT CURRENT_DATE::text AS today")).rows[0].today;
+      const today = (await db.query("SELECT CURRENT_DATE::text AS today")).rows[0].today;
       const start = typeof req.query.startdate === "string" && req.query.startdate ? req.query.startdate : today;
       if (!isDate(start)) throw new ValidationError("The start date is invalid.");
       // Two weeks by default.
@@ -295,18 +309,32 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
         Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`) > (MAX_RANGE_DAYS - 1) * 86400000) {
         throw new ValidationError(`A valid date range of up to ${MAX_RANGE_DAYS} days is required.`);
       }
-      const [config, plan, works] = await Promise.all([
-        readConfig(pool),
-        pool.query(LATEST_PLAN_SQL, [PLAN_METHOD]),
-        pool.query(WORKS_SQL, [LEVELING_GATES]),
+      // Small dependency reads stay fresh, including changes made by another backend process.
+      const [config, plan] = await Promise.all([
+        readConfig(db),
+        db.query(LATEST_PLAN_SQL, [PLAN_METHOD]),
       ]);
       const latest = plan.rows[0];
-      const moves = latest ? (await pool.query(MOVES_SQL, [latest.plan_id])).rows : [];
-      const legacy = latest ? false : (await Promise.all(LEGACY_PLAN_METHODS.map((method) => pool.query(LATEST_PLAN_SQL, [method])))).some((result) => result.rows.length > 0);
-      const data = await buildLevelingView({ sourceRows: works.rows, moves, config, today, start, end,
-        loadCalendar, history: latest?.move_history, order: latest?.board_card_order,
-        plan: planInfo(latest), legacy, calculationMethod: PLAN_METHOD });
-      return res.json({ status: "OK", data });
+      const force = req.query.refresh === "true";
+      const key = JSON.stringify([today, start, end, capacityRevision(config), latest?.plan_id ?? null, latest?.version_no ?? 0]);
+      const reading = performance.now();
+      const cached = await loadCache.read(key, async () => {
+        const [works, moves, legacy] = await Promise.all([
+          db.query(WORKS_SQL, [LEVELING_GATES]),
+          latest ? db.query(MOVES_SQL, [latest.plan_id]).then(result => result.rows) : [],
+          latest ? false : Promise.all(LEGACY_PLAN_METHODS.map(method => db.query(LATEST_PLAN_SQL, [method])))
+            .then(results => results.some(result => result.rows.length > 0)),
+        ]);
+        return buildLevelingView({ sourceRows: works.rows, moves, config, today, start, end,
+          loadCalendar: force ? (from, to) => loadCalendar(from, to, { force: true }) : loadCalendar,
+          history: latest?.move_history, order: latest?.board_card_order,
+          plan: planInfo(latest), legacy, calculationMethod: PLAN_METHOD });
+      }, { force });
+      profile.cache(cached, performance.now() - reading);
+      res.set("X-Capacity-Cache", cached.status);
+      res.set("X-Capacity-Cache-Reason", cached.reason);
+      res.set("X-Capacity-Cache-Age-Ms", String(cached.ageMs));
+      return profile.json({ status: "OK", data: cached.value });
     } catch (error) {
       return fail(res, error, "Unable to load gate capacity data. Please try again.");
     }
@@ -407,6 +435,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
         return res.status(409).json({ status: "ERROR", code: outcome.conflict,
           message: `${outcome.missing} moved card(s) are no longer in Summary Gate. Reload the page before saving again.` });
       }
+      loadCache.invalidate();
       return res.json({ status: "OK", data: { plan: outcome.plan, movedCount: moves.length,
         orderedGroupCount: outcome.orderedGroupCount }, message: "Plan saved." });
     } catch (error) {
