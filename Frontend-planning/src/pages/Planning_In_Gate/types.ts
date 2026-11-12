@@ -76,3 +76,52 @@ export interface OrderHistoryEntry extends OrderDiff {
   planVersion: number;
   reason?: string;
 }
+
+// ── Summary · Month ─────────────────────────────────────────────────────────
+
+export type InGateView = "day" | "month";
+export type CountUnit = "lots" | "pcs" | "sheets";
+
+export interface MonthProduct {
+  name: string;
+  code: string;
+  lotPcs: number; // pcs per lot
+  dailyLots: number; // plan lots on a weekday
+  satLots: number; // plan lots on Saturday (0 = not running)
+}
+
+export interface MonthDay {
+  date: string; // YYYY-MM-DD
+  day: number;
+  dow: number; // 0 = Sunday
+  off: boolean;
+  phase: "past" | "today" | "future";
+}
+
+/** One product on one day, in lots. ds / ns are null when there is no scan out (future, shift not run). */
+export interface MonthCell {
+  plan: number;
+  ds: number | null;
+  ns: number | null;
+}
+
+export interface MonthRow {
+  product: MonthProduct;
+  cells: Record<string, MonthCell>; // by date; missing = product not planned that day
+}
+
+export interface MonthSummaryData {
+  days: MonthDay[];
+  rows: MonthRow[];
+}
+
+export interface MonthLot {
+  id: string;
+  product: string;
+  scanIn: string; // YYYY-MM-DD HH:mm
+  scanOut: string;
+  shift: "D" | "N";
+  po: string;
+  due: string; // YYYY-MM-DD
+  lateDays: number; // 0 = on time (scan out date vs due)
+}

@@ -8,7 +8,7 @@ import "../../Planning_Summary_Gate/gateTheme.css";
 import { useAuth } from "@/context/AuthContext";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
-import type { InGateCategory, InGateLot, OrderBy, OrderHistoryEntry, SavedOrder } from "../types";
+import type { CountUnit, InGateCategory, InGateLot, InGateView, OrderBy, OrderHistoryEntry, SavedOrder } from "../types";
 import { buildWorkList, tabsForCategory } from "../mock/inGateMockData";
 import {
   appendOrderHistory,
@@ -24,6 +24,8 @@ import { WorkListTable } from "../components/WorkListTable";
 import { MoveSummary } from "../components/MoveSummary";
 import { SaveOrderModal } from "../components/SaveOrderModal";
 import { HistoryPanel } from "../components/HistoryPanel";
+import { MonthlySummary } from "../components/MonthlySummary";
+import { buildMonthSummary, dayTotals, toUnit, UNIT_LABEL } from "../mock/monthlyMockData";
 
 type UndoEntry = { ids: string[]; changes: string[] };
 
@@ -43,6 +45,18 @@ const Planning_In_Gate: React.FC = () => {
   const category: InGateCategory = CATEGORIES.includes(catParam as InGateCategory)
     ? (catParam as InGateCategory)
     : "EFPC_GEN";
+
+  // ?view=month → Summary · Month (mock data)
+  const view: InGateView = searchParams.get("view") === "month" ? "month" : "day";
+  const setView = (v: InGateView) => {
+    const next = new URLSearchParams(searchParams);
+    if (v === "month") next.set("view", "month");
+    else next.delete("view");
+    setSearchParams(next, { replace: true });
+  };
+  const thisMonth = todayStr.slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
+  const [unit, setUnit] = useState<CountUnit>("lots");
 
   const [date, setDate] = useState(todayStr);
   const [gateId, setGateId] = useState(() => tabsForCategory(category)[0].gate.id);
@@ -267,7 +281,66 @@ const Planning_In_Gate: React.FC = () => {
     if (isDirty) toast("Exporting the saved order — press Save order to include your changes.", { icon: "ℹ️" });
   };
 
+  // Summary · Month → one row per product, one column per working day (actual, or plan for future days)
+  const handleMonthExcel = () => {
+    if (!tab || !plan) return;
+    const data = buildMonthSummary(tab.scope, gate, month, plan.version, todayStr);
+    const days = data.days.filter((d) => !d.off);
+    const totals = dayTotals(data, unit);
+    const rows = data.rows.map((r) => {
+      const row: Record<string, string | number> = { product: r.product.name, code: r.product.code };
+      let actual = 0;
+      let planTotal = 0;
+      days.forEach((d) => {
+        const c = r.cells[d.date];
+        if (!c) return;
+        planTotal += toUnit(c.plan, r.product, unit);
+        if (c.ds === null) {
+          row[`p${d.day}`] = toUnit(c.plan, r.product, unit);
+          return;
+        }
+        row[`d${d.day}`] = toUnit(c.ds, r.product, unit);
+        row[`n${d.day}`] = toUnit(c.ns ?? 0, r.product, unit);
+        actual += toUnit(c.ds + (c.ns ?? 0), r.product, unit);
+      });
+      return { ...row, actual, plan: planTotal };
+    });
+    const totalRow: Record<string, string | number> = { product: "Total", code: "", actual: 0, plan: 0 };
+    days.forEach((d) => {
+      const t = totals[d.date];
+      totalRow.plan = (totalRow.plan as number) + t.plan;
+      if (!t.hasActual) {
+        totalRow[`p${d.day}`] = t.plan;
+        return;
+      }
+      totalRow[`d${d.day}`] = t.ds;
+      totalRow[`n${d.day}`] = t.ns;
+      totalRow.actual = (totalRow.actual as number) + t.ds + t.ns;
+    });
+    const num = { width: 8, align: "right" as const, numFmt: "#,##0" };
+    exportToExcel({
+      fileName: `InGate_Month_${category}_${gate.name.replace("/", "")}_${month.replace("-", "")}_${UNIT_LABEL[unit]}`,
+      data: [...rows, totalRow],
+      columns: [
+        { header: "Product", key: "product", width: 16 },
+        { header: "Code", key: "code", width: 12 },
+        ...days.flatMap((d) => {
+          const group = dayjs(d.date).format("ddd DD/MM");
+          return d.phase === "future"
+            ? [{ header: "Plan", key: `p${d.day}`, group, ...num }]
+            : [
+                { header: "D/S", key: `d${d.day}`, group, ...num },
+                { header: "N/S", key: `n${d.day}`, group, ...num },
+              ];
+        }),
+        { header: `Actual (${UNIT_LABEL[unit]})`, key: "actual", ...num, width: 14 },
+        { header: `Plan (${UNIT_LABEL[unit]})`, key: "plan", ...num, width: 14 },
+      ],
+    });
+  };
+
   const handleExcel = () => {
+    if (view === "month") return handleMonthExcel();
     warnUnsaved();
     exportToExcel({
       fileName: `InGate_${category}_${gate.name.replace("/", "")}_${dayjs(date).format("YYYYMMDD")}`,
@@ -288,6 +361,13 @@ const Planning_In_Gate: React.FC = () => {
   return (
     <div className="planning-summary-gate flex flex-col gap-4 w-full">
       <InGateHeader
+        view={view}
+        onViewChange={setView}
+        month={month}
+        thisMonth={thisMonth}
+        onMonthChange={setMonth}
+        unit={unit}
+        onUnitChange={setUnit}
         category={category}
         onCategoryChange={setCategory}
         date={date}
@@ -315,6 +395,17 @@ const Planning_In_Gate: React.FC = () => {
             Go to Capacity Leveling
           </Link>
         </div>
+      ) : view === "month" ? (
+        <MonthlySummary
+          tabs={tabs}
+          plans={plans}
+          gateId={gate.id}
+          onGateChange={setGateId}
+          month={month}
+          today={todayStr}
+          unit={unit}
+          search={search}
+        />
       ) : (
         <div className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden">
           {/* Gate tabs */}
