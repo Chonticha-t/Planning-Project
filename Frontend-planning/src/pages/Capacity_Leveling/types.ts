@@ -119,6 +119,21 @@ export interface BoardCardOrderGroup {
   cardIds: string[];
 }
 
+export interface PlanHistoryInfo extends PlanInfo {
+  isActive: boolean;
+}
+
+export interface PlanHistoryPage {
+  plans: PlanHistoryInfo[];
+  nextBefore: number | null;
+}
+
+export interface PlanHistoryDetail {
+  plan: PlanHistoryInfo;
+  moves: OrphanMove[];
+  boardCardOrder: BoardCardOrderGroup[];
+}
+
 export interface OrphanMove {
   workKey: string;
   gate: string;

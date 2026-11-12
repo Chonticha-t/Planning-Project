@@ -155,7 +155,7 @@ function fakePool(rules) {
     const rule = rules.find(([pattern]) => pattern.test(sql));
     if (!rule) return { rows: [] };
     if (rule[1] instanceof Error) throw rule[1];
-    return { rows: typeof rule[1] === "function" ? rule[1](params) : rule[1] };
+    return { rows: typeof rule[1] === "function" ? rule[1](params, sql) : rule[1] };
   };
   return { log, query, connect: async () => ({ query, release() {} }) };
 }
@@ -643,4 +643,169 @@ test("arriving before the previous gate finishes is rejected atomically", async 
     assert.equal(response.status, 400);
   });
   assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
+});
+
+const historyId = (version) => `00000000-0000-4000-8000-${String(version).padStart(12, "0")}`;
+const historyRow = (version, activeVersion = 3) => ({
+  plan_id: historyId(version), version_no: version, plan_group_id: historyId(1),
+  note: `Note ${version}`, created_by: "planner", saved_at: "2026-11-12 10:00",
+  current_plan_id: historyId(activeVersion),
+});
+
+test("history is paginated newest first, excludes deleted plans and is readable without Admin", async () => {
+  const pool = fakePool([[/FROM planning\.work_plan p/, (params, sql) => {
+    assert.match(sql, /p\.deleted_at IS NULL/);
+    assert.match(sql, /p\.calculation_method = \$1/);
+    assert.match(sql, /ORDER BY p\.version_no DESC LIMIT 51/);
+    assert.equal(params[0], PLAN_METHOD);
+    return Array.from({ length: 55 }, (_, index) => historyRow(55 - index, 55))
+      .filter(row => params[1] === null || row.version_no < params[1]).slice(0, 51);
+  }]]);
+  await withApi(pool, async api => {
+    const response = await api("/plans");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const { data } = await response.json();
+    assert.equal(data.plans.length, 50);
+    assert.equal(data.plans[0].version, 55);
+    assert.equal(data.plans[0].isActive, true);
+    assert.ok(data.plans.slice(1).every(plan => !plan.isActive));
+    assert.equal(data.nextBefore, 6);
+    const next = (await (await api(`/plans?before=${data.nextBefore}`)).json()).data;
+    assert.deepEqual(next.plans.map(plan => plan.version), [5, 4, 3, 2, 1]);
+    assert.equal(next.nextBefore, null);
+  }, { admin: false });
+});
+
+test("history rejects malformed cursors and plan IDs before reading the database", async () => {
+  const pool = fakePool([]);
+  await withApi(pool, async api => {
+    for (const cursor of ["0", "-1", "1.5", "abc", "2147483648", "1&before=2"]) {
+      assert.equal((await api(`/plans?before=${cursor}`)).status, 400);
+    }
+    assert.equal((await api("/plans/invalid")).status, 400);
+    assert.equal((await api("/plans/invalid", { method: "DELETE" })).status, 400);
+  });
+  assert.equal(pool.log.length, 0);
+});
+
+test("version details use stored overrides and order without reading current source or capacity", async () => {
+  const group = { gate: "FADL", date: "2026-11-16", cardIds: [orderId(work())] };
+  const pool = fakePool([
+    [/FROM planning\.work_plan p/, (params, sql) => {
+      assert.deepEqual(params, [PLAN_METHOD, historyId(2)]);
+      assert.match(sql, /p\.deleted_at IS NULL/);
+      return [{ ...historyRow(2), board_card_order: [group] }];
+    }],
+    [/FROM planning\.work_plan_gate_item/, [{ work_key: "saved-work", gate_name: "FADL", prd_name: "OLD-PRODUCT",
+      lot_no: "OLD-LOT", due_date: "2026-11-25", original_date: "2026-11-16", planned_date: "2026-11-18" }]],
+  ]);
+  await withApi(pool, async api => {
+    const response = await api(`/plans/${historyId(2)}`);
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.plan.version, 2);
+    assert.equal(data.plan.isActive, false);
+    assert.deepEqual(data.boardCardOrder, [group]);
+    assert.deepEqual(data.moves[0], { workKey: "saved-work", gate: "FADL", prdName: "OLD-PRODUCT", lotNo: "OLD-LOT",
+      dueDate: "2026-11-25", originalDate: "2026-11-16", plannedDate: "2026-11-18" });
+  }, { admin: false });
+  assert.ok(!pool.log.some(entry => /planning_summary_gate|capacity_setting|^(INSERT|UPDATE|DELETE)/.test(entry.sql)));
+});
+
+test("deleted or unrelated versions cannot be viewed and cannot expose their stored items", async () => {
+  const pool = fakePool([]);
+  await withApi(pool, async api => {
+    const response = await api(`/plans/${historyId(2)}`);
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).code, "PLAN_NOT_FOUND");
+  });
+  assert.ok(!pool.log.some(entry => /work_plan_gate_item/.test(entry.sql)));
+});
+
+test("deleting needs Admin even for direct API calls and active versions are protected", async () => {
+  const pool = fakePool([[/FROM planning\.work_plan\b/, [historyRow(3)]]]);
+  await withApi(pool, async api => {
+    assert.equal((await api(`/plans/${historyId(2)}`, { method: "DELETE" })).status, 401);
+  }, { admin: false });
+  assert.equal(pool.log.length, 0);
+  await withApi(pool, async api => {
+    const response = await api(`/plans/${historyId(3)}`, { method: "DELETE" });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, "ACTIVE_PLAN");
+  });
+  assert.ok(pool.log.some(entry => /pg_advisory_xact_lock/.test(entry.sql)));
+  assert.ok(!pool.log.some(entry => /^(UPDATE|DELETE)/.test(entry.sql)));
+});
+
+test("soft delete records the server actor, is not repeated and never removes plan items", async () => {
+  let deleted = false;
+  const pool = fakePool([
+    [/FROM planning\.work_plan\b/, [historyRow(3)]],
+    [/UPDATE planning\.work_plan/, (params, sql) => {
+      assert.deepEqual(params, [PLAN_METHOD, historyId(2), "planner"]);
+      assert.match(sql, /deleted_at = CURRENT_TIMESTAMP, deleted_by = \$3/);
+      assert.match(sql, /deleted_at IS NULL/);
+      if (deleted) return [];
+      deleted = true;
+      return [{ plan_id: historyId(2) }];
+    }],
+  ]);
+  await withApi(pool, async api => {
+    assert.equal((await api(`/plans/${historyId(2)}`, { method: "DELETE", body: { deletedBy: "forged" } })).status, 200);
+    assert.equal((await api(`/plans/${historyId(2)}`, { method: "DELETE" })).status, 404);
+  });
+  const lockIndex = pool.log.findIndex(entry => /pg_advisory_xact_lock/.test(entry.sql));
+  assert.ok(lockIndex < pool.log.findIndex(entry => /UPDATE/.test(entry.sql)));
+  assert.ok(!pool.log.some(entry => /^DELETE|work_plan_gate_item/.test(entry.sql)));
+});
+
+test("a soft-deleted version stays hidden and the next save keeps increasing the version", async () => {
+  let latest = historyRow(3);
+  let deleted = false;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan p/, () => [latest, ...(!deleted ? [historyRow(2)] : []), historyRow(1)]],
+    [/FROM planning\.work_plan\b/, (params, sql) => {
+      assert.ok(!/deleted_at/.test(sql), "the head includes all versions so numbers are never reused");
+      return [latest];
+    }],
+    [/UPDATE planning\.work_plan/, () => { deleted = true; return [{ plan_id: historyId(2) }]; }],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      latest = { ...historyRow(params[2], params[2]), plan_id: params[0] };
+      assert.equal(params[2], 4);
+      assert.equal(params[3], historyId(3));
+      return [];
+    }],
+  ]);
+  await withApi(pool, async api => {
+    assert.equal((await api(`/plans/${historyId(2)}`, { method: "DELETE" })).status, 200);
+    const { data: history } = await (await api("/plans")).json();
+    assert.deepEqual(history.plans.map(plan => plan.version), [3, 1]);
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 3, moves: [] } });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.plan.version, 4);
+    assert.equal((await api(`/plans/${latest.plan_id}`, { method: "DELETE" })).status, 409);
+  });
+  const lockKeys = pool.log.filter(entry => /pg_advisory_xact_lock/.test(entry.sql)).map(entry => entry.params[0]);
+  assert.equal(new Set(lockKeys).size, 1, "save and delete use the same database lock");
+});
+
+test("history schema errors explain setup and failed deletions roll back", async () => {
+  const error = Object.assign(new Error("column missing"), { code: "42703" });
+  const pool = fakePool([
+    [/FROM planning\.work_plan p/, error],
+    [/FROM planning\.work_plan\b/, [historyRow(3)]],
+    [/UPDATE planning\.work_plan/, error],
+  ]);
+  await withApi(pool, async api => {
+    for (const [path, options] of [["/plans", {}], [`/plans/${historyId(2)}`, { method: "DELETE" }]]) {
+      const response = await api(path, options);
+      assert.equal(response.status, 503);
+      const body = await response.json();
+      assert.equal(body.code, "HISTORY_SCHEMA_NOT_READY");
+      assert.match(body.message, /planning_in_gate_test/);
+    }
+  });
+  assert.equal(pool.log.at(-1).sql, "ROLLBACK");
 });

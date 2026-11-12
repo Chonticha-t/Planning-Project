@@ -1,6 +1,6 @@
 import axios from "axios";
 import { getApiBaseUrl } from "@/utils/apiConfig";
-import type { BoardCardOrderGroup, GateShiftConfig, LevelingData, PlanInfo } from "../types";
+import type { BoardCardOrderGroup, GateShiftConfig, LevelingData, PlanInfo, PlanHistoryPage, PlanHistoryDetail } from "../types";
 
 const BASE = `${getApiBaseUrl()}/capacity_leveling`;
 
@@ -66,4 +66,20 @@ export const savePlan = async (baseVersion: number, moves: PlanMove[], note: str
     boardCardOrder,
   });
   return data.data;
+};
+
+export const fetchPlanHistory = async (before?: number, signal?: AbortSignal) => {
+  const { data } = await axios.get<{ data: PlanHistoryPage }>(`${BASE}/plans`, {
+    params: { before }, signal,
+  });
+  return data.data;
+};
+
+export const fetchPlanHistoryDetail = async (planId: string, signal?: AbortSignal) => {
+  const { data } = await axios.get<{ data: PlanHistoryDetail }>(`${BASE}/plans/${encodeURIComponent(planId)}`, { signal });
+  return data.data;
+};
+
+export const deletePlanVersion = async (planId: string) => {
+  await axios.delete(`${BASE}/plans/${encodeURIComponent(planId)}`);
 };

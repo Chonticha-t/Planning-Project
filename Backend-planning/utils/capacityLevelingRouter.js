@@ -90,6 +90,15 @@ const planInfo = (row) => (row ? {
   planId: row.plan_id, version: row.version_no, note: row.note, savedBy: row.created_by, savedAt: row.saved_at,
 } : null);
 
+// The highest version stays active: only older versions may be soft-deleted.
+// Include deleted versions when determining the head so version numbers are never reused.
+const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
+  to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS saved_at,
+  (SELECT head.plan_id FROM planning.work_plan head
+   WHERE head.calculation_method = $1 ORDER BY head.version_no DESC LIMIT 1) AS current_plan_id`;
+const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id });
+const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
 const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
   const router = express.Router();
 
@@ -124,6 +133,83 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
 
   const readConfig = async (db) => buildCapacityConfig((await db.query(SETTINGS_SQL, [LEVELING_GATES])).rows);
   const actorOf = (req) => String(req.user?.username || "admin").slice(0, 150);
+
+  const historyFail = (res, error) => {
+    if (error?.code === "42703") {
+      return res.status(503).json({ status: "ERROR", code: "HISTORY_SCHEMA_NOT_READY",
+        message: "Plan history is not set up yet. Run the updated planning_in_gate_test setup command." });
+    }
+    return fail(res, error, "Unable to access plan history. Please try again.");
+  };
+
+  router.get("/plans", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const before = req.query.before;
+      if (before !== undefined && (typeof before !== "string" || !/^[1-9]\d*$/.test(before) ||
+        !Number.isSafeInteger(Number(before)) || Number(before) > 2147483647)) {
+        throw new ValidationError("The history cursor is invalid.");
+      }
+      const { rows } = await pool.query(`SELECT ${HISTORY_COLUMNS}
+        FROM planning.work_plan p
+        WHERE p.calculation_method = $1 AND p.deleted_at IS NULL
+          AND ($2::integer IS NULL OR p.version_no < $2)
+        ORDER BY p.version_no DESC LIMIT 51`, [PLAN_METHOD, before === undefined ? null : Number(before)]);
+      return res.json({ status: "OK", data: {
+        plans: rows.slice(0, 50).map(historyInfo),
+        nextBefore: rows.length > 50 ? rows[49].version_no : null,
+      } });
+    } catch (error) {
+      return historyFail(res, error);
+    }
+  });
+
+  router.get("/plans/:planId", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      if (!isPlanId(req.params.planId)) throw new ValidationError("The plan ID is invalid.");
+      const { rows } = await pool.query(`SELECT ${HISTORY_COLUMNS},
+          p.baseline_snapshot->'boardCardOrder' AS board_card_order
+        FROM planning.work_plan p
+        WHERE p.calculation_method = $1 AND p.plan_id = $2 AND p.deleted_at IS NULL`,
+      [PLAN_METHOD, req.params.planId]);
+      if (!rows.length) return res.status(404).json({ status: "ERROR", code: "PLAN_NOT_FOUND",
+        message: "This plan was deleted or is no longer available." });
+      const moves = (await pool.query(MOVES_SQL, [req.params.planId])).rows;
+      return res.json({ status: "OK", data: {
+        plan: historyInfo(rows[0]),
+        moves: moves.map((move) => ({ workKey: move.work_key, gate: move.gate_name,
+          prdName: move.prd_name, lotNo: move.lot_no, dueDate: move.due_date,
+          originalDate: move.original_date, plannedDate: move.planned_date })),
+        boardCardOrder: rows[0].board_card_order ?? [],
+      } });
+    } catch (error) {
+      return historyFail(res, error);
+    }
+  });
+
+  router.delete("/plans/:planId", verifyAdmin, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      if (!isPlanId(req.params.planId)) throw new ValidationError("The plan ID is invalid.");
+      const outcome = await inTransaction(async (client) => {
+        const latest = (await client.query(LATEST_PLAN_SQL, [PLAN_METHOD])).rows[0];
+        if (latest?.plan_id === req.params.planId) return "ACTIVE_PLAN";
+        const { rows } = await client.query(`UPDATE planning.work_plan
+          SET deleted_at = CURRENT_TIMESTAMP, deleted_by = $3
+          WHERE calculation_method = $1 AND plan_id = $2 AND deleted_at IS NULL
+          RETURNING plan_id`, [PLAN_METHOD, req.params.planId, actorOf(req)]);
+        return rows.length ? "DELETED" : "PLAN_NOT_FOUND";
+      });
+      if (outcome === "ACTIVE_PLAN") return res.status(409).json({ status: "ERROR", code: outcome,
+        message: "The active plan cannot be deleted. Only older versions can be deleted." });
+      if (outcome === "PLAN_NOT_FOUND") return res.status(404).json({ status: "ERROR", code: outcome,
+        message: "This plan was deleted or is no longer available." });
+      return res.json({ status: "OK", message: "Plan removed from history. The active plan is unchanged." });
+    } catch (error) {
+      return historyFail(res, error);
+    }
+  });
 
   router.get("/capacity", async (req, res) => {
     res.set("Cache-Control", "no-store");

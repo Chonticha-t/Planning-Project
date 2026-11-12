@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
-import { AlertTriangle, Info, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 
 import "../../Planning_Summary_Gate/gateTheme.css";
 import type {
@@ -38,6 +38,7 @@ import { LotDetailSidePanel } from "../components/LotDetailSidePanel";
 import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
 import { CapacityModal } from "../components/CapacityModal";
 import { SavePlanModal } from "../components/SavePlanModal";
+import { PlanHistoryModal } from "../components/PlanHistoryModal";
 import { useAuth } from "@/context/AuthContext";
 
 /** Days shown from today, inclusive. */
@@ -75,6 +76,7 @@ const Capacity_Leveling: React.FC = () => {
 
   const [capacityModalOpen, setCapacityModalOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<{
     lots: LotItem[];
     targetDate: string;
@@ -199,7 +201,6 @@ const Capacity_Leveling: React.FC = () => {
     const saved = applyBoardCardOrder(board, savedBoardCardOrder);
     return applyBoardCardOrder(board, effectiveBoardCardOrder).some((lot, index) => lot.id !== saved[index].id);
   }, [lots, data, boardCardOrder, savedBoardCardOrder, effectiveBoardCardOrder]);
-  const sourceChangedCount = useMemo(() => lots.filter((lot) => lot.sourceChanged).length, [lots]);
 
   // A card can only land on a day from today on which its gate is open.
   const isValidMoveTarget = useCallback(
@@ -392,6 +393,10 @@ const Capacity_Leveling: React.FC = () => {
         planVersion={data?.plan?.version ?? 0}
         planSavedAt={data?.plan?.savedAt ?? null}
         isDraftModified={isDraftModified}
+        onOpenPlanHistory={() => {
+          setSelectedLotId(null);
+          setHistoryModalOpen(true);
+        }}
       />
 
       {failure && (
@@ -419,53 +424,6 @@ const Capacity_Leveling: React.FC = () => {
 
       {data && (
         <>
-          {/* What the numbers mean and what is missing from them */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl border border-base-300 bg-base-100 px-4 py-2.5 text-xs text-base-content/70">
-            <span className="inline-flex items-center gap-1.5">
-              <Info size={13} className="text-primary" />
-              Arrival load: distinct actual lots entering the gate × (normal D + N minutes). Need WIP is separate. OT adds capacity only.
-            </span>
-            <span>Matches Summary Gate with the same process filter and holiday-adjusted dates. Drag a card to change its arrival date. All allocations represented by that card move together.</span>
-            {kpis.unsetCapacityGates.length > 0 && (
-              <span className="font-semibold text-amber-700">
-                MC not set: {kpis.unsetCapacityGates.join(", ")}
-              </span>
-            )}
-            {kpis.missingPlanningCards > 0 && (
-              <span className="font-semibold text-amber-700"
-                title="A positive gate lead time (up to 366 planning days), normal shift minutes and a complete planning calendar are required. Resolve these before saving.">
-                {kpis.missingPlanningCards.toLocaleString()} card(s) need planning data; saving is disabled
-              </span>
-            )}
-            {sourceChangedCount > 0 && (
-              <span className="font-semibold text-amber-700"
-                title="Arrival changed in Summary Gate after these cards were moved and saved.">
-                {sourceChangedCount} moved card(s) have a changed arrival
-              </span>
-            )}
-            {data.orphanMoves.length > 0 && (
-              <span className="font-semibold text-amber-700"
-                title={data.orphanMoves.slice(0, 12).map((move) =>
-                  `${move.lotNo || move.prdName || move.workKey} @ ${move.gate} → ${dayjs(move.plannedDate).format("DD/MM")}`).join("\n")}>
-                {data.orphanMoves.length} saved move(s) no longer match any work and will be dropped on the next save
-              </span>
-            )}
-            {data.undatedCount > 0 && (
-              <span className="text-base-content/55">
-                {data.undatedCount} row(s) without arrival dates are not on the board
-              </span>
-            )}
-            {data.undatedArrivalCount > 0 && (
-              <span className="font-semibold text-amber-700">{data.undatedArrivalCount} row(s) without arrival dates are excluded from the arrival grid</span>
-            )}
-            {data.duplicateWorkCount > 0 && (
-              <span className="text-base-content/55">{data.duplicateWorkCount} source allocation row(s) grouped into arrival cards; details remain available</span>
-            )}
-            {data.legacyPlanAvailable && (
-              <span className="text-base-content/65">Earlier release-date plans are retained separately. This arrival plan starts from Summary Gate.</span>
-            )}
-          </div>
-
           {/* 2. Gate Load Grid matching GateMatrixTable (with inline KPI badges) */}
           <GateLoadGrid
             gates={visibleGridGates}
@@ -590,6 +548,7 @@ const Capacity_Leveling: React.FC = () => {
       )}
 
       {/* Capacity settings (usable even when work data could not be loaded) */}
+      {historyModalOpen && <PlanHistoryModal onClose={() => setHistoryModalOpen(false)} />}
       <CapacityModal
         isOpen={capacityModalOpen}
         onClose={() => setCapacityModalOpen(false)}

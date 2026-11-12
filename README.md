@@ -64,3 +64,45 @@ npm run dev                 # http://localhost:5173/planning/
 
 1. Backend: สร้างไฟล์ใน `routes/10.17.87.244/smart/planning/<feature>/` แล้ว `app.use(...)` ใน `Config/Main/planning/planning.js`
 2. Frontend: สร้างโฟลเดอร์ใน `src/pages/<Feature>/` แล้วเพิ่ม route ใน `src/routes/config.tsx`
+
+## ประวัติเวอร์ชัน Save Plan
+
+ก่อนใช้ Plan History ให้เพิ่มคอลัมน์ Soft delete ด้วยคำสั่ง Django เดิม
+ฉบับปรับปรุงอยู่ที่ [planning_in_gate_test.py](Backend-planning/database_setup/planning_in_gate_test.py)
+ให้นำไปแทนไฟล์ `apps/planning/management/commands/planning_in_gate_test.py`
+ในโปรเจกต์ Django แล้วรันจากโฟลเดอร์ที่มี `manage.py`:
+
+```powershell
+python manage.py planning_in_gate_test
+```
+
+เลือกการเชื่อมต่อด้วย `--database <alias>` ได้เหมือนเดิม โดยต้องเป็นฐานข้อมูลเดียวกับที่ Backend ใช้อยู่
+คำสั่งรองรับทั้งสร้างตารางใหม่และเพิ่มคอลัมน์ให้ตารางเดิม สามารถรันซ้ำได้และเก็บข้อมูลเดิมไว้
+จากนั้นเริ่ม Backend รุ่นใหม่และเปิดหน้า Capacity Leveling
+
+หากไม่ได้ใช้โปรเจกต์ Django สามารถใช้คำสั่ง Node ต่อไปนี้เป็นอีกทางเลือก (ไม่จำเป็นต้องรันทั้งสองแบบ):
+
+```powershell
+cd Backend-planning
+npm run migrate:plan-history
+```
+
+คำสั่งนี้ใช้การเชื่อมต่อจาก `Backend-planning/.env` เหมือน Backend และรันไฟล์
+`migrations/20261112_work_plan_history.sql` สามารถรันซ้ำได้โดยไม่ลบแผนเดิม
+
+- กดป้าย `Plan v… · saved` เพื่อเปิดประวัติ (รวมทุกกลุ่มงาน เรียงใหม่ไปเก่า ครั้งละ 50 เวอร์ชัน)
+- กด View เพื่ออ่านรายการปรับวันและลำดับงานที่บันทึกไว้ โดยไม่เปลี่ยนแผนใช้งานหรือ Draft
+- กด Delete ของเวอร์ชันเก่า แล้วยืนยันด้วยสิทธิ์ Admin เพื่อซ่อนจากประวัติ
+- แผนใช้งานคือเลขเวอร์ชันสูงสุดของวิธีคำนวณปัจจุบัน และลบไม่ได้ Backend ใช้ transaction/lock เดียวกับ Save Plan
+- Soft delete เก็บ `deleted_at`, `deleted_by` และข้อมูลแผนเดิมไว้ เลขเวอร์ชันใหม่ยังเพิ่มต่อเนื่อง
+- รายละเอียดเป็นข้อมูลที่บันทึกไว้ ไม่ใช่ Snapshot ของ Summary Gate หรือ Capacity ทั้งหมดในวันนั้น
+
+API ใต้ `/api_p1/planning/capacity_leveling`:
+
+| Method | Path | หน้าที่ |
+|---|---|---|
+| GET | `/plans?before=<version>` | ประวัติที่ยังไม่ถูกลบ พร้อม `nextBefore` สำหรับหน้าถัดไป |
+| GET | `/plans/:planId` | รายละเอียดเวอร์ชันที่ยังไม่ถูกลบ |
+| DELETE | `/plans/:planId` | Soft delete เวอร์ชันเก่า ต้องใช้ Admin |
+
+หากยังไม่ได้รัน migration หน้า History จะแจ้งว่า schema ยังไม่พร้อม ส่วนการโหลดและ Save Plan เดิมยังใช้ได้

@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Save,
   ArrowLeft,
+  History,
 } from "lucide-react";
 import type { ProcessCategory } from "../types";
 
@@ -29,6 +30,7 @@ interface LevelingHeaderProps {
   planVersion: number;
   planSavedAt: string | null;
   isDraftModified: boolean;
+  onOpenPlanHistory: () => void;
 }
 
 export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
@@ -43,6 +45,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
   planVersion,
   planSavedAt,
   isDraftModified,
+  onOpenPlanHistory,
 }) => {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
@@ -86,20 +89,24 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
           <h1 className="text-sm font-bold text-base-content tracking-normal">
             Capacity Leveling
           </h1>
-          <span
-            title={planSavedAt ? `Plan v${planVersion} saved ${planSavedAt}` : undefined}
-            className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium border ${
+          <button
+            type="button"
+            onClick={onOpenPlanHistory}
+            aria-label="Open plan history"
+            title={planSavedAt ? `Plan v${planVersion} saved ${planSavedAt} · View history` : "View plan history"}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium border cursor-pointer hover:border-primary focus-visible:outline-2 focus-visible:outline-primary ${
               isDraftModified
                 ? "bg-amber-50 text-amber-800 border-amber-200"
                 : "bg-base-200/70 text-base-content/70 border-base-300"
             }`}
           >
+            <History size={12} />
             {isDraftModified
               ? "Draft · not saved"
               : planVersion > 0
               ? `Plan v${planVersion} · saved`
               : "No saved plan"}
-          </span>
+          </button>
         </div>
       </div>
 
