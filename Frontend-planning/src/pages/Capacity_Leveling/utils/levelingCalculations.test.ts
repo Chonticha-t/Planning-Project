@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
+import { allocateBoardShifts } from "./boardShiftAllocation.ts";
 import type { ApiCard, CapacityDay, GateArrivalRow, LevelingData, ShiftConfig } from "../types";
 import {
   buildGrid,
@@ -70,6 +71,142 @@ const data = (cards: ApiCard[]): LevelingData => ({
 
 const cellOf = (grid: ReturnType<typeof buildGrid>, date: string, gate: string) =>
   grid.find((day) => day.date === date)!.gates[gate];
+
+const shiftDay = (day: number | null, night: number | null): CapacityDay => ({
+  off: false, hasOt: false, capacityMin: day === null || night === null ? null : day + night,
+  shifts: { day: { open: true, otOn: false, capacityMin: day }, night: { open: true, otOn: false, capacityMin: night } },
+});
+
+test("shift allocation fills day before night and leaves excess work on its planned date", () => {
+  const source = data(Array.from({ length: 5 }, (_, i) => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
+  source.capacity.FADL["2026-11-16"] = shiftDay(1900, 950);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const before = structuredClone(source);
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["day", "day", "night", "over", "over"]);
+  assert.equal(allocations.get(board[3].id)?.overflowMin, 950);
+  assert.ok(board.every(lot => lot.plannedDate === "2026-11-16"));
+  assert.deepEqual(source, before);
+});
+
+test("work spanning shifts shows both and allocated minutes agree with the arrival grid", () => {
+  const source = data(Array.from({ length: 3 }, (_, i) => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
+  source.capacity.FADL["2026-11-16"] = shiftDay(1425, 1425);
+  const lots = source.cards.map(toLotItem);
+  const board = buildBoardLots(source, lots);
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)), [
+    { status: "day", dayMin: 950, nightMin: 0, overflowMin: 0 },
+    { status: "split", dayMin: 475, nightMin: 475, overflowMin: 0 },
+    { status: "night", dayMin: 0, nightMin: 950, overflowMin: 0 },
+  ]);
+  const allocated = board.reduce((sum, lot) => {
+    const item = allocations.get(lot.id)!;
+    return sum + item.dayMin + item.nightMin + item.overflowMin;
+  }, 0);
+  assert.equal(allocated, cellOf(buildGrid(source, lots), "2026-11-16", "FADL").loadMin);
+});
+
+test("a partially allocated lot retains its scheduled minutes and reports only the remainder as overflow", () => {
+  const source = data([card(), card({ id: "second", workKey: "second", lotNo: "SECOND" })]);
+  source.capacity.FADL["2026-11-16"] = shiftDay(600, 500);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(allocations.get(board[0].id), { status: "split", dayMin: 600, nightMin: 350, overflowMin: 0 });
+  assert.deepEqual(allocations.get(board[1].id), { status: "over", dayMin: 0, nightMin: 150, overflowMin: 800 });
+});
+
+test("closed shifts are skipped, closed days overflow, and updated capacity changes assignments", () => {
+  const source = data([card(), card({ id: "second", workKey: "second", lotNo: "SECOND" })]);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  source.capacity.FADL["2026-11-16"] = shiftDay(null, 950);
+  source.capacity.FADL["2026-11-16"].shifts.day.open = false;
+  let allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["night", "over"]);
+  source.capacity.FADL["2026-11-16"] = closed;
+  allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["over", "over"]);
+  source.capacity.FADL["2026-11-16"] = shiftDay(1900, 0);
+  source.capacity.FADL["2026-11-16"].shifts.day.otOn = true;
+  allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["day", "day"]);
+});
+
+test("missing or invalid open-shift capacity never invents a shift assignment", () => {
+  const source = data([card()]);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  for (const invalid of [null, NaN, Infinity, -1, Number.MAX_VALUE]) {
+    source.capacity.FADL["2026-11-16"] = shiftDay(950, invalid);
+    const allocation = allocateBoardShifts(source, board).get(board[0].id)!;
+    assert.equal(allocation.status, "unassigned");
+    assert.match(allocation.reason!, /capacity/);
+  }
+  delete source.capacity.FADL["2026-11-16"];
+  assert.equal(allocateBoardShifts(source, board).get(board[0].id)?.status, "unassigned");
+});
+
+test("unknown workload blocks lower priorities in that gate and date only", () => {
+  const source = data([
+    card({ loadMin: null }), card({ id: "second", workKey: "second", lotNo: "SECOND" }),
+    card({ id: "other-date", workKey: "other-date", lotNo: "OTHER-DATE", arriveBy: "2026-11-17" }),
+    card({ id: "other-gate", workKey: "other-gate", lotNo: "OTHER-GATE", gate: "FIN" }),
+  ]);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const allocations = allocateBoardShifts(source, board);
+  assert.equal(allocations.get(source.cards[0].id)?.status, "unassigned");
+  assert.equal(allocations.get(source.cards[1].id)?.status, "unassigned");
+  assert.equal(allocations.get(source.cards[2].id)?.status, "day");
+  assert.equal(allocations.get(source.cards[3].id)?.status, "day");
+});
+
+test("Need WIP and missing identifiers do not reserve shift capacity; duplicate physical lots reserve once", () => {
+  const source = data([
+    card(), card({ id: "need", workKey: "need", lotNo: "NEED WIP", gateState: "need_wip", loadMin: 0 }),
+    card({ id: "missing", workKey: "missing", lotNo: null, kind: "unidentified" }),
+    card({ id: "second", workKey: "second", lotNo: "SECOND" }),
+  ]);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const duplicate = { ...board[0], id: "duplicate-card", sourceIds: ["duplicate-source"] };
+  const allocations = allocateBoardShifts(source, [board[0], duplicate, ...board.slice(1)]);
+  assert.equal(allocations.get("need")?.status, "none");
+  assert.equal(allocations.get("missing")?.status, "none");
+  assert.equal(allocations.get("second")?.status, "day");
+  assert.deepEqual(allocations.get("duplicate-source"), allocations.get(board[0].id));
+});
+
+test("decimal minutes fit exact capacity without floating-point overflow", () => {
+  const source = data(Array.from({ length: 3 }, (_, i) => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}`, loadMin: 0.1 })));
+  source.capacity.FADL["2026-11-16"] = shiftDay(0.3, 0);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["day", "day", "day"]);
+});
+
+test("move previews reapply priority and retain stable source IDs after destination merging", () => {
+  const source = data([
+    card({ id: "first", workKey: "first", lotNo: "FIRST" }),
+    card({ id: "moving", workKey: "moving", lotNo: "MOVING", arriveBy: "2026-11-17" }),
+    card({ id: "last", workKey: "last", lotNo: "LAST" }),
+  ]);
+  source.capacity.FADL["2026-11-16"] = shiftDay(950, 950);
+  source.arrivalRows[1].proc_disp = "GATE_A";
+  source.arrivalRows[1].current_gate = "GATE_A";
+  const lots = source.cards.map(toLotItem);
+  const projected = lots.map(lot => lot.id === "moving" ? { ...lot, plannedDate: "2026-11-16" } : lot);
+  const allocations = allocateBoardShifts(source, buildBoardLots(source, projected));
+  assert.equal(allocations.get("moving")?.status, "day");
+  assert.equal(allocations.get("first")?.status, "night");
+  assert.equal(allocations.get("last")?.status, "over");
+  assert.equal(lots[1].plannedDate, "2026-11-17");
+
+  // Two source arrivals for the same physical lot merge at the destination and share one reservation.
+  source.arrivalRows[1].lot_no = "FIRST";
+  lots[1].label = "FIRST";
+  const merged = lots.map(lot => lot.id === "moving" ? { ...lot, plannedDate: "2026-11-16" } : lot);
+  const mergedAllocations = allocateBoardShifts(source, buildBoardLots(source, merged));
+  assert.equal(mergedAllocations.get("first"), mergedAllocations.get("moving"));
+  assert.equal(mergedAllocations.get("last")?.status, "night");
+});
 
 
 test("load counts arrivals once on arrive_by, not every occupied date or release date", () => {

@@ -25,6 +25,7 @@ import {
   plannedDateIndex,
   toLotItem,
 } from "../utils/levelingCalculations";
+import { allocateBoardShifts } from "../utils/boardShiftAllocation";
 import { fetchLevelingData, savePlan, toApiFailure, type ApiFailure } from "../hooks/api";
 
 import { LevelingHeader } from "../components/LevelingHeader";
@@ -152,6 +153,18 @@ const Capacity_Leveling: React.FC = () => {
     return pendingMove?.lots || [];
   }, [draggedLot, selectedLotIds, boardLots, pendingMove]);
   const activePreviewTargetDate = hoverTargetDate || pendingMove?.targetDate || null;
+
+  const shiftAllocations = useMemo(() => {
+    if (!data) return new Map();
+    let projectedBoard = allBoardLots;
+    if (activeMovingLots.length && activePreviewTargetDate) {
+      const ids = new Set(activeMovingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
+      const projectedLots = lots.map((lot) => ids.has(lot.id) ? { ...lot, plannedDate: activePreviewTargetDate } : lot);
+      // Rebuild to merge physical lots and apply priority at the destination before allocating shifts.
+      projectedBoard = buildBoardLots(data, projectedLots, category);
+    }
+    return allocateBoardShifts(data, projectedBoard);
+  }, [data, allBoardLots, lots, category, activeMovingLots, activePreviewTargetDate]);
 
   const displayGrid = useMemo(() => {
     if (data && activeMovingLots.length > 0 && activePreviewTargetDate) {
@@ -458,6 +471,7 @@ const Capacity_Leveling: React.FC = () => {
                   setSelectedLotIds(new Set());
                 }}
                 lots={boardLots}
+                shiftAllocations={shiftAllocations}
                 data={data}
                 beyondRangeCount={gateLots.filter((lot) => lot.plannedDate > (grid[grid.length - 1]?.date ?? today)).length}
                 pastArrivalCount={gateLots.filter((lot) => lot.plannedDate < (grid[0]?.date ?? today)).length}

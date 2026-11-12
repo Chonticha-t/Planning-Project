@@ -6,13 +6,28 @@ import {
   Calendar as CalendarIcon,
   Info,
   AlertCircle,
+  Sun,
+  Moon,
+  SunMoon,
+  AlertTriangle,
+  Clock3,
 } from "lucide-react";
-import type { DayGateLoad, LotItem, MoveWarning } from "../types";
-import { isMoved as cardIsMoved, WARNING_TEXT } from "../utils/levelingCalculations";
+import type { BoardShiftAllocation, DayGateLoad, LotItem, MoveWarning } from "../types";
+import { formatMinutes, isMoved as cardIsMoved, WARNING_TEXT } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
+
+const SHIFT_THEMES = {
+  day: { label: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: "color-mix(in oklab, #facc15 10%, var(--color-base-100))" },
+  night: { label: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: "color-mix(in oklab, #4f46e5 7%, var(--color-base-100))" },
+  split: { label: "Day + Night", Icon: SunMoon, badge: "bg-violet-100 text-violet-950 border-violet-200", background: "linear-gradient(115deg, color-mix(in oklab, #facc15 10%, var(--color-base-100)), color-mix(in oklab, #4f46e5 7%, var(--color-base-100)))" },
+  over: { label: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: "color-mix(in oklab, #f43f5e 6%, var(--color-base-100))" },
+  unassigned: { label: "Shift pending", Icon: Clock3, badge: "bg-base-200 text-base-content/70 border-base-300", background: undefined },
+  none: { label: "No shift", Icon: Clock3, badge: "", background: undefined },
+} as const;
 
 interface LotCardProps {
   lot: LotItem;
+  shiftAllocation?: BoardShiftAllocation;
   isSelected: boolean;
   isBatchSelected: boolean;
   showSelection: boolean;
@@ -33,6 +48,7 @@ interface LotCardProps {
 
 export const LotCard: React.FC<LotCardProps> = ({
   lot,
+  shiftAllocation,
   isSelected,
   isBatchSelected,
   showSelection,
@@ -103,6 +119,19 @@ export const LotCard: React.FC<LotCardProps> = ({
   const releaseDisplay = dayjs(lot.plannedDate).format("DD/MM/YYYY");
   const wasDisplay = dayjs(lot.baseDate).format("DD/MM/YYYY");
   const mustStartDisplay = lot.mustOut ? dayjs(lot.mustOut).format("DD/MM/YYYY") : "N/A";
+  const shiftTheme = shiftAllocation ? SHIFT_THEMES[shiftAllocation.status] : null;
+  const ShiftIcon = shiftTheme?.Icon ?? Clock3;
+  const shiftBadge = shiftAllocation && shiftTheme && shiftAllocation.status !== "none" ? (
+    <span
+      data-shift-status={shiftAllocation.status}
+      aria-label={`Planned shift: ${shiftTheme.label}`}
+      title={shiftAllocation.reason ?? `Planned allocation · Day: ${formatMinutes(shiftAllocation.dayMin)} · Night: ${formatMinutes(shiftAllocation.nightMin)}${shiftAllocation.overflowMin > 0 ? ` · Unallocated: ${formatMinutes(shiftAllocation.overflowMin)}` : ""}`}
+      className={`inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-tight ${isSelected && !isLifted ? "bg-white/20 text-white border-white/30" : shiftTheme.badge}`}
+    >
+      <ShiftIcon size={11} className="shrink-0" aria-hidden="true" />
+      <span>{shiftTheme.label}</span>
+    </span>
+  ) : null;
 
   // Moving preview state (ghost card + lifted card)
   if ((isBeingDragged || isMovingPreview) && previewTargetDate) {
@@ -130,7 +159,7 @@ export const LotCard: React.FC<LotCardProps> = ({
           typeof document !== "undefined" &&
           createPortal(
             <div
-              style={{ top: liftPos.top, left: liftPos.left }}
+              style={{ top: liftPos.top, left: liftPos.left, background: shiftTheme?.background }}
               className={`planning-summary-gate pointer-events-none fixed z-[60] ${compact ? "w-[132px] p-2" : "w-[160px] p-2.5"} -rotate-2 rounded-xl bg-base-100 border-[1.5px] border-primary shadow-lg select-none`}
             >
               <div className="flex items-start justify-between gap-1">
@@ -139,6 +168,7 @@ export const LotCard: React.FC<LotCardProps> = ({
                 </span>
                 <GripVertical size={13} className="text-base-content/30 shrink-0" />
               </div>
+              {shiftBadge && <div className="mt-1.5">{shiftBadge}</div>}
               <div className="mt-1.5">
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tabular-nums bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
                   <CalendarIcon size={11} className="text-primary" />
@@ -172,6 +202,8 @@ export const LotCard: React.FC<LotCardProps> = ({
   return (
     <div
       data-lot-id={lot.id}
+      data-planned-shift={shiftAllocation?.status}
+      style={{ background: !isSelected && !isLate && !isEarly ? shiftTheme?.background : undefined }}
       draggable
       onDragStart={(e) => onDragStart(e, lot)}
       onDragEnd={onDragEnd}
@@ -209,6 +241,8 @@ export const LotCard: React.FC<LotCardProps> = ({
           }`}
         />
       </div>
+
+      {shiftBadge && <div className={compact ? "mt-1" : "mt-1.5"}>{shiftBadge}</div>}
 
       {/* Date Chip + Note Indicator Icon */}
       <div className={`${compact ? "mt-1" : "mt-2"} relative flex items-center gap-1`}>

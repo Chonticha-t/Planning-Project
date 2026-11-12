@@ -12,7 +12,7 @@ import {
   Calendar,
   Pencil,
 } from "lucide-react";
-import type { LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData } from "../types";
+import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
@@ -26,6 +26,7 @@ interface ReleaseBoardProps {
   onBoardGateChange: (gate: string) => void;
   /** Cards of this gate inside the visible date range */
   lots: LotItem[];
+  shiftAllocations: ReadonlyMap<string, BoardShiftAllocation>;
   /** Cards of this gate planned after the visible date range */
   beyondRangeCount: number;
   pastArrivalCount: number;
@@ -76,6 +77,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   boardGate,
   onBoardGateChange,
   lots,
+  shiftAllocations,
   beyondRangeCount,
   pastArrivalCount,
   gridData,
@@ -522,6 +524,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       )}
                       <LotCard
                         lot={lot}
+                        shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
                         showSelection={isEditMode}
                         compact={isCompact}
                         isBatchSelected={selectedLotIds.has(lot.id)}
@@ -672,6 +675,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       <LotCard
                         key={lot.id}
                         lot={lot}
+                        shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
                         showSelection={isEditMode}
                         compact={isCompact}
                         isBatchSelected={selectedLotIds.has(lot.id)}

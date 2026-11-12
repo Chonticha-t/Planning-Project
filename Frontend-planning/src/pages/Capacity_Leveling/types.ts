@@ -8,6 +8,13 @@ export type PlanMode = "required" | "planned";
 export type Shift = "day" | "night";
 export type SpecialDay = "ot" | "work" | "off";
 export type LoadStatus = "green" | "yellow" | "red";
+export interface BoardShiftAllocation {
+  status: "day" | "night" | "split" | "over" | "unassigned" | "none";
+  dayMin: number;
+  nightMin: number;
+  overflowMin: number;
+  reason?: string;
+}
 /** early = before arrive-by, late = after must-out, order = on or after the next gate's date */
 export type MoveWarning = "none" | "early" | "late" | "order";
 
