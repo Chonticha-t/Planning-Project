@@ -3,7 +3,8 @@ import dayjs from "dayjs";
 import { X } from "lucide-react";
 import type { DayGateLoad, GateInfo, PlanMode, LevelingKpiData, ProcessCategory } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { cellPct, loadStatus } from "../utils/levelingCalculations";
+import { cellPct, loadStatus, pctPillClass } from "../utils/levelingCalculations";
+import { dailyGateTotals } from "../utils/dailyGateTotals";
 
 export type GridUnitMode = "pct" | "piece" | "sheet" | "lot";
 
@@ -357,6 +358,67 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               );
             })}
           </tbody>
+          {gates.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-indigo-100">
+                <th scope="row"
+                  title="Combined workload across the displayed gates. The same lot can be counted again at another gate."
+                  className="sticky left-0 z-10 bg-base-100 px-2.5 py-2 text-left">
+                  <div className="text-[11px] font-extrabold tracking-wide text-base-content">TOTAL</div>
+                </th>
+                {data.map((col) => {
+                  const total = dailyGateTotals(col, gates);
+                  const loadLabel = total.pct !== null ? `${total.pct}%`
+                    : total.off && total.loadMin === 0 ? "OFF"
+                    : total.capacityMin === 0 && total.incompleteGates === 0 ? "No capacity" : "N/A";
+                  const mainValue = unitMode === "pct" ? loadLabel
+                    : unitMode === "piece" ? formatGateQuantity(total.totalPcs, "piece")
+                    : unitMode === "sheet" ? formatGateQuantity(total.totalSheets, "sheet")
+                    : formatGateQuantity(total.lotCount, "lot");
+                  const preview = allowPreview && gates.some(({ gate }) => col.gates[gate]?.previewPct !== undefined);
+                  const totalStyle = total.pct !== null ? pctPillClass(total.pct)
+                    : total.incompleteGates > 0 ? "bg-amber-50/60 text-amber-800"
+                    : total.overloadGates > 0 ? "bg-rose-50 text-rose-700"
+                    : "bg-slate-50/80 text-slate-400";
+                  const totalBorder = preview ? "border-dashed border-[#4f46e5]"
+                    : total.pct !== null ? "border-transparent"
+                    : total.incompleteGates > 0 ? "border-dashed border-amber-300"
+                    : total.overloadGates > 0 ? "border-dashed border-rose-300"
+                    : "border-dashed border-slate-200/80";
+                  const details = `${formatGateQuantity(total.totalPcs, "piece")} pcs · ${formatGateQuantity(total.totalSheets, "sheet")} sheets · ${formatGateQuantity(total.lotCount, "lot")} gate-lots`;
+                  return (
+                    <td key={col.date} className="p-[3px] align-top">
+                      <div
+                        data-daily-total={col.date}
+                        data-total-unit={unitMode}
+                        data-preview={preview || undefined}
+                        title={`${col.displayDate} · ${preview ? "Preview · " : ""}Total load ${loadLabel} (${total.loadMin === null ? "N/A" : total.loadMin.toLocaleString()} / ${total.capacityMin === null ? "N/A" : total.capacityMin.toLocaleString()} min) · ${details} · ${total.needCount ?? "N/A"} need · ${total.unidentifiedCount ?? "N/A"} no lot ID · ${total.overloadGates} overloaded gate(s) · ${total.incompleteGates} gate(s) with incomplete load/capacity data. Load = total workload minutes / total capacity minutes. Quantities include Need WIP; load excludes it. Cross-gate totals may count the same lot again.`}
+                        className={`flex h-[66px] min-h-[66px] w-full flex-col items-center justify-center gap-0.5 rounded-[8px] border px-1 py-0.5 tabular-nums ${totalStyle} ${totalBorder}`}>
+                        <span className="max-w-full shrink-0 truncate text-[12px] font-extrabold leading-none">{mainValue}</span>
+                        {!(loadLabel === "OFF" && total.totalPcs === 0) && <span className="max-w-full shrink-0 truncate text-[9.5px] font-medium leading-none opacity-80">
+                          {unitMode === "pct" ? `${formatGateQuantity(total.totalPcs, "piece")} pcs`
+                            : unitMode === "piece" ? "pcs"
+                            : unitMode === "sheet" ? "sheets" : "gate-lots"}
+                        </span>}
+                        {!(loadLabel === "OFF" && total.lotCount === 0) && <span className="max-w-full shrink-0 truncate text-[9px] leading-none opacity-75">
+                          {unitMode === "pct" ? `${formatGateQuantity(total.lotCount, "lot")} gate-lots`
+                            : `${loadLabel}${unitMode !== "lot" ? ` · ${formatGateQuantity(total.lotCount, "lot")} lots` : ""}`}
+                        </span>}
+                        {Boolean(total.needCount || total.unidentifiedCount) && (
+                          <span className="max-w-full shrink-0 truncate text-[9px] leading-none opacity-80">
+                            {total.needCount ? `${total.needCount} need` : ""}{total.unidentifiedCount ? ` ${total.unidentifiedCount} no ID` : ""}
+                          </span>
+                        )}
+                        {!(loadLabel === "OFF" && total.overloadGates === 0 && total.incompleteGates === 0) && <span className={`max-w-full shrink-0 truncate text-[9px] font-semibold leading-none ${total.overloadGates > 0 ? "text-rose-700" : "opacity-75"}`}>
+                          {total.overloadGates} over{total.incompleteGates > 0 ? ` · ${total.incompleteGates} incomplete` : ""}
+                        </span>}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
   );
