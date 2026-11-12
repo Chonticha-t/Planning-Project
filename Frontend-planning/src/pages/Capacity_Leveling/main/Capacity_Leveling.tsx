@@ -41,6 +41,9 @@ import { CapacityModal } from "../components/CapacityModal";
 import { SavePlanModal } from "../components/SavePlanModal";
 import { PlanHistoryModal } from "../components/PlanHistoryModal";
 import { useAuth } from "@/context/AuthContext";
+import { useEditingPresence } from "../hooks/useEditingPresence";
+import { EditingPresence } from "../components/EditingPresence";
+import { uniqueScopes, type EditingScope } from "../utils/editingPresence";
 
 /** Days shown from today, inclusive. */
 const RANGE_DAYS = 28;
@@ -85,6 +88,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const [focusedBoardDate, setFocusedBoardDate] = useState<string | null>(null);
 
   const [capacityModalOpen, setCapacityModalOpen] = useState(false);
+  const [capacityEditingScopes, setCapacityEditingScopes] = useState<EditingScope[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState<{
@@ -221,6 +225,30 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     const saved = applyBoardCardOrder(board, savedBoardCardOrder);
     return applyBoardCardOrder(board, effectiveBoardCardOrder).some((lot, index) => lot.id !== saved[index].id);
   }, [lots, data, boardCardOrder, savedBoardCardOrder, effectiveBoardCardOrder]);
+
+  const editingScopes = useMemo(() => {
+    const scopes: EditingScope[] = [...capacityEditingScopes];
+    const planScope = (gate: string, date: string) => scopes.push({ kind: "plan", gate, date });
+    for (const lot of lots) if (lot.plannedDate !== lot.savedDate) {
+      planScope(lot.gate, lot.savedDate);
+      planScope(lot.gate, lot.plannedDate);
+    }
+    if (isDraftModified) for (const key of boardCardOrder.keys()) {
+      const [gate, date] = JSON.parse(key) as [string, string];
+      planScope(gate, date);
+    }
+    for (const lot of pendingMove?.lots ?? []) {
+      planScope(lot.gate, lot.plannedDate);
+      planScope(lot.gate, pendingMove!.targetDate);
+    }
+    for (const lot of pendingReorder?.before ?? []) planScope(lot.gate, lot.plannedDate);
+    if (draggedLot) {
+      planScope(draggedLot.gate, draggedLot.plannedDate);
+      if (hoverTargetDate) planScope(draggedLot.gate, hoverTargetDate);
+    }
+    return uniqueScopes(scopes);
+  }, [capacityEditingScopes, lots, isDraftModified, boardCardOrder, pendingMove, pendingReorder, draggedLot, hoverTargetDate]);
+  const presence = useEditingPresence(editingScopes, !readOnly && !preview);
 
   // A card can only land on a day from today on which its gate is open.
   const isValidMoveTarget = useCallback(
@@ -474,6 +502,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           setSelectedGridDate(null);
         }}
         dateRangeText={dateRangeText}
+        editingPresence={!readOnly && <EditingPresence {...presence} scopes={editingScopes} username={user?.username} />}
         onOpenCapacityModal={() => {
           setSelectedLotId(null);
           setCapacityModalOpen(true);
@@ -651,6 +680,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       }} />}
       <CapacityModal
         isOpen={capacityModalOpen}
+        onEditingChange={setCapacityEditingScopes}
         onClose={() => setCapacityModalOpen(false)}
         onSaved={() => void load()}
       />

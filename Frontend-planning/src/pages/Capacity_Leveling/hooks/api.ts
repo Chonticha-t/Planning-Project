@@ -42,12 +42,12 @@ export const fetchLevelingData = async (startdate: string, stopdate: string, sig
 };
 
 export const fetchCapacity = async (signal?: AbortSignal) => {
-  const { data } = await axios.get<{ data: { gates: GateShiftConfig[] } }>(`${BASE}/capacity`, { signal });
-  return data.data.gates;
+  const { data } = await axios.get<{ data: { gates: GateShiftConfig[]; revision: string } }>(`${BASE}/capacity`, { signal });
+  return data.data;
 };
 
-export const saveCapacity = async (gates: GateShiftConfig[]) => {
-  const { data } = await axios.put<{ data: { gates: GateShiftConfig[] } }>(`${BASE}/capacity`, { gates });
+export const saveCapacity = async (gates: GateShiftConfig[], baseRevision: string) => {
+  const { data } = await axios.put<{ data: { gates: GateShiftConfig[] } }>(`${BASE}/capacity`, { gates, baseRevision });
   return data.data.gates;
 };
 

@@ -18,12 +18,14 @@ import { useAuth } from "@/context/AuthContext";
 import type { GateShiftConfig, Shift, ShiftConfig, SpecialDay } from "../types";
 import { fetchCapacity, saveCapacity, toApiFailure } from "../hooks/api";
 import { formatMinutes, shiftCapacityMin } from "../utils/levelingCalculations";
+import type { EditingScope } from "../utils/editingPresence";
 
 interface CapacityModalProps {
   isOpen: boolean;
   onClose: () => void;
   /** Called after settings were stored, so the page can recalculate Load % */
   onSaved: () => void;
+  onEditingChange?: (scopes: EditingScope[]) => void;
 }
 
 const SHIFTS = [
@@ -43,6 +45,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   isOpen,
   onClose,
   onSaved,
+  onEditingChange,
 }) => {
   const { requirePlanner } = useAuth();
   const [selectedGate, setSelectedGate] = useState("FADL");
@@ -55,11 +58,24 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   const [specialAction, setSpecialAction] = useState<SpecialDay | "clear">("ot");
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [originalConfigs, setOriginalConfigs] = useState<GateShiftConfig[]>([]);
+  const [baseRevision, setBaseRevision] = useState("");
+  const [conflict, setConflict] = useState(false);
+
+  useEffect(() => {
+    onEditingChange?.(isOpen && isDirty && configs
+      ? originalConfigs.filter(gate => JSON.stringify(gate) !== JSON.stringify(configs[gate.gate]))
+        .map(gate => ({ kind: "capacity", gate: gate.gate, date: null })) : []);
+  }, [isOpen, isDirty, configs, originalConfigs, onEditingChange]);
+  useEffect(() => () => onEditingChange?.([]), [onEditingChange]);
 
   const loadConfigs = useCallback(async (signal?: AbortSignal) => {
     setLoadError(null);
     try {
-      const gates = await fetchCapacity(signal);
+      const { gates, revision } = await fetchCapacity(signal);
+      setOriginalConfigs(gates);
+      setBaseRevision(revision);
+      setConflict(false);
       setConfigs(Object.fromEntries(gates.map((gate) => [gate.gate, gate])));
       setIsDirty(false);
     } catch (error) {
@@ -187,11 +203,12 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
     await requirePlanner(async () => {
       setIsSaving(true);
       try {
-        await saveCapacity(Object.values(configs));
+        await saveCapacity(Object.values(configs), baseRevision);
         toast.success("Capacity settings saved.");
         onSaved();
         onClose();
       } catch (error) {
+        if (toApiFailure(error).code === "CAPACITY_VERSION_CONFLICT") setConflict(true);
         toast.error(toApiFailure(error).message, { duration: 6000 });
       } finally {
         setIsSaving(false);
@@ -203,6 +220,10 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
     <div className="planning-summary-gate fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 overflow-y-auto">
       <div className="bg-base-100 rounded-2xl shadow-2xl border border-base-300 w-full max-w-[960px] flex flex-col max-h-[90vh] overflow-hidden text-base-content">
         {/* Top Modal Header */}
+        {conflict && <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-5 py-3 text-xs text-amber-900">
+          <span>มีผู้ใช้บันทึก Capacity ใหม่แล้ว กรุณาโหลดค่าล่าสุดและตรวจสอบก่อนแก้ไขอีกครั้ง</span>
+          <button type="button" disabled={isSaving} className="btn btn-xs shrink-0" onClick={() => void loadConfigs()}>โหลดค่าล่าสุด (แทนที่ค่าที่ยังไม่บันทึก)</button>
+        </div>}
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-base-300 bg-base-100">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2.5">

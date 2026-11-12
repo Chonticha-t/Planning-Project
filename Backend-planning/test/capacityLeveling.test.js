@@ -456,6 +456,25 @@ test("missing tables are reported as setup required, not as zero capacity", asyn
 const shiftInput = { enabled: true, mcLines: 2, manpower: 4, minPerShift: 540, otEnabled: false, otMinutes: 180,
   break1: true, break1Min: 10, break2: true, break2Min: 10, lunch: true, lunchMin: 45, efficiency: 1 };
 
+test("capacity saves reject a stale revision under the write lock without changing any settings", async () => {
+  let settings = [row()];
+  const pool = fakePool([[/FROM planning\.capacity_setting/, () => settings]]);
+  await withApi(pool, async api => {
+    const initial = (await (await api("/capacity")).json()).data;
+    assert.match(initial.revision, /^[a-f0-9]{64}$/);
+    settings = [row({ resource_count: 5 })];
+    const response = await api("/capacity", { method: "PUT", body: { baseRevision: initial.revision,
+      gates: [{ gate: "FADL", shifts: { day: shiftInput, night: shiftInput } }] } });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, "CAPACITY_VERSION_CONFLICT");
+    assert.ok(pool.log.some(entry => entry.sql === "ROLLBACK"));
+    assert.ok(!pool.log.some(entry => /^(UPDATE|INSERT)/.test(entry.sql)));
+    const current = (await (await api("/capacity")).json()).data;
+    assert.equal((await api("/capacity", { method: "PUT", body: { baseRevision: current.revision,
+      gates: [{ gate: "FADL", shifts: { day: shiftInput, night: shiftInput } }] } })).status, 200);
+  });
+});
+
 test("saving capacity retires only the changed shift and keeps the old row", async () => {
   const pool = fakePool([[/FROM planning\.capacity_setting/, [
     row({ gate_name: "FADL", resource_count: 2 }), row({ setting_id: "s2", gate_name: "FADL", shift_code: "night", resource_count: 2 }),

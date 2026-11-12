@@ -449,13 +449,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         </div>
       </div>
 
-      {viewMode === "board" && (
-        <p className="text-[11px] text-base-content/60">
-          Drag above or below a card to reorder within the same day. Shift badges follow this order.
-          {" "}Use Save Plan to save dates and card order for everyone.
-        </p>
-      )}
-
       {isEditMode && selectedLots.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
           <span className="text-xs font-bold text-primary" role="status">

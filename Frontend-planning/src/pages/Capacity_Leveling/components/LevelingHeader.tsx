@@ -22,6 +22,7 @@ interface LevelingHeaderProps {
   category: ProcessCategory;
   onCategoryChange: (cat: ProcessCategory) => void;
   dateRangeText: string;
+  editingPresence?: React.ReactNode;
   onOpenCapacityModal: () => void;
   onReload: () => void;
   isLoading: boolean;
@@ -39,6 +40,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
   category,
   onCategoryChange,
   dateRangeText,
+  editingPresence,
   onOpenCapacityModal,
   onReload,
   isLoading,
@@ -114,6 +116,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
 
       {/* Right: Filter & Action Controls matching GateFilterBar */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
+        {editingPresence}
         {/* Date Window Display */}
         <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/60 border border-base-300 text-xs font-semibold text-base-content/80 tabular-nums">
           <Calendar size={13} className="text-primary opacity-80" />

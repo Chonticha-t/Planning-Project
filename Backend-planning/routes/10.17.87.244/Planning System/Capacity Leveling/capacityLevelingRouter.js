@@ -1,5 +1,6 @@
 const express = require("express");
-const { randomUUID } = require("node:crypto");
+const { randomUUID, createHash } = require("node:crypto");
+const { createPresenceRouter } = require("./capacityLevelingPresence");
 const { buildLevelingView } = require("./capacityLevelingView");
 const { buildSavedMoveHistory } = require("./capacityLevelingHistory");
 const {
@@ -103,6 +104,10 @@ const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 
 const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => {
   const router = express.Router();
+  router.use(createPresenceRouter({ pool, verifyPlanner }));
+  const capacityRevision = (gates) => createHash("sha256").update(JSON.stringify(gates, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value)).digest("hex");
 
   const fail = (res, error, message) => {
     res.set("Cache-Control", "no-store");
@@ -219,7 +224,8 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
   router.get("/capacity", async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
-      return res.json({ status: "OK", data: { gates: await readConfig(pool) } });
+      const gates = await readConfig(pool);
+      return res.json({ status: "OK", data: { gates, revision: capacityRevision(gates) } });
     } catch (error) {
       return fail(res, error, "Unable to load capacity settings. Please try again.");
     }
@@ -232,6 +238,11 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
       const gates = parseSettingsPayload(req.body);
       const config = await inTransaction(async (client) => {
         const current = await readConfig(client);
+        if (req.body.baseRevision !== undefined && req.body.baseRevision !== capacityRevision(current)) {
+          const error = new Error("Someone updated capacity settings. Reopen Capacity Configuration to load the latest settings before saving again.");
+          error.code = "CAPACITY_VERSION_CONFLICT";
+          throw error;
+        }
         for (const gate of gates) {
           const existing = current.find((item) => item.gate === gate.gate);
           for (const code of SHIFTS) {
@@ -262,8 +273,9 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => 
         }
         return readConfig(client);
       });
-      return res.json({ status: "OK", data: { gates: config }, message: "Capacity settings saved." });
+      return res.json({ status: "OK", data: { gates: config, revision: capacityRevision(config) }, message: "Capacity settings saved." });
     } catch (error) {
+      if (error.code === "CAPACITY_VERSION_CONFLICT") return res.status(409).json({ status: "ERROR", code: error.code, message: error.message });
       return fail(res, error, "Unable to save capacity settings. Nothing was changed.");
     }
   });
