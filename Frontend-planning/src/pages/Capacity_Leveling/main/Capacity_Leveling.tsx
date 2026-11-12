@@ -55,7 +55,7 @@ interface CapacityLevelingProps {
 const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPreview, onViewSnapshot, activeVersion }) => {
   const readOnly = Boolean(snapshot);
   const [preview, setPreview] = useState<LevelingData | null>(null);
-  const { user, requireAdmin } = useAuth();
+  const { user, requirePlanner } = useAuth();
   const [category, setCategory] = useState<ProcessCategory>("EFPC_GEN");
   const [planMode, setPlanMode] = useState<PlanMode>("planned");
   const [viewMode, setViewMode] = useState<ViewMode>("board");
@@ -393,7 +393,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const handleConfirmSave = useCallback(
     async (reason: string) => {
       if (!data || saving || readOnly) return;
-      await requireAdmin(async () => {
+      await requirePlanner(async () => {
         setSaving(true);
         try {
           // Only moved cards are stored; unmoved cards keep following Summary Gate.
@@ -421,7 +421,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         }
       });
     },
-    [data, saving, requireAdmin, lots, today, load, effectiveBoardCardOrder, readOnly]
+    [data, saving, requirePlanner, lots, today, load, effectiveBoardCardOrder, readOnly]
   );
 
   const dateRangeText = grid.length

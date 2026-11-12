@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { pool_smart } = require("../../config");
-const { verifyAdmin } = require("../Auth/Auth");
+const { verifyPlanner } = require("../Auth/Auth");
 const { refreshPoCalendarFields } = require("../WorkingDayCalendar/workingCalendar");
 const query = (text, params) => pool_smart.query(text, params);
 
@@ -822,7 +822,7 @@ router.get("/table", async (req, res) => {
  * - ย้าย Lot ที่กด Skip ข้ามไปเกาะที่ Due Date ถัดไปที่ใกล้ที่สุด (หรือเก็บไว้รอหากยังไม่มี Due Date ถัดไป)
  * - ดึง Lot ปกติถัดไปขึ้นมาเสียบแทนที่ Due Date เดิม และเรียงลำดับ FIFO (seq DESC, lot_no ASC) ใหม่
  */
-router.post("/skip_due", verifyAdmin, async (req, res) => {
+router.post("/skip_due", verifyPlanner, async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.body?.prd_name);
   const lot_no = asStr(req.body?.lot_no);
@@ -930,7 +930,7 @@ router.post("/skip_due", verifyAdmin, async (req, res) => {
 /**
  * ↩️ POST /unskip_due: ยกเลิกการ Skip Due (คืนค่า Lot กลับสู่คิว FIFO ปกติ)
  */
-router.post("/unskip_due", verifyAdmin, async (req, res) => {
+router.post("/unskip_due", verifyPlanner, async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.body?.prd_name);
   const lot_no = asStr(req.body?.lot_no);
@@ -993,7 +993,7 @@ router.post("/unskip_due", verifyAdmin, async (req, res) => {
 /**
  * 📌 POST /assign_wip_due: เจาะจงเลือก Due Date ที่จะนำ WIP Lot ไปแทรก
  */
-router.post("/assign_wip_due", verifyAdmin, async (req, res) => {
+router.post("/assign_wip_due", verifyPlanner, async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.body?.prd_name);
   const lot_no = asStr(req.body?.lot_no);
@@ -1082,7 +1082,7 @@ router.post("/assign_wip_due", verifyAdmin, async (req, res) => {
 /**
  * ↩️ POST /unassign_wip_due: ยกเลิกการแทรก WIP Lot (คืนค่าสู่คิว FIFO ปกติ)
  */
-router.post("/unassign_wip_due", verifyAdmin, async (req, res) => {
+router.post("/unassign_wip_due", verifyPlanner, async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.body?.prd_name);
   const lot_no = asStr(req.body?.lot_no);

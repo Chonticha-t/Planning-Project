@@ -101,7 +101,7 @@ const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
 const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id, hasSnapshot: Boolean(row.has_snapshot) });
 const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
+const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar }) => {
   const router = express.Router();
 
   const fail = (res, error, message) => {
@@ -193,7 +193,7 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
     }
   });
 
-  router.delete("/plans/:planId", verifyAdmin, async (req, res) => {
+  router.delete("/plans/:planId", verifyPlanner, async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
       if (!isPlanId(req.params.planId)) throw new ValidationError("The plan ID is invalid.");
@@ -227,7 +227,7 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
 
   // Changed shifts are retired and re-inserted so earlier settings stay on record. Special days
   // are saved in the same transaction: a day type per date, for that gate and shift only.
-  router.put("/capacity", verifyAdmin, async (req, res) => {
+  router.put("/capacity", verifyPlanner, async (req, res) => {
     try {
       const gates = parseSettingsPayload(req.body);
       const config = await inTransaction(async (client) => {
@@ -301,7 +301,7 @@ const createCapacityLevelingRouter = ({ pool, verifyAdmin, loadCalendar }) => {
   });
 
   // Every immutable version stores date overrides and the shared gate/day card order.
-  router.post("/plan", verifyAdmin, async (req, res) => {
+  router.post("/plan", verifyPlanner, async (req, res) => {
     try {
       const today = (await pool.query("SELECT CURRENT_DATE::text AS today")).rows[0].today;
       if (req.body?.calculationMethod !== PLAN_METHOD) throw new ValidationError("Reload the page before saving an arrival plan. Release-date clients are not supported.");

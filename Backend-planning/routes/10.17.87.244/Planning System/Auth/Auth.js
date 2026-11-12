@@ -132,7 +132,7 @@ const initAuthDb = () => {
           username VARCHAR(50) UNIQUE NOT NULL,
           password_hash TEXT NOT NULL,
           full_name VARCHAR(100) NOT NULL,
-          role VARCHAR(20) NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'admin')),
+          role VARCHAR(20) NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'planner', 'admin')),
           is_active BOOLEAN NOT NULL DEFAULT TRUE,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -140,6 +140,15 @@ const initAuthDb = () => {
       `);
 
       // เพิ่มคอลัมน์เก็บประวัติผู้ทำรายการ (Audit Trail) ในตารางเดิมหากยังไม่มี
+      // Update the existing role constraint atomically for databases created before Planner.
+      await query(`
+        DO $$ BEGIN
+          ALTER TABLE planning.planning_users DROP CONSTRAINT IF EXISTS planning_users_role_check;
+          ALTER TABLE planning.planning_users ADD CONSTRAINT planning_users_role_check
+            CHECK (role IN ('viewer', 'planner', 'admin'));
+        END $$;
+      `);
+
       await query(`
         ALTER TABLE planning.exchange_rate_monthly
         ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
@@ -179,7 +188,7 @@ const initAuthDb = () => {
 initAuthDb();
 
 // ── Middleware: ตรวจสอบสิทธิ์ Admin สำหรับ API แก้ไขข้อมูล ─────────────
-const verifyAdmin = (req, res, next) => {
+const authorizeRoles = (roles) => (req, res, next) => {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ")
     ? authHeader.slice(7).trim()
@@ -190,15 +199,15 @@ const verifyAdmin = (req, res, next) => {
     return res.status(401).json({
       status: "ERROR",
       code: "UNAUTHORIZED",
-      message: "Session expired or not logged in. Please login as Admin.",
+      message: "Session expired or not logged in. Please sign in again.",
     });
   }
 
-  if (String(payload.role).toLowerCase() !== "admin") {
+  if (!roles.includes(payload.role)) {
     return res.status(403).json({
       status: "ERROR",
       code: "FORBIDDEN",
-      message: "Admin permission is required for this action.",
+      message: "Your role does not have permission for this action.",
     });
   }
 
@@ -207,6 +216,51 @@ const verifyAdmin = (req, res, next) => {
 };
 
 // ── POST /api_p1/planning/auth/login ─────────────────────────────────
+const verifyPlanner = authorizeRoles(["planner", "admin"]);
+const verifyAdmin = authorizeRoles(["admin"]);
+
+// Only administrators can provision accounts. Serialize creation to match case-insensitive login.
+router.post("/users", verifyAdmin, async (req, res) => {
+  setNoCache(res);
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  const fullName = typeof req.body?.full_name === "string" ? req.body.full_name.trim() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const role = req.body?.role;
+  const errors = {};
+  if (!username || username.length > 50) errors.username = "Enter a username of up to 50 characters.";
+  if (!fullName || fullName.length > 100) errors.full_name = "Enter a display name of up to 100 characters.";
+  if (!password.trim()) errors.password = "Enter a password.";
+  if (!["planner", "admin"].includes(role)) errors.role = "Choose Planner or Admin.";
+  if (Object.keys(errors).length) return res.status(400).json({ status: "ERROR", message: "Please check the highlighted fields.", errors });
+
+  let client;
+  try {
+    await initAuthDb();
+    client = await pool_smart.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(74152931)");
+    const existing = await client.query("SELECT user_id FROM planning.planning_users WHERE LOWER(username) = LOWER($1)", [username]);
+    if (existing.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ status: "ERROR", message: "Username is already in use.", errors: { username: "Username is already in use." } });
+    }
+    const { rows } = await client.query(`
+      INSERT INTO planning.planning_users (username, password_hash, full_name, role, is_active)
+      VALUES ($1, $2, $3, $4, TRUE)
+      RETURNING user_id, username, full_name, role, is_active
+    `, [username, hashPassword(password), fullName, role]);
+    await client.query("COMMIT");
+    return res.status(201).json({ status: "OK", data: { user: rows[0] }, message: "User created successfully." });
+  } catch (err) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    if (err.code === "23505") return res.status(409).json({ status: "ERROR", errors: { username: "Username is already in use." }, message: "Username is already in use." });
+    console.error("Failed to create planning user:", err.message);
+    return res.status(500).json({ status: "ERROR", message: "Unable to create user. Please try again." });
+  } finally {
+    client?.release();
+  }
+});
+
 router.post("/login", async (req, res) => {
   setNoCache(res);
   await initAuthDb();
@@ -261,10 +315,10 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (String(user.role).toLowerCase() !== "admin") {
+    if (!["planner", "admin"].includes(user.role)) {
       return res.status(403).json({
         status: "ERROR",
-        message: "This account does not have Admin privileges.",
+        message: "This account does not have planning permissions.",
       });
     }
 
@@ -337,6 +391,7 @@ router.get("/me", (req, res) => {
 
 module.exports = {
   router,
+  verifyPlanner,
   verifyAdmin,
   initAuthDb,
   hashPassword,

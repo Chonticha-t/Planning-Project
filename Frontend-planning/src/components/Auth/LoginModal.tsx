@@ -127,14 +127,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       id="login-modal-title"
                       className="text-[17px] font-bold text-base-content tracking-tight leading-tight"
                     >
-                      Admin Login
+                      Planning Login
                     </h2>
                     <span className="badge badge-primary badge-sm text-[10.5px] font-semibold">
                       Required
                     </span>
                   </div>
                   <p className="text-[12px] text-base-content/60 mt-0.5">
-                    Sign in as Admin to edit rates or manage Due Dates.
+                    Sign in as Planner or Admin to edit planning data.
                   </p>
                 </div>
               </div>
@@ -182,7 +182,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       if (errorMsg) setErrorMsg(null);
                     }}
                     disabled={loading}
-                    placeholder="Enter admin username"
+                    placeholder="Enter username"
                     className="w-full rounded-xl border border-base-300 bg-base-200/50 focus:bg-base-100 focus:border-primary focus:ring-2 focus:ring-primary/20 pl-10 pr-3.5 py-2.5 text-[14px] font-medium text-base-content placeholder:text-base-content/35 focus:outline-none transition-all"
                   />
                 </div>
@@ -253,7 +253,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               {/* Session Info Footer */}
               <div className="flex items-center justify-center gap-1.5 pt-1 text-[11px] text-base-content/50">
                 <Clock size={12} className="shrink-0" />
-                <span>Admin session stays active for 1 hour</span>
+                <span>Your session stays active for 1 hour</span>
               </div>
             </form>
           </motion.div>

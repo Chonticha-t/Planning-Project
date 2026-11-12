@@ -16,7 +16,7 @@ export interface AuthUser {
   user_id: number;
   username: string;
   full_name: string;
-  role: "admin" | "viewer";
+  role: "admin" | "planner" | "viewer";
 }
 
 interface StoredSession {
@@ -27,11 +27,12 @@ interface StoredSession {
 
 interface AuthContextValue {
   user: AuthUser | null;
+  canEditPlanning: boolean;
   isAdmin: boolean;
   expiresAt: number | null;
   openLoginModal: () => void;
   logout: () => void;
-  requireAdmin: (action?: () => void | Promise<void>) => Promise<boolean>;
+  requirePlanner: (action?: () => void | Promise<void>) => Promise<boolean>;
 }
 
 const STORAGE_KEY = "planning_auth_session";
@@ -146,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const remainingMs = session.expiresAt - Date.now();
     if (remainingMs <= 0) {
       clearSession(true);
-      toast("Admin session expired (1 hour). Please login again if needed.", {
+      toast("Session expired (1 hour). Please login again if needed.", {
         icon: "⏰",
       });
       return;
@@ -154,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const timer = window.setTimeout(() => {
       clearSession(true);
-      toast("Admin session expired (1 hour). Switched back to Viewer mode.", {
+      toast("Session expired (1 hour). Switched back to Viewer mode.", {
         icon: "⏰",
       });
     }, remainingMs);
@@ -205,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           setSession(nextSession);
           setLoginModalOpen(false);
 
-          toast.success(`Logged in as ${user.full_name || user.username} (Admin)`);
+          toast.success(`Logged in as ${user.full_name || user.username} (${user.role === "admin" ? "Admin" : "Planner"})`);
 
           const action = pendingActionRef.current;
           const resolver = pendingResolverRef.current;
@@ -243,12 +244,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     resolver?.(false);
   }, []);
 
-  const requireAdmin = useCallback(
+  const requirePlanner = useCallback(
     async (action?: () => void | Promise<void>): Promise<boolean> => {
       const current = sessionRef.current;
       if (
         current &&
-        current.user?.role === "admin" &&
+        ["admin", "planner"].includes(current.user?.role) &&
         current.expiresAt > Date.now()
       ) {
         if (action) {
@@ -272,29 +273,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const openLoginModal = useCallback(() => {
-    void requireAdmin();
-  }, [requireAdmin]);
+    void requirePlanner();
+  }, [requirePlanner]);
 
   const logout = useCallback(() => {
     clearSession(false);
   }, [clearSession]);
 
-  const isAdmin = Boolean(
+  const canEditPlanning = Boolean(
     session &&
-      session.user?.role === "admin" &&
+      ["admin", "planner"].includes(session.user?.role) &&
       session.expiresAt > Date.now()
   );
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user: isAdmin ? session?.user ?? null : null,
-      isAdmin,
-      expiresAt: isAdmin ? session?.expiresAt ?? null : null,
+      user: canEditPlanning ? session?.user ?? null : null,
+      canEditPlanning,
+      isAdmin: canEditPlanning && session?.user.role === "admin",
+      expiresAt: canEditPlanning ? session?.expiresAt ?? null : null,
       openLoginModal,
       logout,
-      requireAdmin,
+      requirePlanner,
     }),
-    [isAdmin, session, openLoginModal, logout, requireAdmin]
+    [canEditPlanning, session, openLoginModal, logout, requirePlanner]
   );
 
   return (

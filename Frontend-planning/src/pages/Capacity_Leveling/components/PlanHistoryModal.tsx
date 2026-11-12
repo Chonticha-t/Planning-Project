@@ -22,7 +22,7 @@ interface Props {
 }
 
 export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
-  const { requireAdmin } = useAuth();
+  const { requirePlanner } = useAuth();
   const [plans, setPlans] = useState<PlanHistoryInfo[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,7 +129,7 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
     deleteLock.current = true;
     setDeleting(true);
     try {
-      if (!await requireAdmin()) return;
+      if (!await requirePlanner()) return;
       await deletePlanVersion(target.planId);
       setConfirm(null);
       setPlans((previous) => previous.filter((plan) => plan.planId !== target.planId));

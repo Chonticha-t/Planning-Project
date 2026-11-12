@@ -147,7 +147,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
   const confirm = useConfirm();
-  const { isAdmin, requireAdmin } = useAuth();
+  const { canEditPlanning, requirePlanner } = useAuth();
   const cacheRef = useRef<Map<string, CachedRate>>(new Map());
   const inFlightRef = useRef<Map<string, Promise<void>>>(new Map());
 
@@ -359,7 +359,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   }, [dbVersion, fetchRate]);
 
   const handleStartEdit = () => {
-    void requireAdmin(() => {
+    void requirePlanner(() => {
       setIsEditing(true);
     });
   };
@@ -372,15 +372,15 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
   // หาก Logout หรือหมดเวลา Session ขณะกำลังเปิดหน้าแก้ไข ให้กลับสู่โหมดอ่านอย่างเดียวทันที
   useEffect(() => {
-    if (!isAdmin && isEditing) {
+    if (!canEditPlanning && isEditing) {
       setJpyRate(savedJpyRate);
       setUsdRate(savedUsdRate);
       setIsEditing(false);
     }
-  }, [isAdmin, isEditing, savedJpyRate, savedUsdRate]);
+  }, [canEditPlanning, isEditing, savedJpyRate, savedUsdRate]);
 
   const handleSave = async () => {
-    if (!(await requireAdmin())) return;
+    if (!(await requirePlanner())) return;
 
     const numJpy = parseFloat(jpyRate);
     const numUsd = parseFloat(usdRate);
@@ -487,7 +487,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   };
 
   const handleDelete = async () => {
-    if (!(await requireAdmin())) return;
+    if (!(await requirePlanner())) return;
 
     const ok = await confirm({
       variant: "delete",
@@ -562,7 +562,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
   const thbPerUsd = !isNaN(numUsd) && numUsd > 0 ? (1 / numUsd).toFixed(2) : null;
 
   // Input is active only when logged in as Admin AND (it's a new month or user clicked Edit)
-  const isInputActive = isAdmin && (!isFromDb || isEditing);
+  const isInputActive = canEditPlanning && (!isFromDb || isEditing);
 
   return createPortal(
     <AnimatePresence>
@@ -953,7 +953,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
               <div className="h-4 w-10 bg-primary-content/40 rounded animate-pulse" />
             </button>
           </div>
-        ) : !isFromDb && isAdmin ? (
+        ) : !isFromDb && canEditPlanning ? (
           // New Month (Not in DB yet) + Admin: Cancel + Save directly
           <div className="flex items-center gap-3 mb-4">
             <button

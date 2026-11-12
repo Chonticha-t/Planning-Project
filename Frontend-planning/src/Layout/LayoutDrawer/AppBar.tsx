@@ -6,6 +6,7 @@ import {
   ChevronDown,
   User,
   BadgeCheck,
+  UserPlus,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ThemeSwitcher from "@/components/Theme/ThemeSwitcher";
@@ -14,10 +15,13 @@ import LogoText from "@/Layout/LayoutDrawer/Components/Other/LogoText";
 import SearchBar from "@/Layout/LayoutDrawer/Components/Other/SearchBar";
 import { useAuth } from "@/context/AuthContext";
 
+import AddUserModal from "@/components/Auth/AddUserModal";
+
 const AppBar = () => {
   const location = useLocation();
-  const { user, isAdmin, openLoginModal, logout } = useAuth();
+  const { user, canEditPlanning, isAdmin, openLoginModal, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [addUserOpen, setAddUserOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
   const currentRoute =
@@ -75,7 +79,7 @@ const AppBar = () => {
       <div className="ml-auto flex items-center gap-2.5">
         <SearchBar />
 
-        {isAdmin && user ? (
+        {canEditPlanning && user ? (
           <div ref={profileRef} className="relative">
             {/* Luxury Solid Blue Profile Trigger Button */}
             <button
@@ -95,7 +99,7 @@ const AppBar = () => {
               {/* Name & Role */}
               <div className="flex items-center gap-1.5 text-left leading-none">
                 <span className="text-[11px] font-medium text-blue-200 hidden sm:inline">
-                  Admin
+                  {isAdmin ? "Admin" : "Planner"}
                 </span>
                 <span className="text-xs font-bold tracking-wide text-white max-w-[110px] truncate">
                   {user.username}
@@ -145,7 +149,7 @@ const AppBar = () => {
                     <div className="mt-3 flex items-center justify-between pt-2.5 border-t border-white/15 text-[11px]">
                       <span className="inline-flex items-center gap-1 font-semibold text-blue-100">
                         <ShieldCheck size={13} className="text-sky-300" />
-                        Administrator
+                        {isAdmin ? "Administrator" : "Planner"}
                       </span>
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/15 text-white font-medium text-[10.5px]">
                         <span className="size-1.5 rounded-full bg-emerald-400" />
@@ -165,9 +169,16 @@ const AppBar = () => {
                         <span className="font-semibold text-base-content">
                           Full Planning Access
                         </span>
+                        {isAdmin && <span className="mt-0.5 text-[11px] text-base-content/60">User Creation Access</span>}
                       </div>
                     </div>
 
+                    {isAdmin && (
+                      <button type="button" onClick={() => { setProfileOpen(false); setAddUserOpen(true); }}
+                        className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-600/10 dark:text-blue-400">
+                        <UserPlus size={15} /> Add User
+                      </button>
+                    )}
                     <div className="my-1 border-t border-base-200" />
 
                     {/* Logout Action */}
@@ -184,7 +195,7 @@ const AppBar = () => {
                         <span>Sign Out</span>
                       </span>
                       <span className="text-[11px] font-normal opacity-60">
-                        Exit Admin
+                        {isAdmin ? "Admin" : "Planner"}
                       </span>
                     </button>
                   </div>
@@ -197,15 +208,16 @@ const AppBar = () => {
             type="button"
             onClick={openLoginModal}
             className="group flex items-center gap-2 pl-1.5 pr-3.5 py-1 h-9 rounded-full bg-[#1e40af] hover:bg-[#1e3a8a] active:scale-[0.98] text-white border border-blue-400/25 text-xs font-semibold transition-all duration-200 cursor-pointer shadow-[0_2px_10px_rgba(30,64,175,0.28)]"
-            title="Admin Login"
+            title="Planning Login"
           >
             <span className="flex items-center justify-center size-6 rounded-full bg-white text-[#1e40af] shadow-xs transition-transform group-hover:scale-105 shrink-0">
               <User size={14} strokeWidth={2.5} className="shrink-0" />
             </span>
-            <span className="tracking-wide">Admin Login</span>
+            <span className="tracking-wide">Planning Login</span>
           </button>
         )}
 
+        {addUserOpen && isAdmin && <AddUserModal onClose={() => setAddUserOpen(false)} />}
         <ThemeSwitcher />
       </div>
     </div>

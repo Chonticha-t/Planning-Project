@@ -44,7 +44,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   onClose,
   onSaved,
 }) => {
-  const { requireAdmin } = useAuth();
+  const { requirePlanner } = useAuth();
   const [selectedGate, setSelectedGate] = useState("FADL");
   const [activeTab, setActiveTab] = useState<"input" | "table">("input");
   const [selectedShift, setSelectedShift] = useState<Shift>("day");
@@ -184,7 +184,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   // Settings and special days of every gate are stored together, in one transaction.
   const handleSave = async () => {
     if (isSaving) return;
-    await requireAdmin(async () => {
+    await requirePlanner(async () => {
       setIsSaving(true);
       try {
         await saveCapacity(Object.values(configs));

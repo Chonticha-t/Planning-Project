@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { pool_smart } = require("../../config");
-const { verifyAdmin } = require("../Auth/Auth");
+const { verifyPlanner } = require("../Auth/Auth");
 const query = (text, params) => pool_smart.query(text, params);
 
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
@@ -520,7 +520,7 @@ router.get("/exchange_rate", async (req, res) => {
 });
 
 // POST /api_p1/planning/exchange_rate — บันทึกหรืออัปเดตอัตราแลกเปลี่ยน (UPSERT)
-router.post("/exchange_rate", verifyAdmin, async (req, res) => {
+router.post("/exchange_rate", verifyPlanner, async (req, res) => {
   setNoCache(res);
   const { year, month_name, month_no, rates } = req.body;
 
@@ -631,7 +631,7 @@ router.post("/exchange_rate", verifyAdmin, async (req, res) => {
 });
 
 // DELETE /api_p1/planning/exchange_rate — ลบอัตราแลกเปลี่ยนของเดือนและปีที่ระบุ
-router.delete("/exchange_rate", verifyAdmin, async (req, res) => {
+router.delete("/exchange_rate", verifyPlanner, async (req, res) => {
   setNoCache(res);
   const yearParam = req.query.year || req.body?.year;
   const monthParam =

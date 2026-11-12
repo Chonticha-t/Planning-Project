@@ -256,7 +256,7 @@ const PlanningSummaryTable = memo(
     onUnassignWipDue,
   }: PlanningSummaryTableProps) => {
     const confirm = useConfirm();
-    const { requireAdmin } = useAuth();
+    const { requirePlanner } = useAuth();
     const [selectedWipRow, setSelectedWipRow] = useState<PlanningSummaryRow | null>(null);
 
     const handleOpenWipModal = useCallback((row: PlanningSummaryRow) => {
@@ -269,24 +269,24 @@ const PlanningSummaryTable = memo(
 
     const handleAssignWip = useCallback(
       async (row: PlanningSummaryRow, targetDueDate: string) => {
-        const isAuthorized = await requireAdmin();
+        const isAuthorized = await requirePlanner();
         if (!isAuthorized) return;
         if (onAssignWipDue) {
           await onAssignWipDue(row, targetDueDate);
         }
       },
-      [requireAdmin, onAssignWipDue]
+      [requirePlanner, onAssignWipDue]
     );
 
     const handleUnassignWip = useCallback(
       async (row: PlanningSummaryRow) => {
-        const isAuthorized = await requireAdmin();
+        const isAuthorized = await requirePlanner();
         if (!isAuthorized) return;
         if (onUnassignWipDue) {
           await onUnassignWipDue(row);
         }
       },
-      [requireAdmin, onUnassignWipDue]
+      [requirePlanner, onUnassignWipDue]
     );
 
     const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -471,7 +471,7 @@ const PlanningSummaryTable = memo(
         });
 
         if (requestedUndo && onUnskipDue) {
-          const isAuthorized = await requireAdmin();
+          const isAuthorized = await requirePlanner();
           if (!isAuthorized) return;
 
           await new Promise((r) => setTimeout(r, 160));
@@ -516,7 +516,7 @@ const PlanningSummaryTable = memo(
         }
 
         if (shouldSkip && onSkipDue) {
-          const isAuthorized = await requireAdmin();
+          const isAuthorized = await requirePlanner();
           if (!isAuthorized) return;
 
           await new Promise((r) => setTimeout(r, 160));
@@ -557,7 +557,7 @@ const PlanningSummaryTable = memo(
           }
         }
       },
-      [confirm, onSkipDue, onUnskipDue, requireAdmin]
+      [confirm, onSkipDue, onUnskipDue, requirePlanner]
     );
 
     const columns: GridColDef<PlanningSummaryRow>[] = useMemo(

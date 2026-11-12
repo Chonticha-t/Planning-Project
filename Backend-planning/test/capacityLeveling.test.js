@@ -165,7 +165,7 @@ async function withApi(pool, callback, { admin = true, loadCalendar } = {}) {
   app.use(express.json());
   app.use(createCapacityLevelingRouter({
     pool,
-    verifyAdmin: (req, res, next) => (admin ? (req.user = { username: "planner" }, next()) : res.status(401).json({ status: "ERROR" })),
+    verifyPlanner: (req, res, next) => (admin ? (req.user = { username: "planner" }, next()) : res.status(401).json({ status: "ERROR" })),
     loadCalendar: loadCalendar ?? (async () => ({ calendar: { isWorking: (date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 } })),
   }));
   const server = app.listen(0, "127.0.0.1");
