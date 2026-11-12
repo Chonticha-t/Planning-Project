@@ -44,6 +44,11 @@ export const matchesCategory = (lot: LotItem, category: ProcessCategory) =>
 
 export const isMoved = (lot: LotItem) => lot.plannedDate !== lot.baseDate;
 
+/** Reset every allocation to its source arrival while retaining the last saved date for comparison. */
+export const requiredLots = (cards: ApiCard[]): LotItem[] => cards.map((card) => ({
+  ...toLotItem(card), plannedDate: card.baseDate,
+}));
+
 const siblingKey = (workKey: string, gate: string) => `${workKey}|${gate}`;
 
 const routeKey = (row: GateArrivalRow, gate: string) => JSON.stringify([row.prd_name, row.lot_no?.trim(), row.due_date, row.status, row.pri, gate]);

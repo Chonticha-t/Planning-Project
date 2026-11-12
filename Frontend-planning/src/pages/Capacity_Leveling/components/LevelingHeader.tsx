@@ -7,6 +7,7 @@ import {
   Save,
   ArrowLeft,
   History,
+  RotateCcw,
 } from "lucide-react";
 import type { ProcessCategory } from "../types";
 
@@ -28,6 +29,8 @@ interface LevelingHeaderProps {
   isLoading: boolean;
   onSavePlan: () => void;
   canSave: boolean;
+  onResetRequired: () => void;
+  canReset: boolean;
   /** 0 = no plan has been saved yet */
   planVersion: number;
   planSavedAt: string | null;
@@ -46,6 +49,8 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
   isLoading,
   onSavePlan,
   canSave,
+  onResetRequired,
+  canReset,
   planVersion,
   planSavedAt,
   isDraftModified,
@@ -147,6 +152,11 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         </button>
 
         {/* Save Plan Button */}
+        <button type="button" onClick={onResetRequired} disabled={!canReset || readOnly}
+          title="Reset arrival dates and card order for all process groups and gates. Review before saving."
+          className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-amber-300 hover:bg-amber-50 text-amber-900 text-xs font-semibold flex items-center gap-1.5 cursor-pointer">
+          <RotateCcw size={13} /> Reset to Required
+        </button>
         <button
           type="button"
           onClick={onSavePlan}

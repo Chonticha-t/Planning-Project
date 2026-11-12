@@ -22,7 +22,26 @@ import {
   plannedArrivalDate,
   shiftCapacityMin,
   toLotItem,
+  requiredLots,
 } from "./levelingCalculations.ts";
+
+test("reset to Required reconciles every gate's grid with source arrivals and clears saved order on save", () => {
+  const original = data([
+    card({ plannedDate: "2026-11-18" }),
+    card({ id: "smt", workKey: "smt", lotNo: "L2", gate: "MMOT", processGroup: "SMT", plannedDate: "2026-11-19" }),
+    card({ id: "past", workKey: "past", lotNo: "L3", gate: "FIN", arriveBy: "2026-11-12", plannedDate: "2026-11-17" }),
+    card({ id: "future", workKey: "future", lotNo: "L4", baseDate: "2026-12-20", arriveBy: "2026-12-20", plannedDate: "2026-12-22" }),
+  ]);
+  const before = JSON.stringify(original);
+  const lots = requiredLots(original.cards);
+  assert.deepEqual(buildGrid(original, lots), buildGrid(original, original.cards.map(toLotItem), true));
+  assert.equal(lots.find(lot => lot.id === "past")!.plannedDate, "2026-11-12");
+  assert.equal(lots.find(lot => lot.id === "future")!.plannedDate, "2026-12-20");
+  assert.equal(lots[0].savedDate, "2026-11-18");
+  assert.equal(calculateKpis(buildGrid(original, lots), buildGrid(original, lots, true), lots, original).movedCount, 0);
+  assert.deepEqual(serializeBoardCardOrder(buildBoardLots(original, lots), new Map(), original.today), []);
+  assert.equal(JSON.stringify(original), before, "reset must preserve loaded saved data for comparison");
+});
 
 const open = (capacityMin: number | null, hasOt = false): CapacityDay => ({
   off: false, hasOt, capacityMin,

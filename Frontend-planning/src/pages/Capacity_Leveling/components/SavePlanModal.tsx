@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, Save, X } from "lucide-react";
 import type { LevelingKpiData } from "../types";
@@ -10,6 +10,7 @@ interface SavePlanModalProps {
   nextVersion: number;
   isSaving: boolean;
   kpis: LevelingKpiData;
+  resetToRequired?: boolean;
 }
 
 const QUICK_REASONS = [
@@ -25,9 +26,16 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
   nextVersion,
   isSaving,
   kpis,
+  resetToRequired = false,
 }) => {
   const [reason, setReason] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  useEffect(() => {
+    if (isOpen) {
+      setReason(resetToRequired ? "Reset to Required" : "");
+      setErrorMsg("");
+    }
+  }, [isOpen, resetToRequired]);
 
   if (!isOpen || typeof document === "undefined") return null;
 
@@ -81,6 +89,10 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
 
         {/* 2. Body */}
         <div className="p-6 flex flex-col gap-4 tabular-nums">
+          {resetToRequired && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+            Saving the reset draft for all process groups and gates. Earlier versions are kept.
+            Zero moved cards means the saved date overrides will be cleared. Any changes made after resetting are included.
+          </p>}
           {/* Summary 3-Card Row */}
           <div className="grid grid-cols-3 gap-2.5">
             <div className="p-3 rounded-xl bg-base-200/50 border border-base-300 text-center">
