@@ -86,7 +86,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity }: P
               const showSection = index === 0 || allocations.get(visible[index - 1].lot.id)?.status !== group;
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
                 section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
-                onRoute={() => setRouteLot(lot)} />;
+                allocation={allocation} onRoute={() => setRouteLot(lot)} />;
             })}
             {!rows.length && <tr><td colSpan={10} className="py-10 text-center text-base-content/50">{query ? "No lots match your search." : "No saved arrivals for this gate and day."}</td></tr>}
           </>}
@@ -125,9 +125,9 @@ function CapacityBar({ pct }: { pct: number | null }) {
   </div>;
 }
 
-function QueueRow({ lot, sequence, color, showSection, section, sectionClass, onRoute }: {
+function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, onRoute }: {
   lot: LotItem; sequence: number; color: string; showSection: boolean; section: string;
-  sectionClass: string; onRoute: () => void;
+  sectionClass: string; allocation?: BoardShiftAllocation; onRoute: () => void;
 }) {
   return <>
     {showSection && <tr className={`h-9 border-y ${sectionClass}`}><td colSpan={10} className="px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider"><span className="inline-block h-2.5 w-2.5 mr-2 rounded-xs" style={{ backgroundColor: color }} />{section}</td></tr>}
@@ -140,7 +140,13 @@ function QueueRow({ lot, sequence, color, showSection, section, sectionClass, on
       <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect saved route" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#316be8]" /><span className="truncate">{lot.currentProc || lot.currentGate || "Details"}</span></button></td>
       <td className="px-2.5 text-center font-extrabold text-xs border-r border-base-200">{lot.kind === "lot" ? 1 : unavailable}</td>
       <td className="px-2.5 text-right text-xs font-bold border-r border-base-200" title="Saved daily planning load; not runtime or ETA">{lot.kind === "lot" && lot.loadMin !== null ? lot.loadMin.toLocaleString() : unavailable}</td>
-      <td className="px-3 border-r border-base-200" title="Actual utilization is unavailable">{unavailable}</td>
+      <td className="px-3 border-r border-base-200" title={allocation?.reason ?? "Planned allocation from saved capacity; not actual utilization"}>
+        {allocation && !["none", "unassigned"].includes(allocation.status) ? <div className="py-1.5 text-[11px] font-semibold tabular-nums leading-5">
+          <div className="text-[#8a5a00]">D/S {allocation.dayMin.toLocaleString()}m</div>
+          <div className="text-[#5a3fc0]">N/S {allocation.nightMin.toLocaleString()}m</div>
+          {allocation.overflowMin > 0 && <div className="text-rose-600">Over {allocation.overflowMin.toLocaleString()}m</div>}
+        </div> : unavailable}
+      </td>
       <td className="px-2 text-center"><div className="inline-flex gap-1">{[{ Icon: ArrowUp, title: 'Move up' }, { Icon: ArrowDown, title: 'Move down' }, { Icon: ArrowUpToLine, title: 'Move to top' }].map(({ Icon, title }) =>
         <button key={title} type="button" disabled title={`${title}: Save order is not connected`} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/80 disabled:opacity-30"><Icon size={13} /></button>)}</div></td>
     </tr>

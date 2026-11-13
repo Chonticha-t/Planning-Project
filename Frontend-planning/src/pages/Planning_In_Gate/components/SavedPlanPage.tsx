@@ -34,7 +34,7 @@ export default function SavedPlanPage() {
   const [exporting, setExporting] = useState(false);
   const { saved, loading, error, reload } = useSavedPlan();
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
-  const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, savedPlanRows(saved.snapshot, "ALL")) : new Map(), [saved]);
+  const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows) : new Map(), [saved, rows]);
   const gates = useMemo(() => saved ? savedPlanGates(saved.snapshot, category) : [], [saved, category]);
   const gate = gates.find(item => item.gate === selectedGate)?.gate ?? gates[0]?.gate ?? "";
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
