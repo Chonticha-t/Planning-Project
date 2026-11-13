@@ -57,7 +57,7 @@ test("category follows routing, preserving unknown and conflicting product alias
   assert.equal(categoryFor("PRODUCT-A", [...routes, { ...routes[0], prd_name: "PRODUCTA" }]), null);
 });
 
-async function withApi(callback, { authorized = true, fail = false } = {}) {
+async function withApi(callback, { fail = false } = {}) {
   const queries = [];
   const pool = { connect: async () => ({ release: () => queries.push(["RELEASE"]), query: async (sql, params) => {
     queries.push([sql, params]);
@@ -65,7 +65,7 @@ async function withApi(callback, { authorized = true, fail = false } = {}) {
     return { rows: sql.includes("FROM planning.wip_in_process") ? [wip()] : sql.includes("FROM planning.prd_routing_master") ? routes : [] };
   } }) };
   const app = express();
-  app.use(createInGateRoutingRouter({ pool, verifyPlanner: (_req, res, next) => authorized ? next() : res.status(401).json({ code: "UNAUTHORIZED" }) }));
+  app.use(createInGateRoutingRouter({ pool }));
   const server = app.listen(0, "127.0.0.1");
   await new Promise(resolve => server.once("listening", resolve));
   try { await callback(async day => {
@@ -73,8 +73,19 @@ async function withApi(callback, { authorized = true, fail = false } = {}) {
     return { status: response.status, body: await response.json(), cache: response.headers.get("cache-control") };
   }, queries); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
-test("finished endpoint preserves authentication and validates dates before database access", async () => {
-  await withApi(async (api, queries) => { assert.equal((await api(date)).status, 401); assert.equal(queries.length, 0); }, { authorized: false });
+test("finished endpoint is available without authentication or planner middleware", async () => {
+  await withApi(async (api) => {
+    const result = await api(date);
+    assert.equal(result.status, 200);
+    assert.equal(result.cache, "no-store");
+    assert.equal(result.body.data.date, date);
+    assert.equal(result.body.data.rows.length, 1);
+    assert.equal(result.body.data.rows[0].lotNo, "LOT-A");
+    assert.equal(result.body.data.rows[0].gate, "GATE-A");
+  });
+});
+
+test("anonymous finished requests validate dates before database access", async () => {
   await withApi(async (api, queries) => {
     for (const day of ["2026-02-30", "2026-11-12' OR true --", ""]) assert.equal((await api(day)).status, 400);
     assert.equal(queries.length, 0);

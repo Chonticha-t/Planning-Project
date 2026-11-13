@@ -54,7 +54,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
   const lotCount = planQuantity(planOrder, "lots");
   const needs = planOrder.filter(lot => lot.kind !== "lot").length;
   const pendingCount = planOrder.filter(lot => lot.kind === "lot" && !completed.has(JSON.stringify([lot.gate, lot.label]))).length;
-  const countAvailable = !finished.needsLogin && !finished.loading && !finished.error;
+  const countAvailable = !finished.loading && !finished.error;
   const finishedCount = countAvailable ? finished.rows.length : "—";
 
   return <div className="flex flex-col gap-3">
@@ -72,8 +72,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
       </div>
     </div>
     <div className="text-xs text-base-content/60" role={finished.error ? "alert" : "status"}>
-      {finished.needsLogin ? <><span>Sign in to read Finished today. </span><button type="button" className="link" onClick={finished.login}>Sign in</button></>
-        : finished.loading ? "Loading next-gate SCAN IN evidence…"
+      {finished.loading ? "Loading next-gate SCAN IN evidence…"
         : finished.error ? <>{finished.error} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
         : <>Finished = SCAN IN at the next gate, using its in_date calendar day. Latest WIP evidence only; not a complete scan history.
           {finished.unresolved > 0 && <span> Some scans have unresolved routing or category and are excluded from the corresponding totals.</span>}
@@ -114,7 +113,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
                 section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
                 allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
-                routeUnavailable={Boolean(routing.error)} needsLogin={routing.needsLogin} onRoute={() => setRouteLot(lot)} />;
+                routeUnavailable={Boolean(routing.error)} onRoute={() => setRouteLot(lot)} />;
             })}
             {!display.length && <tr><td colSpan={10} className="py-10 text-center text-base-content/50">{filter === "finished" ? countAvailable ? "No next-gate SCAN IN evidence found for this gate and date in latest WIP." : "Finished today is not available yet." : query ? "No lots match your search." : "No pending saved arrivals for this gate and day."}</td></tr>}
           </>
@@ -126,7 +125,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
       <button type="button" className="btn btn-sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>
       <button type="button" className="btn btn-sm" disabled={(currentPage + 1) * PAGE_SIZE >= display.length} onClick={() => setPage(currentPage + 1)}>Next</button>
     </div>}
-    {routeLot && <LiveRouteDetails lot={routeLot} route={routing.routes.get(routeLot.id)} loading={routing.loading} error={routing.error} checkedAt={routing.checkedAt} needsLogin={routing.needsLogin} login={routing.login} retry={routing.retry} onClose={() => setRouteLot(null)} />}
+    {routeLot && <LiveRouteDetails lot={routeLot} route={routing.routes.get(routeLot.id)} loading={routing.loading} error={routing.error} checkedAt={routing.checkedAt} retry={routing.retry} onClose={() => setRouteLot(null)} />}
   </div>;
 }
 
@@ -150,10 +149,10 @@ function CapacityBar({ pct }: { pct: number | null }) {
   </div>;
 }
 
-function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, route, routeLoading, routeUnavailable, needsLogin, onRoute }: {
+function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, route, routeLoading, routeUnavailable, onRoute }: {
   lot: LotItem; sequence: number; color: string; showSection: boolean; section: string;
   sectionClass: string; allocation?: BoardShiftAllocation; route?: LotRouting;
-  routeLoading: boolean; routeUnavailable: boolean; needsLogin: boolean; onRoute: () => void;
+  routeLoading: boolean; routeUnavailable: boolean; onRoute: () => void;
 }) {
   return <>
     {showSection && <tr className={`h-9 border-y ${sectionClass}`}><td colSpan={10} className="px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider"><span className="inline-block h-2.5 w-2.5 mr-2 rounded-xs" style={{ backgroundColor: color }} />{section}</td></tr>}
@@ -163,7 +162,7 @@ function QueueRow({ lot, sequence, color, showSection, section, sectionClass, al
       <td className="px-2.5 text-center border-r border-base-200"><span title="Status captured when this plan was saved" className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${lot.isHold ? "bg-[#fdecb3] text-[#8a5a00]" : lot.gateState === "in_gate" ? "bg-[#316be8] text-white" : "bg-base-200 text-base-content/70"}`}>{planStatus(lot)}</span></td>
       <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.sheets, "sheet")}</td>
       <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.qty, "piece")}</td>
-      <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect routing and current WIP" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${route?.status === "matched" ? "bg-[#316be8]" : "bg-base-300"}`} /><span className="truncate">{needsLogin ? "Sign in for routing" : routeLoading ? "Loading…" : routeUnavailable ? "Routing unavailable" : route?.status === "matched" ? route.current?.process || route.current?.gate || "Details" : "Position unconfirmed"}</span></button></td>
+      <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect routing and current WIP" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${route?.status === "matched" ? "bg-[#316be8]" : "bg-base-300"}`} /><span className="truncate">{routeLoading ? "Loading…" : routeUnavailable ? "Routing unavailable" : route?.status === "matched" ? route.current?.process || route.current?.gate || "Details" : "Position unconfirmed"}</span></button></td>
       <td className="px-2.5 text-center font-extrabold text-xs border-r border-base-200">{lot.kind === "lot" ? 1 : unavailable}</td>
       <td className="px-2.5 text-right text-xs font-bold border-r border-base-200" title="Saved daily planning load; not runtime or ETA">{lot.kind === "lot" && lot.loadMin !== null ? lot.loadMin.toLocaleString() : unavailable}</td>
       <td className="px-3 border-r border-base-200" title={allocation?.reason ?? "Planned allocation from saved capacity; not actual utilization"}>

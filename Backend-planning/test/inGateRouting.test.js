@@ -83,9 +83,19 @@ async function withApi(callback, { allowed = true, failure = false } = {}) {
   }, queries); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 
-test("authentication and validation run before any database access", async () => {
-  await withApi(async (api, queries) => { assert.equal((await api({ items: [item] })).status, 401); assert.equal(queries.length, 0); }, { allowed: false });
-  await withApi(async (api, queries) => { assert.equal((await api({ items: [] })).status, 400); assert.equal(queries.length, 0); });
+test("routing lookup is available without authentication", async () => {
+  await withApi(async (api) => {
+    const result = await api({ items: [item] });
+    assert.equal(result.status, 200);
+    assert.equal(result.cache, "no-store");
+    assert.equal(result.body.data.results[0].status, "matched");
+    assert.equal(result.body.data.results[0].steps.length, 1);
+    assert.equal(result.body.data.results[0].current.seq, 10);
+  }, { allowed: false });
+});
+
+test("anonymous routing requests validate identities before any database access", async () => {
+  await withApi(async (api, queries) => { assert.equal((await api({ items: [] })).status, 400); assert.equal(queries.length, 0); }, { allowed: false });
 });
 
 test("read-only batch uses parameterized identities and a consistent transaction", async () => {

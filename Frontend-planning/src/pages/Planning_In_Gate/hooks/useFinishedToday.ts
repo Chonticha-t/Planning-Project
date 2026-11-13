@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { useAuth } from "@/context/AuthContext";
 import { getApiBaseUrl } from "@/utils/apiConfig";
 
 export interface FinishedEvidence {
@@ -9,20 +8,18 @@ export interface FinishedEvidence {
   processGroup: string | null; sourceUpdatedAt: string | null;
 }
 export interface FinishedState {
-  rows: FinishedEvidence[]; loading: boolean; error?: string; needsLogin: boolean;
-  login: () => void; reload: () => void; checkedAt?: string; unresolved: number;
+  rows: FinishedEvidence[]; loading: boolean; error?: string;
+  reload: () => void; checkedAt?: string; unresolved: number;
 }
 
 /** Calendar-day evidence from latest WIP, independent of saved plan dates and pagination. */
 export function useFinishedToday(date: string, enabled: boolean): FinishedState {
-  const { user, openLoginModal } = useAuth();
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<{ key: string; rows: FinishedEvidence[]; checkedAt?: string; error?: string; unresolved: number }>({ key: "", rows: [], unresolved: 0 });
-  const username = user?.username;
-  const key = `${date}|${username ?? ""}|${revision}|${enabled}`;
+  const key = `${date}|${revision}|${enabled}`;
   const reload = useCallback(() => setRevision(value => value + 1), []);
   useEffect(() => {
-    if (!enabled || !username) return;
+    if (!enabled) return;
     const controller = new AbortController();
     (async () => {
       try {
@@ -48,9 +45,9 @@ export function useFinishedToday(date: string, enabled: boolean): FinishedState 
       }
     })();
     return () => controller.abort();
-  }, [date, enabled, username, key]);
+  }, [date, enabled, key]);
   const current = state.key === key ? state : null;
-  return { rows: current?.rows ?? [], loading: Boolean(enabled && username && !current),
+  return { rows: current?.rows ?? [], loading: Boolean(enabled && !current),
     error: current?.error, checkedAt: current?.checkedAt, unresolved: current?.unresolved ?? 0,
-    needsLogin: !user, login: openLoginModal, reload };
+    reload };
 }

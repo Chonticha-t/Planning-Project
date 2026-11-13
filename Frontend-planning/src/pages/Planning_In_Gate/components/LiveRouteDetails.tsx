@@ -6,19 +6,18 @@ import { gateTransitions } from "../routingWindow";
 
 interface Props {
   lot: LotItem; route?: LotRouting; loading: boolean; error?: string; checkedAt?: string;
-  needsLogin: boolean; login: () => void; retry: () => void; onClose: () => void;
+  retry: () => void; onClose: () => void;
 }
 
-export function LiveRouteDetails({ lot, route, loading, error, checkedAt, needsLogin, login, retry, onClose }: Props) {
+export function LiveRouteDetails({ lot, route, loading, error, checkedAt, retry, onClose }: Props) {
   const current = route?.status === "matched" ? route.current : null;
   const transitions = gateTransitions(route?.steps ?? [], lot.gate);
   return createPortal(<div className="planning-summary-gate fixed inset-0 z-[120] flex items-center justify-center p-4" onKeyDown={event => event.key === "Escape" && onClose()}>
     <button type="button" aria-label="Close route backdrop" className="absolute inset-0 bg-slate-900/20" onClick={onClose} />
     <div role="dialog" aria-modal="true" aria-label="Lot routing and current process" className="relative w-[420px] max-w-full max-h-[85vh] overflow-y-auto rounded-2xl border border-base-300 bg-base-100 p-4 text-base-content shadow-2xl">
       <div className="flex justify-between items-center gap-2 text-xs font-bold"><span>{lot.product} · {lot.label}</span><button autoFocus type="button" aria-label="Close gate route" onClick={onClose}><X size={16} /></button></div>
-      {needsLogin ? <div className="mt-4 text-sm"><p>Sign in to view routing and current WIP.</p><button type="button" className="btn btn-sm btn-primary mt-2" onClick={login}>Sign in</button></div>
-        : loading ? <p role="status" className="mt-4 text-sm">Loading routing and current WIP…</p>
-        : error ? <div role="alert" className="mt-4 text-sm"><p>{error}</p><button type="button" className="btn btn-sm mt-2" onClick={retry}>Retry</button><button type="button" className="btn btn-sm mt-2 ml-2" onClick={login}>Sign in</button></div>
+      {loading ? <p role="status" className="mt-4 text-sm">Loading routing and current WIP…</p>
+        : error ? <div role="alert" className="mt-4 text-sm"><p>{error}</p><button type="button" className="btn btn-sm mt-2" onClick={retry}>Retry</button></div>
         : <>
           <div className="mt-3 flex flex-wrap justify-around gap-3 rounded-xl bg-base-200/40 p-3 text-xs font-bold">
             {transitions.length ? transitions.map(transition => <div key={transition.steps[0].seq} className="flex items-center gap-4">

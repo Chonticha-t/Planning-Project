@@ -136,7 +136,7 @@ export default function SavedPlanPage() {
             <div className="p-6 flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-sm font-extrabold uppercase tracking-wider mr-1">Queue</h2>
-                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">Finished {finished.needsLogin || finished.loading || finished.error ? "—" : finishedRows.length} lots observed · {countText(gate)} planned</span>
+                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">Finished {finished.loading || finished.error ? "—" : finishedRows.length} lots observed · {countText(gate)} planned</span>
                 {queue.some(({ lot }) => lot.isHold) && <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold">{queue.filter(({ lot }) => lot.isHold).length} HOLD at save</span>}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   {workMode === "edit" && <button type="button" disabled title="Save order is not connected yet" className="btn btn-xs h-8 rounded-lg border border-base-300 bg-base-100 px-3 text-xs font-bold flex items-center gap-1.5"><Plus size={13} className="rotate-45 text-[#316be8]" />+ Auto-arrange</button>}

@@ -52,11 +52,12 @@ function parseItems(body) {
   });
 }
 
-function createInGateRoutingRouter({ pool, verifyPlanner }) {
-  if (typeof verifyPlanner !== "function") throw new Error("Routing authorization middleware is required.");
+function createInGateRoutingRouter({ pool }) {
   const router = express.Router();
-  router.get("/finished", verifyPlanner, createFinishedHandler({ pool, resolveRoute }));
-  router.post("/lookup", verifyPlanner, async (req, res) => {
+  // Finished evidence is read-only and available in Viewer mode.
+  router.get("/finished", createFinishedHandler({ pool, resolveRoute }));
+  // Routing lookup is read-only and available in Viewer mode.
+  router.post("/lookup", async (req, res) => {
     res.set("Cache-Control", "no-store");
     let items;
     try { items = parseItems(req.body); }

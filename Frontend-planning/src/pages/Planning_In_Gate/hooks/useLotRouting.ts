@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { useAuth } from "@/context/AuthContext";
 import { getApiBaseUrl } from "@/utils/apiConfig";
 import type { LotItem } from "../../Capacity_Leveling/types";
 
@@ -36,7 +35,6 @@ const integerOrNull = (value: unknown) => value === null || Number.isInteger(val
 
 /** Fetch at most the visible page, in one read-only batch. Never replace a failed read with saved WIP. */
 export function useLotRouting(lots: LotItem[]) {
-  const { user, openLoginModal } = useAuth();
   const items = lots.map(lot => {
     const products = [...new Set((lot.allocations ?? []).map(row => row.prd_name))];
     const product = products.length === 1 ? products[0] : products.length > 1 ? null : lot.product;
@@ -45,9 +43,9 @@ export function useLotRouting(lots: LotItem[]) {
   const requestKey = JSON.stringify(items);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<{ key: string; data: LotRouting[]; checkedAt?: string; error?: string }>({ key: "", data: [] });
-  const identity = `${user?.username ?? ""}|${requestKey}|${retry}`;
+  const identity = `${requestKey}|${retry}`;
   useEffect(() => {
-    if (!user || JSON.parse(requestKey).length === 0) return;
+    if (JSON.parse(requestKey).length === 0) return;
     const controller = new AbortController();
     (async () => {
       try {
@@ -73,20 +71,18 @@ export function useLotRouting(lots: LotItem[]) {
                 && textOrNull(step.updatedAt) && integerOrNull(step.stepInGate) && integerOrNull(step.totalInGate));
           })) throw new Error("Invalid routing response");
         if (!controller.signal.aborted) setState({ key: identity, data: value.results, checkedAt: value.checkedAt });
-      } catch (error) {
-        if (!controller.signal.aborted) setState({ key: identity, data: [], error: axios.isAxiosError(error) && [401, 403].includes(error.response?.status ?? 0)
-          ? "Sign in with a Planner or Admin account to read current routing." : "Unable to load routing and current WIP. Please retry." });
+      } catch {
+        if (!controller.signal.aborted) setState({ key: identity, data: [], error: "Unable to load routing and current WIP. Please retry." });
       }
     })();
     return () => controller.abort();
     // The serialized identities prevent refetching on unrelated table renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, requestKey, user?.username]);
+  }, [identity, requestKey]);
   const current = state.key === identity ? state : null;
   return {
     routes: new Map((current?.data ?? []).map(result => [result.key, result])),
-    loading: Boolean(user && items.length && !current),
+    loading: Boolean(items.length && !current),
     error: current?.error, checkedAt: current?.checkedAt,
-    needsLogin: !user, login: openLoginModal, retry: () => setRetry(value => value + 1),
+    retry: () => setRetry(value => value + 1),
   };
 }
