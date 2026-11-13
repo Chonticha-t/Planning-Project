@@ -4,10 +4,12 @@ import dayjs from "dayjs";
 import { History, Search, Send, X } from "lucide-react";
 import type { OrderDiff, OrderHistoryEntry, SavedPlanInfo } from "../types";
 import { CapacityEffect, MoveLine } from "./HistoryParts";
+import type { LotItem } from "../../Capacity_Leveling/types";
 
 type Filter = "all" | "up" | "down";
 
 interface HistoryPanelProps {
+  snapshotLots?: LotItem[];
   isOpen: boolean;
   onClose: () => void;
   title: string; // "FFPC · Mon 09/11"
@@ -17,7 +19,7 @@ interface HistoryPanelProps {
 }
 
 /** Right-side drawer: who moved which lot, when, from → to, and why */
-export const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose, title, plan, entries, pending }) => {
+export const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose, title, plan, entries, pending, snapshotLots }) => {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
 
@@ -45,6 +47,17 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose, tit
     [entries, keepMove, filtering]
   );
   const pendingShown = pending ? pending.moves.filter(keepMove) : [];
+  const savedMoves = useMemo(() => {
+    const seen = new Set<string>();
+    return (snapshotLots ?? []).flatMap(lot => (lot.moveHistory ?? []).map(move => ({ ...move, lot: lot.label })))
+      .filter(move => {
+        if (seen.has(move.id)) return false;
+        seen.add(move.id);
+        return (!q || move.lot.toLowerCase().includes(q)) && (filter === "all" ||
+          (move.kind === "reorder" && typeof move.fromPosition === "number" && typeof move.toPosition === "number"
+            && (filter === "up" ? move.toPosition < move.fromPosition : move.toPosition > move.fromPosition)));
+      }).sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt));
+  }, [snapshotLots, q, filter]);
 
   if (!isOpen || typeof document === "undefined") return null;
 
@@ -104,6 +117,12 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose, tit
         {/* Timeline */}
         <div className="flex-1 overflow-y-auto px-5 py-4 text-sm">
           <ol className="relative space-y-4 border-l-2 border-base-200 pl-5">
+            {savedMoves.map(move => <li key={move.id} className="relative">
+              <span className="absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-base-100 bg-[#4f46e5]" />
+              <div className="text-xs font-bold">{move.changedBy} · {dayjs(move.changedAt).format("DD/MM HH:mm")}{move.planVersion ? ` · Plan v${move.planVersion}` : ""}</div>
+              <div className="mt-1 text-xs">{move.lot} · {move.kind === "reorder" ? `#${move.fromPosition} → #${move.toPosition}` : `${move.fromDate} → ${move.toDate}`}</div>
+              {move.note && <div className="mt-1 text-xs italic text-base-content/60">{move.note}</div>}
+            </li>)}
             {pending && pendingShown.length > 0 && (
               <li className="relative">
                 <span className="absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-base-100 bg-amber-500" />
@@ -152,11 +171,11 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ isOpen, onClose, tit
             )}
           </ol>
 
-          {filtering && visible.length === 0 && pendingShown.length === 0 && (
+          {filtering && visible.length === 0 && pendingShown.length === 0 && savedMoves.length === 0 && (
             <p className="py-8 text-center text-base-content/50">No moves match this filter.</p>
           )}
           {!filtering && entries.length === 0 && !pending && (
-            <p className="mt-4 text-center text-xs text-base-content/50">No changes yet — the gate runs the planning order.</p>
+            <p className="mt-4 text-center text-xs text-base-content/50">{snapshotLots ? "Showing saved Capacity Leveling history. Gate order editing is not connected yet." : "No changes yet — the gate runs the planning order."}</p>
           )}
         </div>
       </aside>

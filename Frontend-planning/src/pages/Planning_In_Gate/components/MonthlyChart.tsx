@@ -39,7 +39,7 @@ export const MonthlyChart: React.FC<MonthlyChartProps> = ({ data, onPick }) => {
     if (date) onPick(date, e.target as Element);
   };
 
-  const renderTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { index?: number } }) => {
+  const renderTick = ({ x, y, payload }: { x?: number | string; y?: number | string; payload?: { index?: number } }) => {
     const d = data[payload?.index ?? 0];
     if (!d) return <g />;
     const isToday = d.phase === "today";

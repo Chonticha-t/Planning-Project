@@ -47,6 +47,9 @@ const STEP_BTN =
   "btn btn-xs btn-ghost h-full min-h-0 rounded-md px-1.5 text-base-content/70 hover:bg-base-300/50";
 
 interface InGateHeaderProps {
+  snapshotOnly?: boolean;
+  busy?: boolean;
+  exportDisabled?: boolean;
   view: InGateView;
   onViewChange: (v: InGateView) => void;
   month: string; // YYYY-MM
@@ -73,6 +76,9 @@ interface InGateHeaderProps {
 
 // Styled to match Planning Summary Gate & MonthlySummary blue feeling
 export const InGateHeader: React.FC<InGateHeaderProps> = ({
+  snapshotOnly = false,
+  busy = false,
+  exportDisabled = false,
   view,
   onViewChange,
   month,
@@ -241,7 +247,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
           />
           <input
             type="text"
-            placeholder="Search product"
+            placeholder="Search product or lot"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="input input-xs input-bordered w-full pl-8 pr-7 rounded-lg h-8 text-xs bg-base-200/40 focus:bg-base-100"
@@ -263,7 +269,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {isMonth ? (
           <span className="text-base-content/60 whitespace-nowrap">
-            Actual = scan out · updated {dayjs().format("DD/MM HH:mm")}
+            {snapshotOnly ? "Saved plan · Actual unavailable" : `Actual = scan out · updated ${dayjs().format("DD/MM HH:mm")}`}
           </span>
         ) : (
           <>
@@ -302,6 +308,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
         <button
           type="button"
           onClick={onExcel}
+          disabled={exportDisabled || busy}
           className="btn btn-xs h-8 px-3 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer"
           title={isMonth ? "Export monthly summary to Excel" : "Export saved order to Excel"}
         >
@@ -311,8 +318,9 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
         <button
           type="button"
           onClick={onRefresh}
+          disabled={busy}
           className="btn btn-xs btn-ghost btn-circle text-base-content/70 hover:text-base-content"
-          title="Reload saved order"
+          title={snapshotOnly ? "Load latest saved plan" : "Reload saved order"}
         >
           <RotateCw size={13} />
         </button>
