@@ -189,7 +189,7 @@ test("shift allocation fills day before night and leaves excess work on its plan
   assert.deepEqual(source, before);
 });
 
-test("work spanning shifts shows both and allocated minutes agree with the arrival grid", () => {
+test("a lot that does not fit the remaining Day moves wholly to Night; leftovers signal OT", () => {
   const source = data(Array.from({ length: 3 }, (_, i) => card({ id: `card-${i}`, workKey: `work-${i}`, lotNo: `LOT-${i}` })));
   source.capacity.FADL["2026-11-16"] = shiftDay(1425, 1425);
   const lots = source.cards.map(toLotItem);
@@ -197,17 +197,22 @@ test("work spanning shifts shows both and allocated minutes agree with the arriv
   const allocations = allocateBoardShifts(source, board);
   assert.deepEqual(board.map(lot => allocations.get(lot.id)), [
     { status: "day", dayMin: 950, nightMin: 0, overflowMin: 0 },
-    { status: "split", dayMin: 475, nightMin: 475, overflowMin: 0 },
     { status: "night", dayMin: 0, nightMin: 950, overflowMin: 0 },
+    { status: "over", dayMin: 0, nightMin: 0, overflowMin: 950,
+      reason: "Day has 475 min and Night has 475 min left; neither fits the whole lot. Open OT or move the date." },
   ]);
   const allocated = board.reduce((sum, lot) => {
     const item = allocations.get(lot.id)!;
     return sum + item.dayMin + item.nightMin + item.overflowMin;
   }, 0);
   assert.equal(allocated, cellOf(buildGrid(source, lots), "2026-11-16", "FADL").loadMin);
+  // Day OT (3 machines x 180 min) lets the second lot stay wholly in Day.
+  source.capacity.FADL["2026-11-16"] = shiftDay(1965, 1425);
+  const withOt = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => withOt.get(lot.id)?.status), ["day", "day", "night"]);
 });
 
-test("a partially allocated lot retains its scheduled minutes and reports only the remainder as overflow", () => {
+test("a lot larger than any whole shift spans shifts and reports only the remainder as overflow", () => {
   const source = data([card(), card({ id: "second", workKey: "second", lotNo: "SECOND" })]);
   source.capacity.FADL["2026-11-16"] = shiftDay(600, 500);
   const board = buildBoardLots(source, source.cards.map(toLotItem));
