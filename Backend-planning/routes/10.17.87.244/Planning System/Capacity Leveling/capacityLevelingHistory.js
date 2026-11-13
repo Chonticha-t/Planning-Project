@@ -6,7 +6,7 @@ const priorityOf = (row) => {
   const gate = row.current_gate?.trim().toUpperCase();
   const state = row.gate_state === "in_gate" ? 0 : row.gate_state === "coming" ? 1 : row.gate_state === "need_wip" ? 2 : 3;
   const remaining = row.rem_proc_in_gate;
-  return [process && gate && process === gate ? 0 : 1, state,
+  return [state, process && gate && process === gate ? 0 : 1,
     typeof remaining === "number" && Number.isInteger(remaining) && remaining >= 0 ? -remaining : null,
     Number.isInteger(row.pri) && row.pri >= 0 ? row.pri : null];
 };

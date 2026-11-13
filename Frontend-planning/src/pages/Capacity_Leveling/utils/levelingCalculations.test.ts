@@ -523,7 +523,7 @@ const priorityData = (rows: Partial<GateArrivalRow>[]) => {
   return source;
 };
 
-test("board prioritizes process matches, then gate state, then remaining processes descending", () => {
+test("board prioritizes gate state, then process matches, then remaining processes descending", () => {
   const source = priorityData([
     { gate_state: "in_gate", rem_proc_in_gate: 99 },
     { proc_disp: "GATE_A", gate_state: "coming", rem_proc_in_gate: 100 },
@@ -536,7 +536,7 @@ test("board prioritizes process matches, then gate state, then remaining process
   ]);
   const before = structuredClone(source);
   const board = buildBoardLots(source, source.cards.map(toLotItem));
-  assert.deepEqual(board.map(lot => lot.label), ["LOT-3", "LOT-2", "LOT-1", "LOT-4", "LOT-7", "LOT-0", "LOT-5", "LOT-6"]);
+  assert.deepEqual(board.map(lot => lot.label), ["LOT-3", "LOT-2", "LOT-0", "LOT-1", "LOT-5", "LOT-4", "LOT-6", "LOT-7"]);
   assert.deepEqual(source, before);
 });
 
@@ -578,19 +578,19 @@ test("merged cards use one allocation's best priority without mixing fields or a
   ]);
   const first = source.arrivalRows[0];
   source.arrivalRows.push(
-    { ...first, pri: 4, proc_disp: "PROCESS_A", gate_state: "in_gate", rem_proc_in_gate: 100 },
+    { ...first, pri: 4, proc_disp: "PROCESS_A", gate_state: "in_gate", rem_proc_in_gate: 50 },
     { ...first, pri: 5 },
   );
   const lots = source.cards.map(toLotItem);
   const gridBefore = buildGrid(source, lots);
   let board = buildBoardLots(source, lots);
-  assert.deepEqual(board.map(lot => lot.label), ["LOT-1", "LOT-0", "LOT-2"]);
+  assert.deepEqual(board.map(lot => lot.label), ["LOT-2", "LOT-0", "LOT-1"]);
   assert.equal(board.find(lot => lot.label === "LOT-0")?.allocations?.length, 3);
   assert.deepEqual(boardCounts(board), { lots: 3, need: 0, unidentified: 0 });
   // A better allocation must win even when it is not the first or the display representative.
-  source.arrivalRows.push({ ...first, pri: 6, rem_proc_in_gate: 4 });
+  source.arrivalRows.push({ ...first, pri: 6, gate_state: "in_gate", rem_proc_in_gate: 4 });
   board = buildBoardLots(source, lots);
-  assert.deepEqual(board.map(lot => lot.label), ["LOT-0", "LOT-1", "LOT-2"]);
+  assert.deepEqual(board.map(lot => lot.label), ["LOT-0", "LOT-2", "LOT-1"]);
   assert.deepEqual(buildGrid(source, lots), gridBefore);
 });
 

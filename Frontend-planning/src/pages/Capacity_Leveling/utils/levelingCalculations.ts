@@ -185,9 +185,10 @@ const boardPriority = (row: GateArrivalRow): BoardPriority => {
   const gate = row.current_gate?.trim().toUpperCase();
   const stateRank = row.gate_state === "in_gate" ? 0 : row.gate_state === "coming" ? 1 : row.gate_state === "need_wip" ? 2 : 3;
   const remaining = row.rem_proc_in_gate;
+  // WIP already in this gate always comes before coming / Need WIP work.
   return [
-    process && gate && process === gate ? 0 : 1,
     stateRank,
+    process && gate && process === gate ? 0 : 1,
     typeof remaining === "number" && Number.isInteger(remaining) && remaining >= 0 ? -remaining : null,
     Number.isInteger(row.pri) && row.pri >= 0 ? row.pri : null,
   ];
