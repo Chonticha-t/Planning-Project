@@ -11,6 +11,8 @@ import type { CountUnit, InGateCategory, InGateView, WorkMode } from "../types";
 import { InGateHeader } from "./InGateHeader";
 import { useSavedPlan } from "../hooks/useSavedPlan";
 import { useFinishedToday } from "../hooks/useFinishedToday";
+import { useMonthlyOutput } from "../hooks/useMonthlyOutput";
+import { observedTotals } from "../monthlyOutput";
 import { planStatus, savedPlanGates, savedPlanRows } from "../savedPlan";
 import { ApiWorkListTable } from "./ApiWorkListTable";
 import { ApiMonthlySummary } from "./ApiMonthlySummary";
@@ -35,10 +37,14 @@ export default function SavedPlanPage() {
   const [exporting, setExporting] = useState(false);
   const { saved, loading, error, reload } = useSavedPlan();
   const finished = useFinishedToday(date, view === "day");
+  const monthly = useMonthlyOutput(month, category, search, view === "month");
   const savedPlanLots = useMemo(() => saved ? savedPlanRows(saved.snapshot, "ALL") : [], [saved]);
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
   const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows) : new Map(), [saved, rows]);
-  const gates = useMemo(() => saved ? savedPlanGates(saved.snapshot, category) : [], [saved, category]);
+  const gates = useMemo(() => [...new Set([
+    ...(saved ? savedPlanGates(saved.snapshot, category).map(item => item.gate) : []),
+    ...(view === "month" ? monthly.data?.rows.map(row => row.gate) ?? [] : []),
+  ])].map(gate => ({ gate })), [saved, category, view, monthly.data]);
   const gate = gates.find(item => item.gate === selectedGate)?.gate ?? gates[0]?.gate ?? "";
   const finishedRows = useMemo(() => finished.rows.filter(row => row.gate === gate && (category === "ALL" || row.processGroup === category)), [finished.rows, gate, category]);
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
@@ -63,7 +69,9 @@ export default function SavedPlanPage() {
     setParams(next, { replace: true });
   };
   const countText = (gateName: string) => {
-    const items = dayRows.filter(row => row.gate === gateName);
+    const query = search.trim().toLowerCase();
+    const items = dayRows.filter(row => row.gate === gateName && (view !== "month" || !query
+      || row.product.toLowerCase().includes(query) || row.label.toLowerCase().includes(query)));
     const needs = items.filter(row => row.kind === "need").length;
     const unknown = items.filter(row => row.kind === "unidentified").length;
     const value = unit === "lots" ? items.filter(row => row.kind === "lot").length
@@ -71,7 +79,11 @@ export default function SavedPlanPage() {
         const amount = unit === "pcs" ? row.qty : row.sheets;
         return total === null || amount === null ? null : total + amount;
       }, 0);
-    return `${formatGateQuantity(value, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet")} ${unit}${needs ? ` · ${needs} need` : ""}${unknown ? ` · ${unknown} no ID` : ""}`;
+    const planned = `${formatGateQuantity(value, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet")} ${unit}${needs ? ` · ${needs} need` : ""}${unknown ? ` · ${unknown} no ID` : ""}`;
+    if (view !== "month") return planned;
+    const observed = monthly.data?.rows.filter(row => row.gate === gateName) ?? [];
+    const amount = observedTotals(observed, unit).total;
+    return `${observed.length ? formatGateQuantity(amount, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet") : "—"} observed · ${saved ? planned : "—"} planned`;
   };
   const exportPlan = async () => {
     if (!saved || loading || error || exporting || !visible.length) return;
@@ -111,20 +123,25 @@ export default function SavedPlanPage() {
   };
 
   return <div className={`planning-summary-gate flex flex-col gap-4 w-full ${tvMode ? "fixed inset-0 z-[100] overflow-y-auto bg-base-200 p-4 sm:p-6" : ""}`}>
-    <InGateHeader snapshotOnly busy={loading || exporting} exportDisabled={!saved || Boolean(error) || !visible.length}
+    <InGateHeader snapshotOnly busy={loading || exporting || monthly.loading} exportDisabled={!saved || Boolean(error) || !visible.length}
+      monthStatus={monthly.loading ? "Loading observed output…" : monthly.error ? "Observed output unavailable" : "Saved arrivals · Observed gate output"}
       view={view} onViewChange={changeView} month={month} thisMonth={today.slice(0, 7)} onMonthChange={setMonth}
       unit={unit} onUnitChange={setUnit} category={category} onCategoryChange={changeCategory}
       date={date} todayStr={today} onDateChange={setDate} orderBy="plan" onOrderByChange={() => {}}
-      search={search} onSearchChange={setSearch} onExcel={() => void exportPlan()} onRefresh={() => { void reload(); finished.reload(); }}
+      search={search} onSearchChange={setSearch} onExcel={() => void exportPlan()} onRefresh={() => { void reload(); finished.reload(); monthly.reload(); }}
       workMode={workMode} onWorkModeChange={setWorkMode} tvMode={tvMode} onTvModeChange={setTvMode} />
-    {loading ? <div role="status" className="p-8 text-center">Loading saved plan…</div>
-      : error ? <div role="alert" className="rounded-xl border border-error/30 bg-error/10 p-5">
+    {loading && view === "day" ? <div role="status" className="p-8 text-center">Loading saved plan…</div>
+      : error && view === "day" ? <div role="alert" className="rounded-xl border border-error/30 bg-error/10 p-5">
         <p>{error}</p><button type="button" className="btn btn-sm mt-3" onClick={() => void reload()}>Retry</button>
       </div>
-      : !saved ? <div role="status" className="rounded-xl bg-base-100 border border-base-300 p-8 text-center">
+      : !saved && view === "day" ? <div role="status" className="rounded-xl bg-base-100 border border-base-300 p-8 text-center">
         No saved plan yet. Save a plan in Capacity Leveling, then refresh this page.
       </div>
       : <>
+        {view === "month" && (loading || error || !saved) && <div role={error ? "alert" : "status"} className="rounded-xl border border-base-300 bg-base-100 p-3 text-sm">
+          {loading ? "Loading saved arrivals…" : error ? "Saved arrivals are unavailable. Observed output can still be viewed." : "No saved plan available. Showing observed output only."}
+          {error && <button type="button" className="btn btn-xs ml-2" onClick={() => void reload()}>Retry plan</button>}
+        </div>}
         <div className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-visible">
           <div role="group" aria-label="Gate" className="flex overflow-x-auto gap-1 px-4 pt-3 rounded-t-2xl bg-[#316be8]">
             {gates.map(item => <button key={item.gate} type="button" aria-pressed={gate === item.gate}
@@ -133,7 +150,7 @@ export default function SavedPlanPage() {
               <div className="text-sm font-bold">{item.gate}</div><div className="text-xs">{countText(item.gate)}</div>
             </button>)}
           </div>
-          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved.plan.planId, category, gate, month, search])} rows={gateRows} snapshot={saved.snapshot} month={month} today={today} unit={unit} search={search} version={saved.plan.version} /> :
+          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month, search])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={search} version={saved?.plan.version} gate={gate} category={category} output={monthly} /> : saved ?
             <div className="p-6 flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-sm font-extrabold uppercase tracking-wider mr-1">Queue</h2>
@@ -152,10 +169,10 @@ export default function SavedPlanPage() {
               </div>
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}
               <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={queue.map(({ lot }) => lot)} savedPlanLots={savedPlanLots} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
-            </div>}
+            </div> : null}
         </div>
-        <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}
-          snapshotLots={queue.map(({ lot }) => lot)} plan={{ version: saved.plan.version, savedAt: saved.plan.savedAt, savedBy: saved.plan.savedBy, reason: saved.plan.note ?? undefined, sourceCategory: category }} />
+        {saved && <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}
+          snapshotLots={queue.map(({ lot }) => lot)} plan={{ version: saved.plan.version, savedAt: saved.plan.savedAt, savedBy: saved.plan.savedBy, reason: saved.plan.note ?? undefined, sourceCategory: category }} />}
       </>}
   </div>;
 }

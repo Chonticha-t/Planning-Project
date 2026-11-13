@@ -48,6 +48,7 @@ const STEP_BTN =
 
 interface InGateHeaderProps {
   snapshotOnly?: boolean;
+  monthStatus?: string;
   busy?: boolean;
   exportDisabled?: boolean;
   view: InGateView;
@@ -77,6 +78,7 @@ interface InGateHeaderProps {
 // Styled to match Planning Summary Gate & MonthlySummary blue feeling
 export const InGateHeader: React.FC<InGateHeaderProps> = ({
   snapshotOnly = false,
+  monthStatus,
   busy = false,
   exportDisabled = false,
   view,
@@ -269,7 +271,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {isMonth ? (
           <span className="text-base-content/60 whitespace-nowrap">
-            {snapshotOnly ? "Saved plan · Actual unavailable" : `Actual = scan out · updated ${dayjs().format("DD/MM HH:mm")}`}
+            {monthStatus ?? (snapshotOnly ? "Saved plan · Actual unavailable" : `Actual = scan out · updated ${dayjs().format("DD/MM HH:mm")}`)}
           </span>
         ) : (
           <>
@@ -310,7 +312,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
           onClick={onExcel}
           disabled={exportDisabled || busy}
           className="btn btn-xs h-8 px-3 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer"
-          title={isMonth ? "Export monthly summary to Excel" : "Export saved order to Excel"}
+          title={isMonth ? snapshotOnly ? "Export saved arrivals to Excel" : "Export monthly summary to Excel" : "Export saved order to Excel"}
         >
           <Download size={13} />
           <span>Excel</span>
@@ -320,7 +322,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
           onClick={onRefresh}
           disabled={busy}
           className="btn btn-xs btn-ghost btn-circle text-base-content/70 hover:text-base-content"
-          title={snapshotOnly ? "Load latest saved plan" : "Reload saved order"}
+          title={isMonth && monthStatus ? "Reload saved arrivals and observed output" : snapshotOnly ? "Load latest saved plan" : "Reload saved order"}
         >
           <RotateCw size={13} />
         </button>

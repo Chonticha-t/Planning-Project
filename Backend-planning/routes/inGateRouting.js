@@ -1,5 +1,6 @@
 const express = require("express");
 const { createFinishedHandler } = require("./inGateFinished");
+const { createMonthlyOutputRouter } = require("./inGateMonthly");
 
 const clean = value => typeof value === "string" ? value.replace(/\u00a0/g, " ").trim() : "";
 const canonicalGate = name => ({ "AT-FVAC": "FVAC", "AT-FADL": "FADL", "AT-FIN": "FIN", MMOT1: "MMOT", MBLK1: "MBLK" }[name] || name);
@@ -54,6 +55,7 @@ function parseItems(body) {
 
 function createInGateRoutingRouter({ pool }) {
   const router = express.Router();
+  router.use("/output", createMonthlyOutputRouter({ pool }));
   // Finished evidence is read-only and available in Viewer mode.
   router.get("/finished", createFinishedHandler({ pool, resolveRoute }));
   // Routing lookup is read-only and available in Viewer mode.

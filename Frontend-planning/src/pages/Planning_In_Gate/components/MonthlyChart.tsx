@@ -26,11 +26,12 @@ export interface ChartDay {
 interface MonthlyChartProps {
   data: ChartDay[];
   onPick: (date: string, el: Element) => void;
+  compareOutputToPlan?: boolean;
 }
 
 const compact = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 
-export const MonthlyChart: React.FC<MonthlyChartProps> = ({ data, onPick }) => {
+export const MonthlyChart: React.FC<MonthlyChartProps> = ({ data, onPick, compareOutputToPlan = true }) => {
   const today = data.find((d) => d.phase === "today" && !d.off);
 
   // Bar click → open the lot popover anchored to the bar
@@ -71,9 +72,9 @@ export const MonthlyChart: React.FC<MonthlyChartProps> = ({ data, onPick }) => {
 
   // Total above each actual bar (red when a past day is below plan)
   const rows = data.map((d) => {
-    if (d.ds === null) return { ...d, totalOk: null, totalBelow: null };
-    const total = d.ds + (d.ns ?? 0);
-    const below = d.phase === "past" && d.plan !== null && total < d.plan;
+    if (d.ds === null && d.ns === null) return { ...d, totalOk: null, totalBelow: null };
+    const total = (d.ds ?? 0) + (d.ns ?? 0);
+    const below = compareOutputToPlan && d.phase === "past" && d.plan !== null && total < d.plan;
     return { ...d, totalOk: below ? null : total, totalBelow: below ? total : null };
   });
   const label = { position: "top" as const, fontSize: 11, fontWeight: 700, formatter: (v: unknown) => (typeof v === "number" ? compact(v) : "") };

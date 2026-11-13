@@ -119,7 +119,7 @@ export function planStatus(lot: LotItem): string {
 }
 
 /** Aggregate saved arrivals, without generating output, shift splits or weekend rules. */
-export function savedMonth(rows: LotItem[], snapshot: LevelingData, month: string, unit: CountUnit) {
+export function savedMonth(rows: LotItem[], snapshot: Pick<LevelingData, "calendarDays">, month: string, unit: CountUnit) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("Invalid month.");
   const first = new Date(`${month}-01T00:00:00Z`);
   const last = new Date(first);
