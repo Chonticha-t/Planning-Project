@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
-import { ArrowDown, ArrowUp, ArrowUpToLine, GripVertical, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, GripVertical } from "lucide-react";
 import type { BoardShiftAllocation, CapacityDay, LotItem } from "../../Capacity_Leveling/types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { planQuantity, planStatus } from "../savedPlan";
+import { useLotRouting, type LotRouting } from "../hooks/useLotRouting";
+import { LiveRouteDetails } from "./LiveRouteDetails";
 
 const unavailable = <span className="text-base-content/40" title="Not available in the saved plan">—</span>;
 const PAGE_SIZE = 100;
@@ -39,6 +40,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity }: P
   const capacityMin = capacity?.capacityMin;
   const pct = totalLoad !== null && typeof capacityMin === "number" && capacityMin > 0 ? Math.round(totalLoad / capacityMin * 100) : null;
   const visible = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const routing = useLotRouting(filter === "finished" ? [] : visible.map(({ lot }) => lot));
   const lotCount = planQuantity(planOrder, "lots");
   const needs = planOrder.filter(lot => lot.kind !== "lot").length;
 
@@ -60,7 +62,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity }: P
       <table className="w-full min-w-[980px] table-fixed text-sm text-base-content tabular-nums">
         <colgroup>{[5.5, 12.5, 9.5, 8.5, 8.5, 17, 7.5, 7.5, 13.5, 10].map((width, i) => <col key={i} style={{ width: `${width}%` }} />)}</colgroup>
         <thead><tr className="whitespace-nowrap bg-slate-100 border-b border-base-300 text-[11px] font-extrabold tracking-wide text-slate-700 uppercase">
-          {[['NO', ''], ['PRODUCT', 'Lot No'], ['STATUS', 'at save'], ['SHEET', '/ lot'], ['PCS', '/ lot'], ['ROUTE · WHERE NOW', 'at save'], ['PLAN', '(Lot)'], ['PLAN', '(min)'], ['CAPACITY USED', 'planned'], ['ORDER', '']].map(([title, sub], index) =>
+          {[['NO', ''], ['PRODUCT', 'Lot No'], ['STATUS', 'at save'], ['SHEET', '/ lot'], ['PCS', '/ lot'], ['ROUTE · WHERE NOW', 'latest WIP'], ['PLAN', '(Lot)'], ['PLAN', '(min)'], ['CAPACITY USED', 'planned'], ['ORDER', '']].map(([title, sub], index) =>
             <th key={index} scope="col" className={`px-2.5 py-2.5 border-r border-base-300 ${[3, 4, 7].includes(index) ? 'text-right' : index === 1 ? 'text-left' : 'text-center'}`}>
               <div>{title}</div>{sub && <div className="text-[10px] font-semibold normal-case text-slate-500">{sub}</div>}
             </th>)}
@@ -86,7 +88,8 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity }: P
               const showSection = index === 0 || allocations.get(visible[index - 1].lot.id)?.status !== group;
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
                 section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
-                allocation={allocation} onRoute={() => setRouteLot(lot)} />;
+                allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
+                routeUnavailable={Boolean(routing.error)} needsLogin={routing.needsLogin} onRoute={() => setRouteLot(lot)} />;
             })}
             {!rows.length && <tr><td colSpan={10} className="py-10 text-center text-base-content/50">{query ? "No lots match your search." : "No saved arrivals for this gate and day."}</td></tr>}
           </>}
@@ -98,21 +101,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity }: P
       <button type="button" className="btn btn-sm" disabled={page === 0} onClick={() => setPage(value => value - 1)}>Previous</button>
       <button type="button" className="btn btn-sm" disabled={(page + 1) * PAGE_SIZE >= rows.length} onClick={() => setPage(value => value + 1)}>Next</button>
     </div>}
-    {routeLot && createPortal(<div className="planning-summary-gate fixed inset-0 z-[120] flex items-center justify-center p-4" onKeyDown={event => event.key === 'Escape' && setRouteLot(null)}>
-      <button type="button" aria-label="Close route backdrop" className="absolute inset-0 bg-slate-900/20" onClick={() => setRouteLot(null)} />
-      <div role="dialog" aria-modal="true" aria-label="Saved gate route" className="relative w-[360px] max-w-full rounded-2xl border border-base-300 bg-base-100 p-4 text-base-content shadow-2xl">
-        <div className="flex justify-between items-center gap-2 text-xs font-bold"><span>{routeLot.product} · {routeLot.label}</span><button autoFocus type="button" aria-label="Close gate route" onClick={() => setRouteLot(null)}><X size={16} /></button></div>
-        <div className="mt-3 flex justify-around items-center rounded-xl bg-base-200/40 p-3 text-xs font-bold">
-          {[routeLot.prevGate, routeLot.gate, routeLot.nextGate].map((name, index) => <span key={index} className={index === 1 ? "text-[#316be8]" : "text-base-content/60"}><span className="block mx-auto mb-1 h-3 w-3 rounded-full bg-current" />{name || "—"}</span>)}
-        </div>
-        <dl className="grid grid-cols-2 gap-2 mt-4 text-xs">
-          <dt>Current gate at save</dt><dd>{routeLot.currentGate || "—"}</dd>
-          <dt>Process at save</dt><dd>{routeLot.currentProc || "—"}</dd>
-          <dt>Planned arrival</dt><dd>{routeLot.plannedDate}</dd>
-          <dt>Source must out</dt><dd>{routeLot.mustOut || "—"}</dd>
-        </dl><p className="mt-3 text-xs text-base-content/50">Detailed process steps, scan times and ETA are unavailable.</p>
-      </div>
-    </div>, document.body)}
+    {routeLot && <LiveRouteDetails lot={routeLot} route={routing.routes.get(routeLot.id)} loading={routing.loading} error={routing.error} checkedAt={routing.checkedAt} needsLogin={routing.needsLogin} login={routing.login} retry={routing.retry} onClose={() => setRouteLot(null)} />}
   </div>;
 }
 
@@ -125,9 +114,10 @@ function CapacityBar({ pct }: { pct: number | null }) {
   </div>;
 }
 
-function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, onRoute }: {
+function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, route, routeLoading, routeUnavailable, needsLogin, onRoute }: {
   lot: LotItem; sequence: number; color: string; showSection: boolean; section: string;
-  sectionClass: string; allocation?: BoardShiftAllocation; onRoute: () => void;
+  sectionClass: string; allocation?: BoardShiftAllocation; route?: LotRouting;
+  routeLoading: boolean; routeUnavailable: boolean; needsLogin: boolean; onRoute: () => void;
 }) {
   return <>
     {showSection && <tr className={`h-9 border-y ${sectionClass}`}><td colSpan={10} className="px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider"><span className="inline-block h-2.5 w-2.5 mr-2 rounded-xs" style={{ backgroundColor: color }} />{section}</td></tr>}
@@ -137,7 +127,7 @@ function QueueRow({ lot, sequence, color, showSection, section, sectionClass, al
       <td className="px-2.5 text-center border-r border-base-200"><span title="Status captured when this plan was saved" className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${lot.isHold ? "bg-[#fdecb3] text-[#8a5a00]" : lot.gateState === "in_gate" ? "bg-[#316be8] text-white" : "bg-base-200 text-base-content/70"}`}>{planStatus(lot)}</span></td>
       <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.sheets, "sheet")}</td>
       <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.qty, "piece")}</td>
-      <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect saved route" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#316be8]" /><span className="truncate">{lot.currentProc || lot.currentGate || "Details"}</span></button></td>
+      <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect routing and current WIP" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${route?.status === "matched" ? "bg-[#316be8]" : "bg-base-300"}`} /><span className="truncate">{needsLogin ? "Sign in for routing" : routeLoading ? "Loading…" : routeUnavailable ? "Routing unavailable" : route?.status === "matched" ? route.current?.process || route.current?.gate || "Details" : "Position unconfirmed"}</span></button></td>
       <td className="px-2.5 text-center font-extrabold text-xs border-r border-base-200">{lot.kind === "lot" ? 1 : unavailable}</td>
       <td className="px-2.5 text-right text-xs font-bold border-r border-base-200" title="Saved daily planning load; not runtime or ETA">{lot.kind === "lot" && lot.loadMin !== null ? lot.loadMin.toLocaleString() : unavailable}</td>
       <td className="px-3 border-r border-base-200" title={allocation?.reason ?? "Planned allocation from saved capacity; not actual utilization"}>

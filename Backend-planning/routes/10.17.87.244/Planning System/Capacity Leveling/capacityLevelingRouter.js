@@ -1,4 +1,5 @@
 const express = require("express");
+const { createInGateRoutingRouter } = require("../../../inGateRouting");
 const { randomUUID, createHash } = require("node:crypto");
 const { performance } = require("node:perf_hooks");
 const { createGateTableCache } = require("../Planning Summary Gate/gateTableCache");
@@ -107,6 +108,7 @@ const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 
 const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cacheOptions = {}, logLoadPerformance }) => {
   const router = express.Router();
+  router.use("/routing", createInGateRoutingRouter({ pool, verifyPlanner }));
   const configuredTtl = Number(process.env.PLANNING_CAPACITY_CACHE_TTL_MS ?? 60000);
   const configuredMb = Number(process.env.PLANNING_CAPACITY_CACHE_MAX_MB ?? 128);
   const loadCache = createGateTableCache({
