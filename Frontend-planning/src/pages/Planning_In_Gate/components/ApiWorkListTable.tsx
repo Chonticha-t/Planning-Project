@@ -6,6 +6,7 @@ import { planQuantity, planStatus } from "../savedPlan";
 import { useLotRouting, type LotRouting } from "../hooks/useLotRouting";
 import { LiveRouteDetails } from "./LiveRouteDetails";
 import type { FinishedEvidence, FinishedState } from "../hooks/useFinishedToday";
+import { buildWorkRows } from "../finishedPlan";
 
 const unavailable = <span className="text-base-content/40" title="Not available in the saved plan">—</span>;
 const PAGE_SIZE = 100;
@@ -23,6 +24,7 @@ const shiftName = (allocation?: BoardShiftAllocation) => {
 
 interface Props {
   planOrder: LotItem[];
+  savedPlanLots: LotItem[];
   search: string;
   allocations: ReadonlyMap<string, BoardShiftAllocation>;
   capacity?: CapacityDay;
@@ -30,30 +32,25 @@ interface Props {
 }
 
 /** Keep the original queue design; all quantities come from the saved API snapshot. */
-export function ApiWorkListTable({ planOrder, search, allocations, capacity, finished }: Props) {
+export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations, capacity, finished }: Props) {
   const [filter, setFilter] = useState<Filter>("queue");
   const [page, setPage] = useState(0);
   const [routeLot, setRouteLot] = useState<LotItem | null>(null);
   const query = search.trim().toLowerCase();
-  const completed = new Set(finished.rows.map(row => JSON.stringify([row.gate, row.lotNo])));
-  const rows = useMemo(() => planOrder.map((lot, index) => ({ lot, sequence: index + 1 }))
-    .filter(({ lot }) => !query || lot.product.toLowerCase().includes(query) || lot.label.toLowerCase().includes(query)), [planOrder, query]);
-  const pending = rows.filter(({ lot }) => lot.kind !== "lot" || !completed.has(JSON.stringify([lot.gate, lot.label])));
-  const finishedRows = finished.rows.filter(row => !query || row.product.toLowerCase().includes(query) || row.lotNo.toLowerCase().includes(query));
-  const display = [
-    ...(filter !== "queue" ? finishedRows.map((evidence, index) => ({ evidence, sequence: index + 1 })) : []),
-    ...(filter !== "finished" ? pending : []),
-  ];
+  const compactFinished = filter === "finished";
+  const work = useMemo(() => buildWorkRows(planOrder, savedPlanLots, finished.rows), [planOrder, savedPlanLots, finished.rows]);
+  const display = work[filter].filter(row => !query || [row.lot?.product, row.lot?.label, row.evidence?.product, row.evidence?.lotNo]
+    .some(value => value?.toLowerCase().includes(query)));
   const totalLoad = planOrder.reduce<number | null>((sum, lot) => lot.kind !== "lot" ? sum
     : sum === null || lot.loadMin === null ? null : sum + lot.loadMin, 0);
   const capacityMin = capacity?.capacityMin;
   const pct = totalLoad !== null && typeof capacityMin === "number" && capacityMin > 0 ? Math.round(totalLoad / capacityMin * 100) : null;
   const currentPage = Math.min(page, Math.max(0, Math.ceil(display.length / PAGE_SIZE) - 1));
   const visible = display.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
-  const routing = useLotRouting(visible.flatMap(row => "lot" in row ? [row.lot] : []));
+  const routing = useLotRouting(visible.flatMap(row => row.lot ? [row.lot] : []));
   const lotCount = planQuantity(planOrder, "lots");
   const needs = planOrder.filter(lot => lot.kind !== "lot").length;
-  const pendingCount = planOrder.filter(lot => lot.kind === "lot" && !completed.has(JSON.stringify([lot.gate, lot.label]))).length;
+  const pendingCount = work.queue.filter(row => row.lot?.kind === "lot").length;
   const countAvailable = !finished.loading && !finished.error;
   const finishedCount = countAvailable ? finished.rows.length : "—";
 
@@ -71,6 +68,7 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
         <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold bg-[#e9e3fb] text-[#5a3fc0]"><span className="h-2 w-2 rounded-full bg-[#6d4fd8]" />N/S —</span>
       </div>
     </div>
+    {filter === "all" && <p className="text-xs text-base-content/60">Finished quantities, plan minutes and shift allocation are from the saved plan. They are not actual passed quantity or runtime. Unplanned or ambiguous matches have no plan values.</p>}
     <div className="text-xs text-base-content/60" role={finished.error ? "alert" : "status"}>
       {finished.loading ? "Loading next-gate SCAN IN evidence…"
         : finished.error ? <>{finished.error} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
@@ -79,10 +77,10 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
           <button type="button" className="link ml-2" onClick={finished.reload}>Refresh finished</button></>}
     </div>
     <div className="overflow-x-auto rounded-xl border border-base-300">
-      <table className="w-full min-w-[980px] table-fixed text-sm text-base-content tabular-nums">
-        <colgroup>{[5.5, 12.5, 9.5, 8.5, 8.5, 17, 7.5, 7.5, 13.5, 10].map((width, i) => <col key={i} style={{ width: `${width}%` }} />)}</colgroup>
+      <table className={`w-full ${compactFinished ? "min-w-[620px]" : "min-w-[980px]"} table-fixed text-sm text-base-content tabular-nums`}>
+        <colgroup>{(compactFinished ? [7, 28, 18, 35, 12] : [5.5, 12.5, 9.5, 8.5, 8.5, 17, 7.5, 7.5, 13.5, 10]).map((width, i) => <col key={i} style={{ width: `${width}%` }} />)}</colgroup>
         <thead><tr className="whitespace-nowrap bg-slate-100 border-b border-base-300 text-[11px] font-extrabold tracking-wide text-slate-700 uppercase">
-          {[['NO', ''], ['PRODUCT', 'Lot No'], ['STATUS', filter === "queue" ? 'at save' : 'scan evidence / saved'], ['SHEET', '/ lot'], ['PCS', '/ lot'], ['ROUTE · WHERE NOW', 'latest WIP'], ['PLAN', '(Lot)'], ['PLAN', '(min)'], ['CAPACITY USED', 'planned'], ['ORDER', '']].map(([title, sub], index) =>
+          {[['NO', ''], ['PRODUCT', 'Lot No'], ['STATUS', filter === "queue" ? 'at save' : 'scan evidence / saved'], ['SHEET', '/ lot · plan'], ['PCS', '/ lot · plan'], ['ROUTE · WHERE NOW', 'latest WIP'], ['PLAN', '(Lot)'], ['PLAN', '(min)'], ['CAPACITY USED', 'planned'], ['ORDER', '']].map((column, index) => ({ column, index })).filter(({ index }) => !compactFinished || ![3, 4, 7, 8, 9].includes(index)).map(({ column: [title, sub], index }) =>
             <th key={index} scope="col" className={`px-2.5 py-2.5 border-r border-base-300 ${[3, 4, 7].includes(index) ? 'text-right' : index === 1 ? 'text-left' : 'text-center'}`}>
               <div>{title}</div>{sub && <div className="text-[10px] font-semibold normal-case text-slate-500">{sub}</div>}
             </th>)}
@@ -101,7 +99,8 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
               <td className="text-center">{unavailable}</td>
             </tr>}
             {visible.map((row, index) => {
-              if ("evidence" in row) return <FinishedRow key={row.evidence.id} record={row.evidence} sequence={row.sequence} />;
+              if (!row.lot && row.evidence) return <OutsidePlanFinishedRow key={row.key} record={row.evidence} sequence={row.sequence} ambiguous={row.matchStatus === "ambiguous"} compactFinished={compactFinished} />;
+              if (!row.lot) return null;
               const { lot, sequence } = row;
               const allocation = allocations.get(lot.id);
               const group = allocation?.status;
@@ -109,13 +108,13 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
               const night = group === "night" || group === "split";
               const color = day ? "#f59e0b" : night ? "#6d4fd8" : "#94a3b8";
               const previous = visible[index - 1];
-              const showSection = !previous || !("lot" in previous) || allocations.get(previous.lot.id)?.status !== group;
+              const showSection = !previous?.lot || allocations.get(previous.lot.id)?.status !== group;
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
                 section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
-                allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
+                compactFinished={compactFinished} evidence={row.evidence} allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
                 routeUnavailable={Boolean(routing.error)} onRoute={() => setRouteLot(lot)} />;
             })}
-            {!display.length && <tr><td colSpan={10} className="py-10 text-center text-base-content/50">{filter === "finished" ? countAvailable ? "No next-gate SCAN IN evidence found for this gate and date in latest WIP." : "Finished today is not available yet." : query ? "No lots match your search." : "No pending saved arrivals for this gate and day."}</td></tr>}
+            {!display.length && <tr><td colSpan={compactFinished ? 5 : 10} className="py-10 text-center text-base-content/50">{filter === "finished" ? countAvailable ? "No next-gate SCAN IN evidence found for this gate and date in latest WIP." : "Finished today is not available yet." : query ? "No lots match your search." : "No pending saved arrivals for this gate and day."}</td></tr>}
           </>
         </tbody>
       </table>
@@ -129,15 +128,29 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity, fin
   </div>;
 }
 
-function FinishedRow({ record, sequence }: { record: FinishedEvidence; sequence: number }) {
+function OutsidePlanFinishedRow({ record, sequence, ambiguous, compactFinished }: { record: FinishedEvidence; sequence: number; ambiguous: boolean; compactFinished: boolean }) {
   return <tr data-finished-row className="h-14 border-b border-base-300 bg-base-200/25" style={{ boxShadow: "inset 4px 0 0 #94a3b8" }}>
     <td className="px-2 text-center border-r border-base-200"><div className="inline-flex items-center gap-1"><Check size={13} className="text-base-content/40" /><span className="text-xs font-bold">{sequence}</span></div></td>
     <td className="px-3 py-1.5 border-r border-base-200"><div className="font-bold text-sm break-words">{record.product}</div><div className="text-xs text-base-content/55">{record.lotNo}</div></td>
     <td className="px-2.5 text-center border-r border-base-200"><span className="rounded-md bg-base-200 px-2.5 py-0.5 text-xs font-bold text-base-content/70">Finished</span><div className="mt-1 text-[11px] tabular-nums" title={`Next gate SCAN IN: ${record.scannedAt}`}>{record.scannedAt.slice(11, 19)}</div></td>
-    <td className="px-2.5 text-right border-r border-base-200" title="Actual passed quantity is not available">{unavailable}</td><td className="px-2.5 text-right border-r border-base-200" title="Actual passed quantity is not available">{unavailable}</td>
+    {!compactFinished && <><td className="px-2.5 text-right border-r border-base-200">{unavailable}</td>
+    <td className="px-2.5 text-right border-r border-base-200">{unavailable}</td></>}
     <td className="px-3 text-center border-r border-base-200"><div className="text-xs font-bold">{record.gate} → {record.nextGate}</div><div className="text-[11px] text-base-content/60">SCAN IN · {record.currentProcess || record.nextGate}</div></td>
-    {["plan-lots", "plan-minutes", "capacity", "order"].map(key => <td key={key} className="px-2.5 text-center border-r border-base-200">{unavailable}</td>)}
+    <td className="px-2.5 text-center text-[10px] text-base-content/55 border-r border-base-200" title="No unique saved plan row is available">{ambiguous ? "Multiple plans" : "Unplanned"}</td>
+    {!compactFinished && <><td className="px-2.5 text-center border-r border-base-200">{unavailable}</td>
+    <td className="px-3 border-r border-base-200">{unavailable}</td>
+    <td className="px-2.5 text-center">{unavailable}</td></>}
   </tr>;
+}
+
+function PlannedAllocation({ allocation }: { allocation?: BoardShiftAllocation }) {
+  return <div title={allocation?.reason ?? "Saved plan allocation; not actual utilization"}>
+    {allocation && !["none", "unassigned"].includes(allocation.status) ? <div className="py-1.5 text-[11px] font-semibold tabular-nums leading-5">
+      <div className="text-[#8a5a00]">D/S {allocation.dayMin.toLocaleString()}m</div>
+      <div className="text-[#5a3fc0]">N/S {allocation.nightMin.toLocaleString()}m</div>
+      {allocation.overflowMin > 0 && <div className="text-rose-600">Over {allocation.overflowMin.toLocaleString()}m</div>}
+    </div> : unavailable}
+  </div>;
 }
 
 function CapacityBar({ pct }: { pct: number | null }) {
@@ -149,31 +162,29 @@ function CapacityBar({ pct }: { pct: number | null }) {
   </div>;
 }
 
-function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, route, routeLoading, routeUnavailable, onRoute }: {
+function QueueRow({ lot, sequence, color, showSection, section, sectionClass, allocation, route, routeLoading, routeUnavailable, evidence, compactFinished, onRoute }: {
   lot: LotItem; sequence: number; color: string; showSection: boolean; section: string;
   sectionClass: string; allocation?: BoardShiftAllocation; route?: LotRouting;
   routeLoading: boolean; routeUnavailable: boolean; onRoute: () => void;
+  evidence?: FinishedEvidence;
+  compactFinished: boolean;
 }) {
   return <>
-    {showSection && <tr className={`h-9 border-y ${sectionClass}`}><td colSpan={10} className="px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider"><span className="inline-block h-2.5 w-2.5 mr-2 rounded-xs" style={{ backgroundColor: color }} />{section}</td></tr>}
-    <tr data-plan-row className="h-14 border-b border-base-300 bg-base-100 hover:bg-base-200/60" style={{ boxShadow: `inset 4px 0 0 ${color}` }}>
-      <td className="px-2 text-center border-r border-base-200"><div className="inline-flex gap-1 items-center"><GripVertical size={14} className="text-base-content/15" /><span className="w-5 text-xs font-extrabold">{sequence}</span></div></td>
-      <td className="px-3 py-1.5 border-r border-base-200"><div className="font-bold text-sm break-words">{lot.product}</div><div className="mt-0.5 text-xs font-semibold text-base-content/55">{lot.kind === "unidentified" ? "No lot identity" : lot.label}</div></td>
-      <td className="px-2.5 text-center border-r border-base-200"><span title="Status captured when this plan was saved" className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${lot.isHold ? "bg-[#fdecb3] text-[#8a5a00]" : lot.gateState === "in_gate" ? "bg-[#316be8] text-white" : "bg-base-200 text-base-content/70"}`}>{planStatus(lot)}</span></td>
-      <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.sheets, "sheet")}</td>
-      <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.qty, "piece")}</td>
+    {showSection && <tr className={`h-9 border-y ${sectionClass}`}><td colSpan={compactFinished ? 5 : 10} className="px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider"><span className="inline-block h-2.5 w-2.5 mr-2 rounded-xs" style={{ backgroundColor: color }} />{section}</td></tr>}
+    <tr data-plan-row={!evidence ? true : undefined} data-finished-row={evidence ? true : undefined} className="h-14 border-b border-base-300 bg-base-100 hover:bg-base-200/60" style={{ boxShadow: `inset 4px 0 0 ${color}` }}>
+      <td className="px-2 text-center border-r border-base-200"><div className="inline-flex gap-1 items-center">{evidence ? <Check size={13} className="text-base-content/40" /> : <GripVertical size={14} className="text-base-content/15" />}<span className="w-5 text-xs font-extrabold">{sequence}</span></div></td>
+      <td className="px-3 py-1.5 border-r border-base-200"><div className="font-bold text-sm break-words">{lot.product}</div><div className="mt-0.5 text-xs font-semibold text-base-content/55">{lot.kind === "unidentified" ? "No lot identity" : lot.label}</div>{evidence && <div className="text-[10px] text-base-content/50">Plan: {lot.plannedDate}</div>}</td>
+      <td className="px-2.5 text-center border-r border-base-200"><span title={evidence ? `Next gate SCAN IN: ${evidence.scannedAt}` : "Status captured when this plan was saved"} className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${evidence ? "bg-base-200 text-base-content/70" : lot.isHold ? "bg-[#fdecb3] text-[#8a5a00]" : lot.gateState === "in_gate" ? "bg-[#316be8] text-white" : "bg-base-200 text-base-content/70"}`}>{evidence ? "Finished" : planStatus(lot)}</span>{evidence && <div className="mt-1 text-[11px] tabular-nums">{evidence.scannedAt.slice(11, 19)}</div>}</td>
+    {!compactFinished && <><td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.sheets, "sheet")}</td>
+      <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.qty, "piece")}</td></>}
       <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect routing and current WIP" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${route?.status === "matched" ? "bg-[#316be8]" : "bg-base-300"}`} /><span className="truncate">{routeLoading ? "Loading…" : routeUnavailable ? "Routing unavailable" : route?.status === "matched" ? route.current?.process || route.current?.gate || "Details" : "Position unconfirmed"}</span></button></td>
       <td className="px-2.5 text-center font-extrabold text-xs border-r border-base-200">{lot.kind === "lot" ? 1 : unavailable}</td>
-      <td className="px-2.5 text-right text-xs font-bold border-r border-base-200" title="Saved daily planning load; not runtime or ETA">{lot.kind === "lot" && lot.loadMin !== null ? lot.loadMin.toLocaleString() : unavailable}</td>
+      {!compactFinished && <><td className="px-2.5 text-right text-xs font-bold border-r border-base-200" title="Saved daily planning load; not runtime or ETA">{lot.kind === "lot" && lot.loadMin !== null ? lot.loadMin.toLocaleString() : unavailable}</td>
       <td className="px-3 border-r border-base-200" title={allocation?.reason ?? "Planned allocation from saved capacity; not actual utilization"}>
-        {allocation && !["none", "unassigned"].includes(allocation.status) ? <div className="py-1.5 text-[11px] font-semibold tabular-nums leading-5">
-          <div className="text-[#8a5a00]">D/S {allocation.dayMin.toLocaleString()}m</div>
-          <div className="text-[#5a3fc0]">N/S {allocation.nightMin.toLocaleString()}m</div>
-          {allocation.overflowMin > 0 && <div className="text-rose-600">Over {allocation.overflowMin.toLocaleString()}m</div>}
-        </div> : unavailable}
+        <PlannedAllocation allocation={allocation} />
       </td>
       <td className="px-2 text-center"><div className="inline-flex gap-1">{[{ Icon: ArrowUp, title: 'Move up' }, { Icon: ArrowDown, title: 'Move down' }, { Icon: ArrowUpToLine, title: 'Move to top' }].map(({ Icon, title }) =>
-        <button key={title} type="button" disabled title={`${title}: Save order is not connected`} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/80 disabled:opacity-30"><Icon size={13} /></button>)}</div></td>
+        <button key={title} type="button" disabled title={`${title}: Save order is not connected`} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-base-300 bg-base-100 text-base-content/80 disabled:opacity-30"><Icon size={13} /></button>)}</div></td></>}
     </tr>
   </>;
 }

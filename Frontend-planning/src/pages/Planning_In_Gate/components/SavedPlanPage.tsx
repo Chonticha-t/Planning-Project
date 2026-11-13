@@ -35,6 +35,7 @@ export default function SavedPlanPage() {
   const [exporting, setExporting] = useState(false);
   const { saved, loading, error, reload } = useSavedPlan();
   const finished = useFinishedToday(date, view === "day");
+  const savedPlanLots = useMemo(() => saved ? savedPlanRows(saved.snapshot, "ALL") : [], [saved]);
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
   const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows) : new Map(), [saved, rows]);
   const gates = useMemo(() => saved ? savedPlanGates(saved.snapshot, category) : [], [saved, category]);
@@ -150,7 +151,7 @@ export default function SavedPlanPage() {
                 {scheduledDates.length > 0 && <select aria-label="Scheduled day" className="select select-xs select-bordered ml-auto" value={scheduledDates.includes(date) ? date : ""} onChange={event => event.target.value && setDate(event.target.value)}><option value="" disabled>Select a planned day</option>{scheduledDates.map(day => <option key={day} value={day}>{day}</option>)}</select>}
               </div>
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}
-              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={queue.map(({ lot }) => lot)} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
+              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={queue.map(({ lot }) => lot)} savedPlanLots={savedPlanLots} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
             </div>}
         </div>
         <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}
