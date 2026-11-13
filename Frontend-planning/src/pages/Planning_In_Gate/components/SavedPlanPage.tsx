@@ -10,6 +10,7 @@ import { allocateBoardShifts } from "../../Capacity_Leveling/utils/boardShiftAll
 import type { CountUnit, InGateCategory, InGateView, WorkMode } from "../types";
 import { InGateHeader } from "./InGateHeader";
 import { useSavedPlan } from "../hooks/useSavedPlan";
+import { useFinishedToday } from "../hooks/useFinishedToday";
 import { planStatus, savedPlanGates, savedPlanRows } from "../savedPlan";
 import { ApiWorkListTable } from "./ApiWorkListTable";
 import { ApiMonthlySummary } from "./ApiMonthlySummary";
@@ -33,10 +34,12 @@ export default function SavedPlanPage() {
   const [tvMode, setTvMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const { saved, loading, error, reload } = useSavedPlan();
+  const finished = useFinishedToday(date, view === "day");
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
   const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows) : new Map(), [saved, rows]);
   const gates = useMemo(() => saved ? savedPlanGates(saved.snapshot, category) : [], [saved, category]);
   const gate = gates.find(item => item.gate === selectedGate)?.gate ?? gates[0]?.gate ?? "";
+  const finishedRows = useMemo(() => finished.rows.filter(row => row.gate === gate && (category === "ALL" || row.processGroup === category)), [finished.rows, gate, category]);
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
   const dayRows = useMemo(() => rows.filter(row => view === "month" ? row.plannedDate.startsWith(`${month}-`) : row.plannedDate === date), [rows, date, month, view]);
   const scheduledDates = useMemo(() => [...new Set(gateRows.map(row => row.plannedDate))].sort(), [gateRows]);
@@ -111,7 +114,7 @@ export default function SavedPlanPage() {
       view={view} onViewChange={changeView} month={month} thisMonth={today.slice(0, 7)} onMonthChange={setMonth}
       unit={unit} onUnitChange={setUnit} category={category} onCategoryChange={changeCategory}
       date={date} todayStr={today} onDateChange={setDate} orderBy="plan" onOrderByChange={() => {}}
-      search={search} onSearchChange={setSearch} onExcel={() => void exportPlan()} onRefresh={() => void reload()}
+      search={search} onSearchChange={setSearch} onExcel={() => void exportPlan()} onRefresh={() => { void reload(); finished.reload(); }}
       workMode={workMode} onWorkModeChange={setWorkMode} tvMode={tvMode} onTvModeChange={setTvMode} />
     {loading ? <div role="status" className="p-8 text-center">Loading saved plan…</div>
       : error ? <div role="alert" className="rounded-xl border border-error/30 bg-error/10 p-5">
@@ -133,7 +136,7 @@ export default function SavedPlanPage() {
             <div className="p-6 flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-sm font-extrabold uppercase tracking-wider mr-1">Queue</h2>
-                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">Actual — · {countText(gate)} planned</span>
+                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">Finished {finished.needsLogin || finished.loading || finished.error ? "—" : finishedRows.length} lots observed · {countText(gate)} planned</span>
                 {queue.some(({ lot }) => lot.isHold) && <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold">{queue.filter(({ lot }) => lot.isHold).length} HOLD at save</span>}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   {workMode === "edit" && <button type="button" disabled title="Save order is not connected yet" className="btn btn-xs h-8 rounded-lg border border-base-300 bg-base-100 px-3 text-xs font-bold flex items-center gap-1.5"><Plus size={13} className="rotate-45 text-[#316be8]" />+ Auto-arrange</button>}
@@ -143,11 +146,11 @@ export default function SavedPlanPage() {
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/55">
                 <strong className="text-base-content/75">Plan v{saved.plan.version}</strong><span>{saved.plan.savedAt} · {saved.plan.savedBy}</span>
-                <span>Status at save · Actual / ETA unavailable · Refresh for the latest plan</span>
+                <span>Status at save · Finished from next-gate SCAN IN · ETA unavailable</span>
                 {scheduledDates.length > 0 && <select aria-label="Scheduled day" className="select select-xs select-bordered ml-auto" value={scheduledDates.includes(date) ? date : ""} onChange={event => event.target.value && setDate(event.target.value)}><option value="" disabled>Select a planned day</option>{scheduledDates.map(day => <option key={day} value={day}>{day}</option>)}</select>}
               </div>
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}
-              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={queue.map(({ lot }) => lot)} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} />
+              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={queue.map(({ lot }) => lot)} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
             </div>}
         </div>
         <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}

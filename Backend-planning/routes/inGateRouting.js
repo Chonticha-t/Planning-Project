@@ -1,4 +1,5 @@
 const express = require("express");
+const { createFinishedHandler } = require("./inGateFinished");
 
 const clean = value => typeof value === "string" ? value.replace(/\u00a0/g, " ").trim() : "";
 const canonicalGate = name => ({ "AT-FVAC": "FVAC", "AT-FADL": "FADL", "AT-FIN": "FIN", MMOT1: "MMOT", MBLK1: "MBLK" }[name] || name);
@@ -54,6 +55,7 @@ function parseItems(body) {
 function createInGateRoutingRouter({ pool, verifyPlanner }) {
   if (typeof verifyPlanner !== "function") throw new Error("Routing authorization middleware is required.");
   const router = express.Router();
+  router.get("/finished", verifyPlanner, createFinishedHandler({ pool, resolveRoute }));
   router.post("/lookup", verifyPlanner, async (req, res) => {
     res.set("Cache-Control", "no-store");
     let items;

@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpToLine, GripVertical } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, GripVertical } from "lucide-react";
 import type { BoardShiftAllocation, CapacityDay, LotItem } from "../../Capacity_Leveling/types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { planQuantity, planStatus } from "../savedPlan";
 import { useLotRouting, type LotRouting } from "../hooks/useLotRouting";
 import { LiveRouteDetails } from "./LiveRouteDetails";
+import type { FinishedEvidence, FinishedState } from "../hooks/useFinishedToday";
 
 const unavailable = <span className="text-base-content/40" title="Not available in the saved plan">—</span>;
 const PAGE_SIZE = 100;
@@ -25,52 +26,73 @@ interface Props {
   search: string;
   allocations: ReadonlyMap<string, BoardShiftAllocation>;
   capacity?: CapacityDay;
+  finished: FinishedState;
 }
 
 /** Keep the original queue design; all quantities come from the saved API snapshot. */
-export function ApiWorkListTable({ planOrder, search, allocations, capacity }: Props) {
+export function ApiWorkListTable({ planOrder, search, allocations, capacity, finished }: Props) {
   const [filter, setFilter] = useState<Filter>("queue");
   const [page, setPage] = useState(0);
   const [routeLot, setRouteLot] = useState<LotItem | null>(null);
   const query = search.trim().toLowerCase();
+  const completed = new Set(finished.rows.map(row => JSON.stringify([row.gate, row.lotNo])));
   const rows = useMemo(() => planOrder.map((lot, index) => ({ lot, sequence: index + 1 }))
     .filter(({ lot }) => !query || lot.product.toLowerCase().includes(query) || lot.label.toLowerCase().includes(query)), [planOrder, query]);
+  const pending = rows.filter(({ lot }) => lot.kind !== "lot" || !completed.has(JSON.stringify([lot.gate, lot.label])));
+  const finishedRows = finished.rows.filter(row => !query || row.product.toLowerCase().includes(query) || row.lotNo.toLowerCase().includes(query));
+  const display = [
+    ...(filter !== "queue" ? finishedRows.map((evidence, index) => ({ evidence, sequence: index + 1 })) : []),
+    ...(filter !== "finished" ? pending : []),
+  ];
   const totalLoad = planOrder.reduce<number | null>((sum, lot) => lot.kind !== "lot" ? sum
     : sum === null || lot.loadMin === null ? null : sum + lot.loadMin, 0);
   const capacityMin = capacity?.capacityMin;
   const pct = totalLoad !== null && typeof capacityMin === "number" && capacityMin > 0 ? Math.round(totalLoad / capacityMin * 100) : null;
-  const visible = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const routing = useLotRouting(filter === "finished" ? [] : visible.map(({ lot }) => lot));
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(display.length / PAGE_SIZE) - 1));
+  const visible = display.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const routing = useLotRouting(visible.flatMap(row => "lot" in row ? [row.lot] : []));
   const lotCount = planQuantity(planOrder, "lots");
   const needs = planOrder.filter(lot => lot.kind !== "lot").length;
+  const pendingCount = planOrder.filter(lot => lot.kind === "lot" && !completed.has(JSON.stringify([lot.gate, lot.label]))).length;
+  const countAvailable = !finished.needsLogin && !finished.loading && !finished.error;
+  const finishedCount = countAvailable ? finished.rows.length : "—";
 
   return <div className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-base-300 bg-base-200/45 px-3 py-2">
       <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-base-200 p-1">
-        {([['all', `All lots (${lotCount})`], ['queue', `In queue (${lotCount})`], ['finished', 'Finished today (—)']] as const).map(([value, text]) =>
+        {([['all', `All lots (${countAvailable ? pendingCount + finished.rows.length : "—"})`], ['queue', `In queue (${pendingCount})`], ['finished', `Finished today (${finishedCount})`]] as const).map(([value, text]) =>
           <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setPage(0); }}
             className={`rounded-md px-3 py-1 text-xs font-bold transition-colors cursor-pointer ${filter === value ? "bg-base-100 text-[#316be8] shadow-2xs" : "text-base-content/65 hover:text-base-content"}`}>{text}</button>)}
         {needs > 0 && <span className="px-2 text-xs text-base-content/60">+ {needs} requirements / no ID</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-base-content/70 tabular-nums">
-        <span>Finished today: <b>—</b></span>
+        <span>Finished today: <b>{finishedCount} lots observed</b></span>
         <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold bg-[#fdecb3] text-[#8a5a00]"><span className="h-2 w-2 rounded-xs bg-[#f59e0b]" />D/S —</span>
         <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold bg-[#e9e3fb] text-[#5a3fc0]"><span className="h-2 w-2 rounded-full bg-[#6d4fd8]" />N/S —</span>
       </div>
+    </div>
+    <div className="text-xs text-base-content/60" role={finished.error ? "alert" : "status"}>
+      {finished.needsLogin ? <><span>Sign in to read Finished today. </span><button type="button" className="link" onClick={finished.login}>Sign in</button></>
+        : finished.loading ? "Loading next-gate SCAN IN evidence…"
+        : finished.error ? <>{finished.error} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
+        : <>Finished = SCAN IN at the next gate, using its in_date calendar day. Latest WIP evidence only; not a complete scan history.
+          {finished.unresolved > 0 && <span> Some scans have unresolved routing or category and are excluded from the corresponding totals.</span>}
+          <button type="button" className="link ml-2" onClick={finished.reload}>Refresh finished</button></>}
     </div>
     <div className="overflow-x-auto rounded-xl border border-base-300">
       <table className="w-full min-w-[980px] table-fixed text-sm text-base-content tabular-nums">
         <colgroup>{[5.5, 12.5, 9.5, 8.5, 8.5, 17, 7.5, 7.5, 13.5, 10].map((width, i) => <col key={i} style={{ width: `${width}%` }} />)}</colgroup>
         <thead><tr className="whitespace-nowrap bg-slate-100 border-b border-base-300 text-[11px] font-extrabold tracking-wide text-slate-700 uppercase">
-          {[['NO', ''], ['PRODUCT', 'Lot No'], ['STATUS', 'at save'], ['SHEET', '/ lot'], ['PCS', '/ lot'], ['ROUTE · WHERE NOW', 'latest WIP'], ['PLAN', '(Lot)'], ['PLAN', '(min)'], ['CAPACITY USED', 'planned'], ['ORDER', '']].map(([title, sub], index) =>
+          {[['NO', ''], ['PRODUCT', 'Lot No'], ['STATUS', filter === "queue" ? 'at save' : 'scan evidence / saved'], ['SHEET', '/ lot'], ['PCS', '/ lot'], ['ROUTE · WHERE NOW', 'latest WIP'], ['PLAN', '(Lot)'], ['PLAN', '(min)'], ['CAPACITY USED', 'planned'], ['ORDER', '']].map(([title, sub], index) =>
             <th key={index} scope="col" className={`px-2.5 py-2.5 border-r border-base-300 ${[3, 4, 7].includes(index) ? 'text-right' : index === 1 ? 'text-left' : 'text-center'}`}>
               <div>{title}</div>{sub && <div className="text-[10px] font-semibold normal-case text-slate-500">{sub}</div>}
             </th>)}
         </tr></thead>
         <tbody>
-          {filter === "finished" ? <tr><td colSpan={10} className="py-10 text-center text-base-content/50">Actual scan-out data is not available. Finished quantity is unknown.</td></tr> : <>
+          <>
+            {filter !== "finished" &&
             <tr className="h-10 bg-slate-50 border-b border-base-300 text-xs">
-              <td colSpan={3} className="px-3 font-extrabold uppercase tracking-wider text-slate-700 border-r border-base-200">TOTAL SUMMARY</td>
+              <td colSpan={3} className="px-3 font-extrabold uppercase tracking-wider text-slate-700 border-r border-base-200">SAVED PLAN SUMMARY</td>
               <td className="px-2.5 text-right font-bold border-r border-base-200">{formatGateQuantity(planQuantity(planOrder, "sheets"), "sheet")}</td>
               <td className="px-2.5 text-right font-bold border-r border-base-200">{formatGateQuantity(planQuantity(planOrder, "pcs"), "piece")}</td>
               <td className="text-center border-r border-base-200">{unavailable}</td>
@@ -78,31 +100,45 @@ export function ApiWorkListTable({ planOrder, search, allocations, capacity }: P
               <td className="px-2.5 text-right font-bold border-r border-base-200" title="Saved daily planning load; not remaining runtime">{totalLoad === null ? unavailable : totalLoad.toLocaleString()}</td>
               <td className="px-3 border-r border-base-200"><CapacityBar pct={pct} /></td>
               <td className="text-center">{unavailable}</td>
-            </tr>
-            {visible.map(({ lot, sequence }, index) => {
+            </tr>}
+            {visible.map((row, index) => {
+              if ("evidence" in row) return <FinishedRow key={row.evidence.id} record={row.evidence} sequence={row.sequence} />;
+              const { lot, sequence } = row;
               const allocation = allocations.get(lot.id);
               const group = allocation?.status;
               const day = group === "day";
               const night = group === "night" || group === "split";
               const color = day ? "#f59e0b" : night ? "#6d4fd8" : "#94a3b8";
-              const showSection = index === 0 || allocations.get(visible[index - 1].lot.id)?.status !== group;
+              const previous = visible[index - 1];
+              const showSection = !previous || !("lot" in previous) || allocations.get(previous.lot.id)?.status !== group;
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
                 section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
                 allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
                 routeUnavailable={Boolean(routing.error)} needsLogin={routing.needsLogin} onRoute={() => setRouteLot(lot)} />;
             })}
-            {!rows.length && <tr><td colSpan={10} className="py-10 text-center text-base-content/50">{query ? "No lots match your search." : "No saved arrivals for this gate and day."}</td></tr>}
-          </>}
+            {!display.length && <tr><td colSpan={10} className="py-10 text-center text-base-content/50">{filter === "finished" ? countAvailable ? "No next-gate SCAN IN evidence found for this gate and date in latest WIP." : "Finished today is not available yet." : query ? "No lots match your search." : "No pending saved arrivals for this gate and day."}</td></tr>}
+          </>
         </tbody>
       </table>
     </div>
-    {filter !== "finished" && rows.length > PAGE_SIZE && <div className="flex justify-end items-center gap-3 text-xs">
-      <span>{page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, rows.length)} of {rows.length}</span>
-      <button type="button" className="btn btn-sm" disabled={page === 0} onClick={() => setPage(value => value - 1)}>Previous</button>
-      <button type="button" className="btn btn-sm" disabled={(page + 1) * PAGE_SIZE >= rows.length} onClick={() => setPage(value => value + 1)}>Next</button>
+    {display.length > PAGE_SIZE && <div className="flex justify-end items-center gap-3 text-xs">
+      <span>{currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, display.length)} of {display.length}</span>
+      <button type="button" className="btn btn-sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>
+      <button type="button" className="btn btn-sm" disabled={(currentPage + 1) * PAGE_SIZE >= display.length} onClick={() => setPage(currentPage + 1)}>Next</button>
     </div>}
     {routeLot && <LiveRouteDetails lot={routeLot} route={routing.routes.get(routeLot.id)} loading={routing.loading} error={routing.error} checkedAt={routing.checkedAt} needsLogin={routing.needsLogin} login={routing.login} retry={routing.retry} onClose={() => setRouteLot(null)} />}
   </div>;
+}
+
+function FinishedRow({ record, sequence }: { record: FinishedEvidence; sequence: number }) {
+  return <tr data-finished-row className="h-14 border-b border-base-300 bg-base-200/25" style={{ boxShadow: "inset 4px 0 0 #94a3b8" }}>
+    <td className="px-2 text-center border-r border-base-200"><div className="inline-flex items-center gap-1"><Check size={13} className="text-base-content/40" /><span className="text-xs font-bold">{sequence}</span></div></td>
+    <td className="px-3 py-1.5 border-r border-base-200"><div className="font-bold text-sm break-words">{record.product}</div><div className="text-xs text-base-content/55">{record.lotNo}</div></td>
+    <td className="px-2.5 text-center border-r border-base-200"><span className="rounded-md bg-base-200 px-2.5 py-0.5 text-xs font-bold text-base-content/70">Finished</span><div className="mt-1 text-[11px] tabular-nums" title={`Next gate SCAN IN: ${record.scannedAt}`}>{record.scannedAt.slice(11, 19)}</div></td>
+    <td className="px-2.5 text-right border-r border-base-200" title="Actual passed quantity is not available">{unavailable}</td><td className="px-2.5 text-right border-r border-base-200" title="Actual passed quantity is not available">{unavailable}</td>
+    <td className="px-3 text-center border-r border-base-200"><div className="text-xs font-bold">{record.gate} → {record.nextGate}</div><div className="text-[11px] text-base-content/60">SCAN IN · {record.currentProcess || record.nextGate}</div></td>
+    {["plan-lots", "plan-minutes", "capacity", "order"].map(key => <td key={key} className="px-2.5 text-center border-r border-base-200">{unavailable}</td>)}
+  </tr>;
 }
 
 function CapacityBar({ pct }: { pct: number | null }) {
