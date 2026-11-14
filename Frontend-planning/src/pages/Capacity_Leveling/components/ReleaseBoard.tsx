@@ -78,7 +78,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   gates,
   boardGate,
   onBoardGateChange,
-  lots,
+  lots: rawLots,
   shiftAllocations,
   beyondRangeCount,
   pastArrivalCount,
@@ -106,6 +106,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   focusedDate = null,
   readOnly = false,
 }) => {
+  const lots = useMemo(() => rawLots.filter((lot) => !lot.passedGate), [rawLots]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCompact, setIsCompact] = useState(false);

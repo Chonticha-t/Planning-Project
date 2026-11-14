@@ -612,6 +612,49 @@ test("board recalculates current state after coming becomes in_gate while keepin
   assert.deepEqual(buildBoardLots(source, lots).map(lot => lot.label), ["LOT-0", "LOT-1", "LOT-2"]);
 });
 
+test("locked board keeps unchanged in_gate and coming order while placing newly promoted in_gate lots right after unchanged in_gate", () => {
+  const source = priorityData([
+    { lot_no: "LOT-B", gate_state: "in_gate", saved_gate_state: "in_gate", current_gate: "FADL", proc_disp: "FADL", saved_current_gate: "FADL", saved_proc_disp: "FADL", rem_proc_in_gate: 1, saved_rem_proc_in_gate: 10, pri: 2, saved_pri: 2 },
+    { lot_no: "LOT-A", gate_state: "in_gate", saved_gate_state: "in_gate", current_gate: "FADL", proc_disp: "FADL", saved_current_gate: "FADL", saved_proc_disp: "FADL", rem_proc_in_gate: 5, saved_rem_proc_in_gate: 5, pri: 1, saved_pri: 1 },
+    { lot_no: "LOT-C", gate_state: "coming", saved_gate_state: "coming", rem_proc_in_gate: 1, saved_rem_proc_in_gate: 1, pri: 99, saved_pri: 1 },
+    { lot_no: "LOT-D", gate_state: "in_gate", saved_gate_state: "coming", current_gate: "FADL", proc_disp: "OTHER", rem_proc_in_gate: 20, pri: 4 },
+    { lot_no: "LOT-E", gate_state: "coming", saved_gate_state: "coming", rem_proc_in_gate: 1, saved_rem_proc_in_gate: 1, pri: 1, saved_pri: 2 },
+    { lot_no: "LOT-F", gate_state: "in_gate", saved_gate_state: "coming", current_gate: "FADL", proc_disp: "FADL", rem_proc_in_gate: 30, pri: 6 },
+  ]);
+  source.cards = source.cards.map((item, index) => ({ ...item, lotNo: `LOT-${"BADCFE"[index]}`, ...(index === 0 ? { lotNo: "LOT-B" } : {}) }));
+  source.cards[0].lotNo = "LOT-B";
+  source.cards[1].lotNo = "LOT-A";
+  source.cards[2].lotNo = "LOT-C";
+  source.cards[3].lotNo = "LOT-D";
+  source.cards[4].lotNo = "LOT-E";
+  source.cards[5].lotNo = "LOT-F";
+  const lots = source.cards.map(toLotItem);
+
+  // Without explicit boardCardOrder: unchanged in_gate (LOT-B -> LOT-A by saved priority)
+  // -> promoted in_gate (LOT-F -> LOT-D by live priority) -> unchanged coming (LOT-C -> LOT-E by saved priority).
+  const autoOrdered = buildBoardLots(source, lots);
+  assert.deepEqual(autoOrdered.map(lot => lot.label), ["LOT-B", "LOT-A", "LOT-F", "LOT-D", "LOT-C", "LOT-E"]);
+  assert.equal(autoOrdered.find(lot => lot.label === "LOT-F")?.promotedToInGate, true);
+  assert.equal(autoOrdered.find(lot => lot.label === "LOT-B")?.promotedToInGate, false);
+
+  // With explicit boardCardOrder saving LOT-A before LOT-B and LOT-E before LOT-C:
+  const cardId = (label: string) => JSON.stringify(["FADL", "2026-11-16", "lot", label]);
+  const savedOrder = readBoardCardOrder([{
+    gate: "FADL",
+    date: "2026-11-16",
+    cardIds: [cardId("LOT-A"), cardId("LOT-B"), cardId("LOT-E"), cardId("LOT-D"), cardId("LOT-C"), cardId("LOT-F")],
+  }]);
+  const ordered = applyBoardCardOrder(autoOrdered, savedOrder);
+  assert.deepEqual(ordered.map(lot => lot.label), ["LOT-A", "LOT-B", "LOT-F", "LOT-D", "LOT-E", "LOT-C"]);
+
+  // Dragging a promoted card manually still takes effect and serializes both promoted and reordered groups.
+  const dragged = reorderBoardCards(autoOrdered, savedOrder, [cardId("LOT-F")], cardId("LOT-A"), "before");
+  assert.deepEqual(applyBoardCardOrder(autoOrdered, dragged).map(lot => lot.label), ["LOT-F", "LOT-A", "LOT-B", "LOT-D", "LOT-E", "LOT-C"]);
+  assert.deepEqual(serializeBoardCardOrder(autoOrdered, new Map(), source.today)[0]?.cardIds, [
+    cardId("LOT-B"), cardId("LOT-A"), cardId("LOT-F"), cardId("LOT-D"), cardId("LOT-C"), cardId("LOT-E"),
+  ]);
+});
+
 test("board and grid show the same 32 actual lots and 3 need cards with allocation details retained", () => {
   const cards = Array.from({ length: 32 }, (_, i) => card({ id: `actual-${i}`, lotNo: `LOT-${i}`, workKey: `actual-${i}` }));
   cards.push(...Array.from({ length: 3 }, (_, i) => card({ id: `need-${i}`, lotNo: "NEED WIP", gateState: "need_wip", workKey: `need-${i}`, loadMin: 0 })));

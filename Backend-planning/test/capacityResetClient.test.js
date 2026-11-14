@@ -117,6 +117,7 @@ test("reset requires confirmation, loads fresh data, survives reload and saves e
   const h = harness();
   try {
     await h.resolve(data());
+    assert.ok(!h.requests[0].args[4], "initial load must read the locked active plan");
     h.props("LevelingHeader").onResetRequired();
     assert.equal(h.requests.length, 1);
     h.props("ResetRequiredModal").onCancel();
@@ -124,6 +125,7 @@ test("reset requires confirmation, loads fresh data, survives reload and saves e
     h.props("LevelingHeader").onResetRequired();
     h.props("ResetRequiredModal").onConfirm();
     assert.equal(h.requests.at(-1).args[3], true, "reset must bypass backend cache");
+    assert.equal(h.requests.at(-1).args[4], true, "reset must request live Summary Gate arrivals");
     await h.resolve(data("2026-11-13"));
     assert.equal(h.saves.length, 0, "reset must never auto-save");
     const lots = h.props("LotDetailSidePanel").allLots;
@@ -132,6 +134,7 @@ test("reset requires confirmation, loads fresh data, survives reload and saves e
     assert.equal(h.props("LevelingHeader").canSave, true);
     assert.equal(h.props("LevelingHeader").isDraftModified, true);
     h.props("LevelingHeader").onReload();
+    assert.equal(h.requests.at(-1).args[4], true, "reload during reset draft must keep loading live arrivals");
     await h.resolve(data("2026-11-14"));
     assert.ok(h.props("LotDetailSidePanel").allLots.every(lot => lot.plannedDate === "2026-11-14"));
     h.props("LevelingHeader").onSavePlan();
@@ -142,10 +145,12 @@ test("reset requires confirmation, loads fresh data, survives reload and saves e
     assert.equal(h.saves[0][1].length, 0);
     assert.equal(h.saves[0][2], "Reset to Required");
     assert.equal(h.saves[0][3].length, 0, "saved ordering must be explicitly cleared");
+    assert.equal(h.saves[0][4], true, "reset save must flag resetToRequired");
     const saved = data("2026-11-14");
     saved.cards.forEach(card => { card.plannedDate = card.baseDate; });
     saved.boardCardOrder = [];
     saved.plan.version = 6;
+    assert.ok(!h.requests.at(-1).args[4], "post-save reload must return to locked plan mode");
     await h.resolve(saved);
     assert.equal(h.props("LevelingHeader").isDraftModified, false);
   } finally { h.unmount(); }

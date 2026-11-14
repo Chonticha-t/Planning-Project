@@ -24,9 +24,9 @@ export const toApiFailure = (error: unknown): ApiFailure => {
   return { code: "UNKNOWN", message: "Something went wrong. Please try again." };
 };
 
-export const fetchLevelingData = async (startdate: string, stopdate: string, signal?: AbortSignal, refresh = false) => {
+export const fetchLevelingData = async (startdate: string, stopdate: string, signal?: AbortSignal, refresh = false, reset = false) => {
   const { data } = await axios.get<{ data: LevelingData }>(`${BASE}/load`, {
-    params: { startdate, stopdate, refresh },
+    params: { startdate, stopdate, refresh, ...(reset ? { reset: true } : {}) },
     signal,
   });
   const next = data?.data;
@@ -57,13 +57,20 @@ export interface PlanMove {
   plannedDate: string;
 }
 
-export const savePlan = async (baseVersion: number, moves: PlanMove[], note: string, boardCardOrder: BoardCardOrderGroup[]) => {
+export const savePlan = async (
+  baseVersion: number,
+  moves: PlanMove[],
+  note: string,
+  boardCardOrder: BoardCardOrderGroup[],
+  resetToRequired = false
+) => {
   const { data } = await axios.post<{ data: { plan: PlanInfo; movedCount: number; orderedGroupCount: number } }>(`${BASE}/plan`, {
     calculationMethod: "gate_arrival_max_target_v1",
     baseVersion,
     moves,
     note,
     boardCardOrder,
+    ...(resetToRequired ? { resetToRequired: true } : {}),
   });
   return data.data;
 };
@@ -75,8 +82,11 @@ export const fetchPlanHistory = async (before?: number, signal?: AbortSignal) =>
   return data.data;
 };
 
-export const fetchPlanHistoryDetail = async (planId: string, signal?: AbortSignal) => {
-  const { data } = await axios.get<{ data: PlanHistoryDetail }>(`${BASE}/plans/${encodeURIComponent(planId)}`, { signal });
+export const fetchPlanHistoryDetail = async (planId: string, signal?: AbortSignal, live = false) => {
+  const { data } = await axios.get<{ data: PlanHistoryDetail }>(`${BASE}/plans/${encodeURIComponent(planId)}`, {
+    ...(live ? { params: { live: true } } : {}),
+    signal,
+  });
   return data.data;
 };
 

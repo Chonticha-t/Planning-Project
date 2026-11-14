@@ -11,6 +11,7 @@ const {
   LEVELING_GATES, SHIFTS, NORMAL_VALID_FROM, NORMAL_VALID_TO, ValidationError,
   isDate, dayCapacity, buildCapacityConfig, parseSettingsPayload, sameShift,
   arrivalWorkKey, buildArrivalCards, arrivalEndDate, parsePlanPayload, resolveBoardCardOrder,
+  mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
 } = require("./capacityLeveling");
 
 // Arrival dates must never reuse plans saved as release dates.
@@ -80,11 +81,29 @@ const LATEST_PLAN_SQL = `
   SELECT plan_id, plan_group_id, version_no, note, created_by,
          baseline_snapshot->'boardCardOrder' AS board_card_order,
          baseline_snapshot->'moveHistory' AS move_history,
+         (baseline_snapshot->'viewSnapshot'->>'version' = '1') AS has_snapshot,
          to_char(created_at, 'YYYY-MM-DD HH24:MI') AS saved_at
   FROM planning.work_plan
   WHERE calculation_method = $1
   ORDER BY version_no DESC
   LIMIT 1`;
+
+const PLAN_SNAPSHOT_SQL = `
+  SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot
+  FROM planning.work_plan
+  WHERE plan_id = $1`;
+
+const readLockedSourceRows = async (db, latest) => {
+  if (!latest) return null;
+  const snapshot = latest.view_snapshot !== undefined
+    ? latest.view_snapshot
+    : latest.has_snapshot
+      ? (await db.query(PLAN_SNAPSHOT_SQL, [latest.plan_id])).rows[0]?.view_snapshot
+      : null;
+  return snapshot?.version === 1 && Array.isArray(snapshot?.data?.arrivalRows)
+    ? snapshot.data.arrivalRows
+    : null;
+};
 
 const MOVES_SQL = `
   SELECT work_key, gate_name, prd_name, lot_no, to_char(due_date, 'YYYY-MM-DD') AS due_date,
@@ -196,14 +215,18 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       if (!rows.length) return res.status(404).json({ status: "ERROR", code: "PLAN_NOT_FOUND",
         message: "This plan was deleted or is no longer available." });
       const moves = (await pool.query(MOVES_SQL, [req.params.planId])).rows;
+      const baseSnapshot = rows[0].view_snapshot?.version === 1 && rows[0].view_snapshot?.data
+        ? { ...rows[0].view_snapshot.data, plan: planInfo(rows[0]) } : null;
+      const snapshot = baseSnapshot && req.query.live === "true"
+        ? enrichSnapshotWithLiveStatus(baseSnapshot, (await pool.query(WORKS_SQL, [LEVELING_GATES])).rows)
+        : baseSnapshot;
       return res.json({ status: "OK", data: {
         plan: historyInfo(rows[0]),
         moves: moves.map((move) => ({ workKey: move.work_key, gate: move.gate_name,
           prdName: move.prd_name, lotNo: move.lot_no, dueDate: move.due_date,
           originalDate: move.original_date, plannedDate: move.planned_date })),
         boardCardOrder: rows[0].board_card_order ?? [],
-        snapshot: rows[0].view_snapshot?.version === 1 && rows[0].view_snapshot?.data
-          ? { ...rows[0].view_snapshot.data, plan: planInfo(rows[0]) } : null,
+        snapshot,
       } });
     } catch (error) {
       return historyFail(res, error);
@@ -318,16 +341,19 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       ]);
       const latest = plan.rows[0];
       const force = req.query.refresh === "true";
-      const key = JSON.stringify([today, start, end, capacityRevision(config), latest?.plan_id ?? null, latest?.version_no ?? 0]);
+      const reset = req.query.reset === "true";
+      const key = JSON.stringify([today, start, end, capacityRevision(config), latest?.plan_id ?? null, latest?.version_no ?? 0, ...(reset ? ["reset"] : [])]);
       const reading = performance.now();
       const cached = await loadCache.read(key, async () => {
+        const lockedRows = reset ? null : await readLockedSourceRows(db, latest);
         const [works, moves, legacy] = await Promise.all([
           db.query(WORKS_SQL, [LEVELING_GATES]),
           latest ? db.query(MOVES_SQL, [latest.plan_id]).then(result => result.rows) : [],
           latest ? false : Promise.all(LEGACY_PLAN_METHODS.map(method => db.query(LATEST_PLAN_SQL, [method])))
             .then(results => results.some(result => result.rows.length > 0)),
         ]);
-        return buildLevelingView({ sourceRows: works.rows, moves, config, today, start, end,
+        const sourceRows = lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, works.rows) : works.rows;
+        return buildLevelingView({ sourceRows, moves, config, today, start, end,
           loadCalendar: force ? (from, to) => loadCalendar(from, to, { force: true }) : loadCalendar,
           history: latest?.move_history, order: latest?.board_card_order,
           plan: planInfo(latest), legacy, calculationMethod: PLAN_METHOD });
@@ -348,29 +374,41 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       const today = (await pool.query("SELECT CURRENT_DATE::text AS today")).rows[0].today;
       if (req.body?.calculationMethod !== PLAN_METHOD) throw new ValidationError("Reload the page before saving an arrival plan. Release-date clients are not supported.");
       const { baseVersion, note, moves, boardCardOrder } = parsePlanPayload(req.body, today);
+      const resetToRequired = req.body?.resetToRequired === true ||
+        (note === "Reset to Required" && moves.length === 0 && Array.isArray(boardCardOrder) && boardCardOrder.length === 0);
       const outcome = await inTransaction(async (client) => {
         const latest = (await client.query(LATEST_PLAN_SQL, [PLAN_METHOD])).rows[0];
         if ((latest?.version_no ?? 0) !== baseVersion) return { conflict: "PLAN_VERSION_CONFLICT" };
-        const sourceRows = (await client.query(WORKS_SQL, [LEVELING_GATES])).rows;
+        const lockedRows = resetToRequired ? null : await readLockedSourceRows(client, latest);
+        const liveRows = (await client.query(WORKS_SQL, [LEVELING_GATES])).rows;
+        const sourceRows = lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, liveRows) : liveRows;
         const config = await readConfig(client);
         const { cards } = buildArrivalCards(sourceRows, [], today, config);
         const source = new Map(cards.map((card) => [`${card.workKey}|${card.gate}`, card]));
         const missing = moves.filter((move) => !source.has(`${move.workKey}|${move.gate}`));
         if (missing.length) return { conflict: "WORK_NOT_FOUND", missing: missing.length };
+        const previousMoves = latest ? (await client.query(MOVES_SQL, [latest.plan_id])).rows : [];
+        const submittedKeys = new Set(moves.map((move) => `${move.workKey}|${move.gate}`));
+        const retainedPastMoves = !resetToRequired && lockedRows
+          ? previousMoves
+            .filter((move) => move.planned_date < today && source.has(`${move.work_key}|${move.gate_name}`) && !submittedKeys.has(`${move.work_key}|${move.gate_name}`))
+            .map((move) => ({ workKey: move.work_key, gate: move.gate_name, plannedDate: move.planned_date }))
+          : [];
+        const storedMoves = [...moves, ...retainedPastMoves];
         const gateConfig = new Map(config.map((gate) => [gate.gate, gate]));
         if (moves.length) {
           const moving = moves.map((move) => source.get(`${move.workKey}|${move.gate}`));
           if (moving.some((card) => !card.leadDays || card.loadMin === null || card.kind === "unidentified")) {
             throw new ValidationError("Moved arrivals require valid lead times, normal minutes and a lot or Need WIP identity.");
           }
-          const allDates = [today, ...cards.map((card) => card.baseDate), ...moves.map((move) => move.plannedDate)].sort();
+          const allDates = [today, ...cards.map((card) => card.baseDate), ...storedMoves.map((move) => move.plannedDate)].sort();
           const maxLead = cards.reduce((max, card) => Math.max(max, card.leadDays || 1), 1);
           const calendarEnd = new Date(Date.parse(`${allDates.at(-1)}T00:00:00Z`) + (maxLead * 7 + 14) * 86400000).toISOString().slice(0, 10);
           if (Date.parse(`${calendarEnd}T00:00:00Z`) - Date.parse(`${allDates[0]}T00:00:00Z`) > 3660 * 86400000) {
             throw new ValidationError("The planned arrival exceeds the supported calendar range.");
           }
           const { calendar } = await loadCalendar(allDates[0], calendarEnd);
-          const proposed = new Map(moves.map((move) => [`${move.workKey}|${move.gate}`, move.plannedDate]));
+          const proposed = new Map(storedMoves.map((move) => [`${move.workKey}|${move.gate}`, move.plannedDate]));
           const arrivalOf = (card) => proposed.get(`${card.workKey}|${card.gate}`) || card.baseDate;
           for (const move of moves) {
             const card = source.get(`${move.workKey}|${move.gate}`);
@@ -392,22 +430,35 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
           }
         }
 
-        const proposedDates = new Map(moves.map((move) => [`${move.workKey}|${move.gate}`, move.plannedDate]));
+        const proposedDates = new Map(storedMoves.map((move) => [`${move.workKey}|${move.gate}`, move.plannedDate]));
         const proposedCards = cards.map((card) => ({ ...card,
           plannedDate: proposedDates.get(`${card.workKey}|${card.gate}`) ?? card.baseDate,
         }));
         // Older clients omit order: retain valid saved groups instead of erasing a planner's sequence.
         const order = resolveBoardCardOrder(boardCardOrder ?? latest?.board_card_order, proposedCards, today, boardCardOrder !== undefined);
         const planId = randomUUID();
-        const previousMoves = latest ? (await client.query(MOVES_SQL, [latest.plan_id])).rows : [];
         const previousCards = buildArrivalCards(sourceRows, previousMoves, today, config).cards;
         const history = buildSavedMoveHistory(previousCards, proposedCards, latest?.board_card_order ?? [], order,
           latest?.move_history, { planId, planVersion: baseVersion + 1, changedBy: actorOf(req),
             changedAt: new Date().toISOString(), note });
         const dates = [today, ...moves.map((move) => move.plannedDate), ...order.map((group) => group.date)].sort();
         const end = new Date(Date.parse(`${today}T00:00:00Z`) + 27 * 86400000).toISOString().slice(0, 10);
-        const view = await buildLevelingView({ sourceRows, config, today, start: today, end, loadCalendar,
-          moves: moves.map((move) => ({ work_key: move.workKey, gate_name: move.gate,
+        const orderedGroups = new Set(order.map((group) => `${group.gate}|${group.date}`));
+        const snapshotSourceRows = sourceRows.map((row, index) => {
+          if (row.gate_state === "passed" || !isDate(row.arrive_by)) return row;
+          const plannedDate = proposedDates.get(`${arrivalWorkKey(row, index)}|${row.gate_name}`) ?? row.arrive_by;
+          if (!orderedGroups.has(`${row.gate_name}|${plannedDate}`)) return row;
+          return {
+            ...row,
+            saved_gate_state: row.gate_state,
+            saved_current_gate: row.current_gate,
+            saved_proc_disp: row.proc_disp,
+            saved_rem_proc_in_gate: row.rem_proc_in_gate,
+            saved_pri: row.pri,
+          };
+        });
+        const view = await buildLevelingView({ sourceRows: snapshotSourceRows, config, today, start: today, end, loadCalendar,
+          moves: storedMoves.map((move) => ({ work_key: move.workKey, gate_name: move.gate,
             original_date: source.get(`${move.workKey}|${move.gate}`).baseDate, planned_date: move.plannedDate })),
           history, order, calculationMethod: PLAN_METHOD });
         await client.query(`INSERT INTO planning.work_plan (
@@ -418,7 +469,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
           dates[0], dates[dates.length - 1], PLAN_METHOD, note || null, actorOf(req),
           JSON.stringify({ boardCardOrderVersion: 1, boardCardOrder: order, moveHistory: history,
             viewSnapshot: { version: 1, capturedAt: new Date().toISOString(), data: view } })]);
-        for (const move of moves) {
+        for (const move of storedMoves) {
           const row = source.get(`${move.workKey}|${move.gate}`);
           await client.query(`INSERT INTO planning.work_plan_gate_item (
               item_id, plan_id, work_key, gate_name, prd_name, item, lot_no, due_date, source_status,

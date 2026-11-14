@@ -61,8 +61,18 @@ async function withApi(callback, { fail = false } = {}) {
   const queries = [];
   const pool = { connect: async () => ({ release: () => queries.push(["RELEASE"]), query: async (sql, params) => {
     queries.push([sql, params]);
-    if (fail && sql.includes("FROM planning.wip_in_process")) throw new Error("Internal connection details");
-    return { rows: sql.includes("FROM planning.wip_in_process") ? [wip()] : sql.includes("FROM planning.prd_routing_master") ? routes : [] };
+    if (fail && sql.includes("FROM planning.gate_output_log")) throw new Error("Internal connection details");
+    return { rows: sql.includes("FROM planning.gate_output_log") ? [{
+      prd_name: "PRODUCT-A",
+      lot_no: "LOT-A",
+      gate_name: "GATE-A",
+      next_gate: "GATE-B",
+      source_process: "PROCESS-1",
+      scan_type: "SCAN IN",
+      scanned_at: `${date}T22:56:00.000`,
+      process_group: "EFPC_GEN",
+      updated_at: `${date} 23:00`,
+    }] : [] };
   } }) };
   const app = express();
   app.use(createInGateRoutingRouter({ pool }));
@@ -91,7 +101,7 @@ test("anonymous finished requests validate dates before database access", async 
     assert.equal(queries.length, 0);
   });
 });
-test("API reads all observed lots regardless of plan membership in a parameterized read-only snapshot", async () => {
+test("API reads all observed lots from gate_output_log in a parameterized read-only snapshot", async () => {
   await withApi(async (api, queries) => {
     const result = await api(date);
     assert.equal(result.status, 200);
@@ -99,10 +109,12 @@ test("API reads all observed lots regardless of plan membership in a parameteriz
     assert.equal(result.body.data.coverage, "latest_wip_only");
     assert.equal(result.body.data.rows.length, 1);
     assert.ok(queries[0][0].includes("REPEATABLE READ READ ONLY"));
-    const scan = queries.find(([sql]) => sql.includes("FROM planning.wip_in_process"));
+    const scan = queries.find(([sql]) => sql.includes("FROM planning.gate_output_log"));
     assert.deepEqual(scan[1], [date]);
-    assert.match(scan[0], /in_date >= \$1::date AND w.in_date < \$1::date/);
-    assert.ok(!queries.some(([sql]) => /work_plan|^(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/.test(sql)));
+    assert.match(scan[0], /g\.source_in_date >= \$1::date AND g\.source_in_date < \$1::date/);
+    assert.match(scan[0], /FROM active_plan p/);
+    assert.match(scan[0], /planned_on_day/);
+    assert.ok(!queries.some(([sql]) => /^(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/.test(sql)));
     assert.equal(queries.at(-2)[0], "COMMIT");
     assert.equal(queries.at(-1)[0], "RELEASE");
   });

@@ -2,6 +2,8 @@ import type { BoardCardOrderGroup, LotItem } from "../types";
 
 export type BoardCardOrder = ReadonlyMap<string, readonly string[]>;
 
+const manualOrders = new WeakSet<readonly string[]>();
+
 const groupKey = (lot: LotItem): string => JSON.stringify([lot.gate, lot.plannedDate]);
 
 export const readBoardCardOrder = (groups: BoardCardOrderGroup[] = []): BoardCardOrder =>
@@ -9,10 +11,13 @@ export const readBoardCardOrder = (groups: BoardCardOrderGroup[] = []): BoardCar
 
 /** Save current identities only, including cards hidden by the process filter. */
 export const serializeBoardCardOrder = (lots: LotItem[], order: BoardCardOrder, today: string): BoardCardOrderGroup[] => {
+  const promotedGroups = new Set(
+    lots.filter((lot) => lot.promotedToInGate && lot.plannedDate >= today).map(groupKey),
+  );
   const groups = new Map<string, BoardCardOrderGroup>();
   for (const lot of applyBoardCardOrder(lots, order)) {
     const key = groupKey(lot);
-    if (!order.has(key) || lot.plannedDate < today) continue;
+    if ((!order.has(key) && !promotedGroups.has(key)) || lot.plannedDate < today) continue;
     const group = groups.get(key) ?? { gate: lot.gate, date: lot.plannedDate, cardIds: [] };
     group.cardIds.push(lot.id);
     groups.set(key, group);
@@ -33,7 +38,20 @@ export const applyBoardCardOrder = (lots: LotItem[], order: BoardCardOrder): Lot
     const ids = order.get(key);
     if (!ids) continue;
     const ranks = new Map(ids.map((id, index) => [id, index]));
-    group.sort((a, b) => (ranks.get(a.id) ?? ids.length) - (ranks.get(b.id) ?? ids.length));
+    if (manualOrders.has(ids) || !group.some((lot) => lot.promotedToInGate)) {
+      group.sort((a, b) => (ranks.get(a.id) ?? ids.length) - (ranks.get(b.id) ?? ids.length));
+    } else {
+      const promoted = group.filter((lot) => lot.promotedToInGate);
+      const unchanged = group
+        .filter((lot) => !lot.promotedToInGate)
+        .sort((a, b) => (ranks.get(a.id) ?? ids.length) - (ranks.get(b.id) ?? ids.length));
+      let insertAt = 0;
+      for (let i = 0; i < unchanged.length; i++) {
+        if (unchanged[i].gateState === "in_gate") insertAt = i + 1;
+      }
+      unchanged.splice(insertAt, 0, ...promoted);
+      group.splice(0, group.length, ...unchanged);
+    }
   }
   const offsets = new Map<string, number>();
   return lots.map((lot) => {
@@ -65,6 +83,8 @@ export const reorderBoardCards = (
   remaining.splice(index, 0, ...moving);
   if (remaining.every((lot, i) => lot.id === group[i].id)) return order;
   const next = new Map(order);
-  next.set(key, remaining.map((lot) => lot.id));
+  const remainingIds = remaining.map((lot) => lot.id);
+  manualOrders.add(remainingIds);
+  next.set(key, remainingIds);
   return next;
 };

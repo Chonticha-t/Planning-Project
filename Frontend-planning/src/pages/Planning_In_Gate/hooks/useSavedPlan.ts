@@ -18,7 +18,7 @@ export function useSavedPlan() {
     try {
       const result = await readLatestSavedPlan({
         list: signal => fetchPlanHistory(undefined, signal),
-        detail: fetchPlanHistoryDetail,
+        detail: (id, signal) => fetchPlanHistoryDetail(id, signal, true),
       }, controller.signal);
       if (!controller.signal.aborted) setSaved(result);
     } catch (failure) {

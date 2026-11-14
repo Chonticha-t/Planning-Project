@@ -36,6 +36,7 @@ export const toLotItem = (card: ApiCard): LotItem => {
     label: lotNo?.trim() || NEED_WIP_LABEL,
     product: prdName,
     savedDate: card.plannedDate,
+    passedGate: Boolean(card.passedGate),
   };
 };
 
@@ -180,19 +181,36 @@ export const expandBoardLots = (allLots: LotItem[], selected: LotItem[]) => {
 
 type BoardPriority = readonly [number, number, number | null, number | null];
 
-const boardPriority = (row: GateArrivalRow): BoardPriority => {
-  const process = row.proc_disp?.trim().toUpperCase();
-  const gate = row.current_gate?.trim().toUpperCase();
-  const stateRank = row.gate_state === "in_gate" ? 0 : row.gate_state === "coming" ? 1 : row.gate_state === "need_wip" ? 2 : 3;
-  const remaining = row.rem_proc_in_gate;
+const priorityFromFields = (
+  gateState: string | null | undefined,
+  procDisp: string | null | undefined,
+  currentGate: string | null | undefined,
+  remaining: number | null | undefined,
+  pri: number | null | undefined
+): BoardPriority => {
+  const process = procDisp?.trim().toUpperCase();
+  const gate = currentGate?.trim().toUpperCase();
+  const stateRank = gateState === "in_gate" ? 0 : gateState === "coming" ? 1 : gateState === "need_wip" ? 2 : 3;
   // WIP already in this gate always comes before coming / Need WIP work.
   return [
     stateRank,
     process && gate && process === gate ? 0 : 1,
     typeof remaining === "number" && Number.isInteger(remaining) && remaining >= 0 ? -remaining : null,
-    Number.isInteger(row.pri) && row.pri >= 0 ? row.pri : null,
+    pri != null && Number.isInteger(pri) && pri >= 0 ? pri : null,
   ];
 };
+
+const boardPriority = (row: GateArrivalRow): BoardPriority =>
+  priorityFromFields(row.gate_state, row.proc_disp, row.current_gate, row.rem_proc_in_gate, row.pri);
+
+const savedBoardPriority = (row: GateArrivalRow): BoardPriority =>
+  priorityFromFields(
+    row.saved_gate_state ?? row.gate_state,
+    row.saved_proc_disp !== undefined ? row.saved_proc_disp : row.proc_disp,
+    row.saved_current_gate !== undefined ? row.saved_current_gate : row.current_gate,
+    row.saved_rem_proc_in_gate !== undefined ? row.saved_rem_proc_in_gate : row.rem_proc_in_gate,
+    row.saved_pri !== undefined ? row.saved_pri : row.pri
+  );
 
 const compareNullableNumber = (a: number | null, b: number | null) =>
   a === b ? 0 : a === null ? 1 : b === null ? -1 : a - b;
@@ -219,22 +237,46 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
   return [...buckets].map(([id, { rows, members, date }]) => {
     const sources = [...members.values()];
     const representative = sources.find(isMoved) || sources[0];
+    const activeRow = rows.find((row) => row.gate_state === "in_gate") ?? rows[0];
     const summary = summarizeGateQuantities(rows);
     const deadlines = rows.map((row) => row.must_out).filter(Boolean).sort();
     const durations = sources.map((lot) => lot.leadDays);
+    const hasSavedState = rows.some((row) => row.saved_gate_state !== undefined);
+    const savedGateState = rows.some((row) => (row.saved_gate_state ?? row.gate_state) === "in_gate")
+      ? "in_gate"
+      : (rows[0]?.saved_gate_state ?? representative.savedGateState ?? representative.gateState);
+    const liveGateState = rows.some((row) => row.gate_state === "in_gate")
+      ? "in_gate"
+      : (activeRow?.gate_state ?? representative.gateState);
+    const promotedToInGate = hasSavedState && savedGateState !== "in_gate" && liveGateState === "in_gate";
     // Keep one allocation's entire priority; never mix fields or sum duplicate remaining counts.
-    const priority = rows.map(boardPriority).reduce((best, next) => compareBoardPriority(next, best) < 0 ? next : best);
+    const livePriority = rows.map(boardPriority).reduce((best, next) => compareBoardPriority(next, best) < 0 ? next : best);
+    const savedPriority = rows.map(savedBoardPriority).reduce((best, next) => compareBoardPriority(next, best) < 0 ? next : best);
+    const priority = hasSavedState && savedGateState === liveGateState ? savedPriority : livePriority;
+    const groupRank = liveGateState === "in_gate" ? (promotedToInGate ? 1 : 0) : 2;
+    const hasRowHold = rows.some((row) => row.is_hold !== undefined);
     const lot: LotItem = {
       ...representative, id, plannedDate: date, product: new Set(rows.map((row) => row.prd_name)).size > 1 ? "Multiple products" : representative.product, qty: summary.total.piece, sheets: summary.total.sheet,
       kind: summary.total.lot ? "lot" : summary.needCount ? "need" : "unidentified",
       loadMin: summary.total.lot ? representative.loadMin : 0,
+      status: activeRow?.status ?? representative.status,
+      gateState: liveGateState,
+      savedGateState,
+      promotedToInGate,
+      currentGate: activeRow?.current_gate !== undefined ? activeRow.current_gate : representative.currentGate,
+      currentProc: activeRow?.proc_disp !== undefined ? activeRow.proc_disp : representative.currentProc,
       sourceIds: sources.map((lot) => lot.id), allocations: rows,
       moveHistory: mergeMoveHistory(...sources.map((lot) => lot.moveHistory)),
-      isHold: sources.some((lot) => lot.isHold), sourceChanged: sources.some((lot) => lot.sourceChanged),
+      isHold: hasRowHold ? rows.some((row) => row.is_hold === true) : sources.some((lot) => lot.isHold),
+      passedGate: rows.some((row) => row.passed_gate !== undefined)
+        ? rows.every((row) => row.passed_gate === true)
+        : sources.every((item) => item.passedGate === true),
+      sourceChanged: sources.some((lot) => lot.sourceChanged),
       mustOut: deadlines[0] || "", leadDays: durations.every((value) => value && value > 0) ? Math.max(...durations as number[]) : null,
     };
-    return { lot, priority };
+    return { lot, priority, groupRank };
   }).sort((a, b) => a.lot.plannedDate.localeCompare(b.lot.plannedDate)
+    || a.groupRank - b.groupRank
     || compareBoardPriority(a.priority, b.priority)
     || Number(lotKind(a.lot) !== "lot") - Number(lotKind(b.lot) !== "lot")
     || a.lot.label.localeCompare(b.lot.label)

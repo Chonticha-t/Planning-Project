@@ -150,3 +150,42 @@ test("unknown quantities stay unknown and Need WIP is not counted as a physical 
   rows[1].gateState = "in_gate";
   assert.equal(planStatus(rows[1]), "In gate", "being in a gate must not invent a Running status");
 });
+
+test("live-enriched saved plan preserves unchanged order and places newly in_gate lots after unchanged in_gate lots", () => {
+  const names = ["B", "A", "E", "D", "C", "F"];
+  const cards: ApiCard[] = names.map((name, index) => ({
+    id: name, workKey: name, gate: "GATE_A", prdName: `PRODUCT-${name}`, lotNo: `LOT-${name}`,
+    item: null, qty: 100, sheets: 10, kind: "lot", status: "production plan",
+    gateState: index < 2 || name === "D" || name === "F" ? "in_gate" : "coming",
+    savedGateState: index < 2 ? "in_gate" : "coming",
+    processGroup: "EFPC_AUTO", currentGate: "GATE_A", currentProc: name === "F" ? "GATE_A" : "OTHER",
+    isHold: name === "A", dueDate: "2026-11-20", arriveBy: day, mustOut: "2026-11-18", baseDate: day,
+    plannedDate: day, moved: false, overdue: false, sourceChanged: false,
+    prevGate: null, prevDate: null, nextGate: null, nextDate: null,
+    loadMin: 900, leadDays: 2, standardShiftMin: { day: 450, night: 450 },
+  }));
+  const data: LevelingData = {
+    ...snapshot(),
+    cards,
+    arrivalRows: cards.map((card, index) => ({
+      pri: index + 1, saved_pri: index + 1, gate_order: 1, prd_name: card.prdName, item: card.item,
+      lot_no: card.lotNo, due_date: card.dueDate, status: card.status, qty: card.qty, pcs_per_sheet: 10,
+      gate_name: card.gate, gate_state: card.gateState, saved_gate_state: card.savedGateState,
+      current_gate: card.currentGate, proc_disp: card.currentProc,
+      rem_proc_in_gate: card.lotNo === "LOT-D" ? 3 : card.lotNo === "LOT-F" ? 8 : 5,
+      saved_rem_proc_in_gate: 5, is_hold: card.isHold, process_group: card.processGroup,
+      arrive_by: card.arriveBy, must_out: card.mustOut, next_gate: "", lead_days: 2, workKey: card.workKey,
+    })),
+    boardCardOrder: [{
+      gate: "GATE_A",
+      date: day,
+      cardIds: names.map(name => JSON.stringify(["GATE_A", day, "lot", `LOT-${name}`])),
+    }],
+  };
+  validateSnapshot(data);
+  const rows = savedPlanRows(data, "ALL");
+  assert.deepEqual(rows.map(row => row.label), ["LOT-B", "LOT-A", "LOT-F", "LOT-D", "LOT-E", "LOT-C"]);
+  assert.equal(planStatus(rows.find(row => row.label === "LOT-F")!), "In gate");
+  assert.equal(planStatus(rows.find(row => row.label === "LOT-A")!), "HOLD");
+  assert.equal(planStatus(rows.find(row => row.label === "LOT-C")!), "Coming");
+});

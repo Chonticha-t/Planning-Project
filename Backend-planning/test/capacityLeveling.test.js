@@ -1089,3 +1089,197 @@ test("invalid date ranges never run works SQL and disabled load caching remains 
     assert.equal(pool.log.filter(entry => /planning_summary_gate/.test(entry.sql)).length, 2);
   }, { cacheOptions: { ttlMs: 0 } });
 });
+
+test("locked active plan snapshot freezes board arrivals and priority across WIP changes until Reset to Required", async () => {
+  let today = "2026-11-12";
+  const initialRows = [
+    work({ lot_no: "L001", gate_name: "FVAC", arrive_by: "2026-11-14", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null, rem_proc_in_gate: 8, pri: 1 }),
+    work({ lot_no: "L002", gate_name: "FVAC", arrive_by: "2026-11-14", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null, rem_proc_in_gate: 3, pri: 2 }),
+    work({ lot_no: "L003", gate_name: "FVAC", arrive_by: "2026-11-11", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null, rem_proc_in_gate: 1, pri: 3 }),
+  ];
+  let liveRows = initialRows;
+  let settings = [
+    row({ gate_name: "FVAC", resource_count: 1 }),
+    row({ setting_id: "s2", gate_name: "FVAC", shift_code: "night", is_working_day: false }),
+  ];
+  let header = null;
+  let storedSnapshot = null;
+  const movesByPlan = new Map();
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today }]],
+    [/FROM planning\.capacity_setting/, () => settings],
+    [/SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot/, params => {
+      return header && params[0] === header.plan_id ? [{ view_snapshot: storedSnapshot }] : [];
+    }],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/FROM planning\.work_plan_gate_item/, params => movesByPlan.get(params[0]) ?? []],
+    [/planning_summary_gate/, () => liveRows],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      const snapshot = JSON.parse(params[9]);
+      storedSnapshot = snapshot.viewSnapshot;
+      header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2], note: params[7],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, has_snapshot: true,
+      };
+      movesByPlan.set(params[0], []);
+      return [];
+    }],
+    [/INSERT INTO planning\.work_plan_gate_item/, params => {
+      movesByPlan.get(params[1]).push({
+        work_key: params[2], gate_name: params[3], original_date: params[10], planned_date: params[11],
+      });
+      return [];
+    }],
+  ]);
+
+  await withApi(pool, async api => {
+    const pastMove = { workKey: arrivalWorkKey(initialRows[2]), gate: "FVAC", plannedDate: "2026-11-13" };
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [pastMove] } })).status, 200);
+
+    // Advance day so L003's planned move is now in the past; live WIP loses L001 and mutates L002 order metric.
+    today = "2026-11-14";
+    liveRows = [work({ lot_no: "L002", gate_name: "FVAC", arrive_by: "2026-11-14", rem_proc_in_gate: 99, pri: 1 }),
+      work({ lot_no: "NEW-LOT", gate_name: "FVAC", arrive_by: "2026-11-14", rem_proc_in_gate: 5, pri: 2 })];
+    settings = [
+      row({ gate_name: "FVAC", resource_count: 4 }),
+      row({ setting_id: "s2", gate_name: "FVAC", shift_code: "night", is_working_day: false }),
+    ];
+
+    const loaded = (await (await api("/load?startdate=2026-11-14&stopdate=2026-11-20")).json()).data;
+    assert.deepEqual(loaded.arrivalRows.map(r => r.lot_no), ["L001", "L002", "L003"]);
+    assert.equal(loaded.arrivalRows[1].saved_rem_proc_in_gate, 3, "locked priority metrics must preserve saved baseline");
+    assert.equal(loaded.arrivalRows[1].rem_proc_in_gate, 99, "live WIP metrics must update on locked rows");
+    assert.equal(loaded.capacity.FVAC["2026-11-14"].capacityMin, 4 * 475, "updated capacity must still apply to locked plan");
+    assert.equal(loaded.cards.find(c => c.lotNo === "L003").plannedDate, "2026-11-13");
+
+    // Saving another move on the locked plan succeeds even though L001 left live WIP and retains past move on L003.
+    const nextMove = { workKey: arrivalWorkKey(initialRows[0]), gate: "FVAC", plannedDate: "2026-11-16" };
+    const savedV2 = await api("/plan", { method: "POST", body: { baseVersion: 1, moves: [nextMove] } });
+    assert.equal(savedV2.status, 200);
+    assert.equal((await savedV2.json()).data.movedCount, 1);
+
+    const afterSave = (await (await api("/load?startdate=2026-11-14&stopdate=2026-11-20")).json()).data;
+    assert.equal(afterSave.plan.version, 2);
+    assert.equal(afterSave.cards.find(c => c.lotNo === "L001").plannedDate, "2026-11-16");
+    assert.equal(afterSave.cards.find(c => c.lotNo === "L003").plannedDate, "2026-11-13");
+
+    // Explicit Reset to Required reads fresh live Summary Gate rows and saving locks the new baseline.
+    const resetLoad = (await (await api("/load?startdate=2026-11-14&stopdate=2026-11-20&refresh=true&reset=true")).json()).data;
+    assert.deepEqual(resetLoad.arrivalRows.map(r => r.lot_no), ["L002", "NEW-LOT"]);
+
+    const savedV3 = await api("/plan", { method: "POST", body: { baseVersion: 2, moves: [], boardCardOrder: [], resetToRequired: true, note: "Reset" } });
+    assert.equal(savedV3.status, 200);
+
+    const lockedReset = (await (await api("/load?startdate=2026-11-14&stopdate=2026-11-20")).json()).data;
+    assert.equal(lockedReset.plan.version, 3);
+    assert.deepEqual(lockedReset.arrivalRows.map(r => r.lot_no), ["L002", "NEW-LOT"]);
+  });
+});
+
+test("locked plan updates live WIP status on /load and /plans/:id?live=true without mutating historical snapshots", async () => {
+  const rowBase = { gate_name: "FVAC", arrive_by: "2026-11-14", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null };
+  const initialRows = [
+    work({ ...rowBase, lot_no: "LOT-IG-1", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 5, pri: 2 }),
+    work({ ...rowBase, lot_no: "LOT-IG-2", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 10, pri: 1 }),
+    work({ ...rowBase, lot_no: "LOT-C-1", gate_state: "coming", current_gate: "FFPC", proc_disp: "FFPC", rem_proc_in_gate: 1, pri: 1 }),
+    work({ ...rowBase, lot_no: "LOT-C-2", gate_state: "coming", current_gate: "FFPC", proc_disp: "FFPC", rem_proc_in_gate: 1, pri: 2 }),
+    work({ ...rowBase, lot_no: "LOT-C-3", gate_state: "coming", current_gate: "FFPC", proc_disp: "FFPC", rem_proc_in_gate: 1, pri: 3 }),
+  ];
+  let liveRows = initialRows;
+  let header = null;
+  let storedSnapshot = null;
+  const savedOrderIds = [
+    orderId(initialRows[0]), orderId(initialRows[1]),
+    orderId(initialRows[4]), orderId(initialRows[2]), orderId(initialRows[3]),
+  ];
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
+    [/FROM planning\.capacity_setting/, () => [row({ gate_name: "FVAC", resource_count: 2 }), row({ setting_id: "s2", gate_name: "FVAC", shift_code: "night", is_working_day: false })]],
+    [/SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot/, params => header && params[0] === header.plan_id ? [{ view_snapshot: storedSnapshot }] : []],
+    [/FROM planning\.work_plan p/, params => header && params[1] === header.plan_id ? [{
+      ...historyRow(header.version_no, header.version_no),
+      plan_id: header.plan_id,
+      board_card_order: header.board_card_order,
+      view_snapshot: storedSnapshot,
+      has_snapshot: true,
+    }] : []],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/FROM planning\.work_plan_gate_item/, () => []],
+    [/planning_summary_gate/, () => liveRows],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      const snapshot = JSON.parse(params[9]);
+      storedSnapshot = snapshot.viewSnapshot;
+      header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2], note: params[7],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, has_snapshot: true,
+      };
+      return [];
+    }],
+  ]);
+
+  await withApi(pool, async api => {
+    const saveV1 = await api("/plan", {
+      method: "POST",
+      body: { baseVersion: 0, moves: [], boardCardOrder: [{ gate: "FVAC", date: "2026-11-14", cardIds: savedOrderIds }] },
+    });
+    assert.equal(saveV1.status, 200);
+
+    liveRows = [
+      work({ ...rowBase, lot_no: "LOT-IG-1", gate_state: "in_gate", current_gate: "FIN", proc_disp: "FTPK", rem_proc_in_gate: 4, pri: 2, gate_name: "FIN" }),
+      work({ ...rowBase, lot_no: "LOT-IG-2", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 99, pri: 1, is_hold: true }),
+      work({ ...rowBase, lot_no: "LOT-C-1", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "OTHER", rem_proc_in_gate: 3, pri: 1 }),
+      work({ ...rowBase, lot_no: "LOT-C-2", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 8, pri: 2 }),
+      work({ ...rowBase, lot_no: "LOT-C-3", gate_state: "coming", current_gate: "FFPC", proc_disp: "FFPC", rem_proc_in_gate: 1, pri: 3 }),
+      work({ ...rowBase, lot_no: "LOT-NEW", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 1, pri: 1 }),
+    ];
+
+    const loaded = (await (await api("/load?startdate=2026-11-12&stopdate=2026-11-20")).json()).data;
+    assert.deepEqual(loaded.arrivalRows.map(r => r.lot_no), ["LOT-IG-1", "LOT-IG-2", "LOT-C-1", "LOT-C-2", "LOT-C-3"]);
+    const ig1Card = loaded.cards.find(c => c.lotNo === "LOT-IG-1");
+    assert.equal(ig1Card.passedGate, true);
+    assert.equal(ig1Card.currentGate, "FIN");
+    assert.equal(ig1Card.currentProc, "FTPK");
+    assert.equal(loaded.cards.find(c => c.lotNo === "LOT-IG-2").passedGate, false);
+    const c1Row = loaded.arrivalRows.find(r => r.lot_no === "LOT-C-1");
+    assert.equal(c1Row.gate_state, "in_gate");
+    assert.equal(c1Row.saved_gate_state, "coming");
+    assert.equal(c1Row.proc_disp, "OTHER");
+    const ig2Row = loaded.arrivalRows.find(r => r.lot_no === "LOT-IG-2");
+    assert.equal(ig2Row.is_hold, true);
+    assert.equal(ig2Row.rem_proc_in_gate, 99);
+    assert.equal(ig2Row.saved_rem_proc_in_gate, 10);
+    assert.equal(loaded.cards.find(c => c.lotNo === "LOT-C-2").gateState, "in_gate");
+    assert.equal(loaded.cards.find(c => c.lotNo === "LOT-C-2").savedGateState, "coming");
+    assert.equal(loaded.cards.find(c => c.lotNo === "LOT-IG-2").isHold, true);
+
+    const logBeforeHistorical = pool.log.length;
+    const historical = (await (await api(`/plans/${header.plan_id}`)).json()).data;
+    assert.ok(!pool.log.slice(logBeforeHistorical).some(entry => /planning_summary_gate/.test(entry.sql)),
+      "/plans/:id without live=true must not read live Summary Gate");
+    assert.equal(historical.snapshot.arrivalRows.find(r => r.lot_no === "LOT-C-1").gate_state, "coming");
+    assert.equal(historical.snapshot.arrivalRows.find(r => r.lot_no === "LOT-IG-2").is_hold, false);
+
+    const livePlan = (await (await api(`/plans/${header.plan_id}?live=true`)).json()).data;
+    assert.deepEqual(livePlan.snapshot.arrivalRows.map(r => r.lot_no), ["LOT-IG-1", "LOT-IG-2", "LOT-C-1", "LOT-C-2", "LOT-C-3"]);
+    assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-1").passedGate, true);
+    assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-1").currentGate, "FIN");
+    assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-1").currentProc, "FTPK");
+    assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-C-1").gateState, "in_gate");
+    assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-C-1").savedGateState, "coming");
+    assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-2").isHold, true);
+
+    const promotedOrder = [
+      orderId(initialRows[0]), orderId(initialRows[1]),
+      orderId(initialRows[3]), orderId(initialRows[2]), orderId(initialRows[4]),
+    ];
+    const saveV2 = await api("/plan", {
+      method: "POST",
+      body: { baseVersion: 1, moves: [], boardCardOrder: [{ gate: "FVAC", date: "2026-11-14", cardIds: promotedOrder }] },
+    });
+    assert.equal(saveV2.status, 200);
+    assert.equal(storedSnapshot.data.arrivalRows.find(r => r.lot_no === "LOT-C-1").saved_gate_state, "in_gate");
+    assert.equal(storedSnapshot.data.arrivalRows.find(r => r.lot_no === "LOT-C-2").saved_gate_state, "in_gate");
+  });
+});

@@ -207,6 +207,100 @@ const arrivalWorkKey = (row, index = 0) => {
   return `ARR|${require("node:crypto").createHash("sha256").update(JSON.stringify(identity)).digest("hex")}`;
 };
 
+const preferLiveRow = (current, candidate) => {
+  if (!current) return candidate;
+  const currentInGate = current.gate_state === "in_gate";
+  const candidateInGate = candidate.gate_state === "in_gate";
+  if (currentInGate !== candidateInGate) return candidateInGate ? candidate : current;
+  const currentPri = Number.isInteger(current.pri) ? current.pri : Number.MAX_SAFE_INTEGER;
+  const candidatePri = Number.isInteger(candidate.pri) ? candidate.pri : Number.MAX_SAFE_INTEGER;
+  return candidatePri < currentPri ? candidate : current;
+};
+
+const hasPassedGate = (row, passedLive, liveLot) => {
+  if (passedLive) return true;
+  if (!liveLot) return false;
+  if (liveLot.current_gate === "PRE_FFPC" || liveLot.current_gate === "FFPC") return false;
+  if (Number.isFinite(row.gate_order) && Number.isFinite(liveLot.gate_order)) {
+    return liveLot.gate_order > row.gate_order;
+  }
+  const rowIndex = LEVELING_GATES.indexOf(row.gate_name);
+  const currentIndex = LEVELING_GATES.indexOf(liveLot.current_gate);
+  if (rowIndex >= 0 && currentIndex >= 0) {
+    return currentIndex > rowIndex;
+  }
+  const liveGateIndex = LEVELING_GATES.indexOf(liveLot.gate_name);
+  return rowIndex >= 0 && liveGateIndex > rowIndex;
+};
+
+const mergeLiveStatusIntoLockedRows = (lockedRows, liveRows) => {
+  if (!Array.isArray(lockedRows)) return [];
+  const byAllocation = new Map();
+  const byLotGate = new Map();
+  const byLot = new Map();
+  const passedByAllocation = new Map();
+  const passedByLotGate = new Map();
+  for (const row of Array.isArray(liveRows) ? liveRows : []) {
+    if (!row) continue;
+    const lot = typeof row.lot_no === "string" ? row.lot_no.trim() : "";
+    const need = row.gate_state === "need_wip" || lot.toUpperCase() === "NEED WIP";
+    if (!lot || need) continue;
+    const allocationKey = JSON.stringify([row.gate_name, lot, row.prd_name ?? "", row.due_date ?? "", row.item ?? "", row.po_no ?? ""]);
+    const lotGateKey = JSON.stringify([row.gate_name, lot]);
+    if (row.gate_state === "passed") {
+      passedByAllocation.set(allocationKey, row);
+      passedByLotGate.set(lotGateKey, row);
+      continue;
+    }
+    byAllocation.set(allocationKey, preferLiveRow(byAllocation.get(allocationKey), row));
+    byLotGate.set(lotGateKey, preferLiveRow(byLotGate.get(lotGateKey), row));
+    byLot.set(lot, preferLiveRow(byLot.get(lot), row));
+  }
+  return lockedRows.map((row) => {
+    const savedFields = {
+      saved_gate_state: row.saved_gate_state ?? row.gate_state,
+      saved_current_gate: row.saved_current_gate !== undefined ? row.saved_current_gate : row.current_gate,
+      saved_proc_disp: row.saved_proc_disp !== undefined ? row.saved_proc_disp : row.proc_disp,
+      saved_rem_proc_in_gate: row.saved_rem_proc_in_gate !== undefined ? row.saved_rem_proc_in_gate : row.rem_proc_in_gate,
+      saved_pri: row.saved_pri !== undefined ? row.saved_pri : row.pri,
+    };
+    const lot = typeof row.lot_no === "string" ? row.lot_no.trim() : "";
+    const need = row.gate_state === "need_wip" || lot.toUpperCase() === "NEED WIP";
+    if (!lot || need) return { ...row, ...savedFields, passed_gate: false };
+    const allocationKey = JSON.stringify([row.gate_name, lot, row.prd_name ?? "", row.due_date ?? "", row.item ?? "", row.po_no ?? ""]);
+    const lotGateKey = JSON.stringify([row.gate_name, lot]);
+    const live = byAllocation.get(allocationKey) ?? byLotGate.get(lotGateKey);
+    if (!live || !live.gate_state) {
+      const passedLive = passedByAllocation.get(allocationKey) ?? passedByLotGate.get(lotGateKey);
+      const liveLot = byLot.get(lot);
+      if (hasPassedGate(row, passedLive, liveLot)) {
+        const source = liveLot ?? passedLive;
+        return {
+          ...row,
+          ...savedFields,
+          current_gate: source?.current_gate !== undefined ? source.current_gate : row.current_gate,
+          proc_disp: source?.proc_disp !== undefined ? source.proc_disp : row.proc_disp,
+          is_hold: Boolean(source?.is_hold),
+          passed_gate: true,
+        };
+      }
+      return { ...row, ...savedFields, passed_gate: false };
+    }
+    return {
+      ...row,
+      ...savedFields,
+      gate_state: live.gate_state,
+      current_gate: live.current_gate,
+      proc_disp: live.proc_disp,
+      rem_proc_in_gate: live.rem_proc_in_gate,
+      is_hold: Boolean(live.is_hold),
+      status: live.status ?? row.status,
+      pri: live.pri !== undefined ? live.pri : row.pri,
+      passed_gate: false,
+    };
+  });
+};
+
 const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([])) => {
   const groups = new Map();
   let undated = 0;
@@ -234,11 +328,16 @@ const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([]))
     const normal = standardShiftMin.day + standardShiftMin.night;
     const deadlines = allocations.map((item) => item.must_out).filter(isDate).sort();
     const dueDates = allocations.map((item) => item.due_date).filter(isDate).sort();
+    const activeRow = allocations.find((item) => item.gate_state === "in_gate") || row;
+    const savedGateState = allocations.some((item) => (item.saved_gate_state ?? item.gate_state) === "in_gate")
+      ? "in_gate"
+      : (row.saved_gate_state ?? row.gate_state);
     return {
       id, workKey: key, gate: row.gate_name, prdName: row.prd_name, item: row.item, lotNo: row.lot_no,
       qty: Number(row.qty) || 0, sheets: row.sheets == null ? null : Number(row.sheets),
-      status: row.status, gateState: row.gate_state, processGroup: row.process_group,
-      currentGate: row.current_gate, currentProc: row.proc_disp, isHold: allocations.some((item) => item.is_hold === true),
+      status: activeRow.status, gateState: activeRow.gate_state, savedGateState, processGroup: row.process_group,
+      currentGate: activeRow.current_gate, currentProc: activeRow.proc_disp, isHold: allocations.some((item) => item.is_hold === true),
+      passedGate: allocations.every((item) => item.passed_gate === true),
       dueDate: dueDates[0] || "", arriveBy: row.arrive_by, mustOut: deadlines[0] || "",
       baseDate: row.arrive_by, plannedDate: move?.planned_date || row.arrive_by, moved: Boolean(move),
       sourceChanged: Boolean(move) && move.original_date !== row.arrive_by, overdue: row.arrive_by < today,
@@ -252,6 +351,40 @@ const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([]))
     dueDate: move.due_date, originalDate: move.original_date, plannedDate: move.planned_date,
   }));
   return { cards, orphanMoves, undated, duplicates: rows.filter((row) => row.gate_state !== "passed" && isDate(row.arrive_by)).length - cards.length };
+};
+
+const enrichSnapshotWithLiveStatus = (snapshotData, liveRows) => {
+  if (!snapshotData || !Array.isArray(snapshotData.arrivalRows) || !Array.isArray(snapshotData.cards)) {
+    return snapshotData;
+  }
+  const arrivalRows = mergeLiveStatusIntoLockedRows(snapshotData.arrivalRows, liveRows);
+  const byCard = new Map();
+  for (const row of arrivalRows) {
+    if (row.gate_state === "passed") continue;
+    const key = `${row.workKey}|${row.gate_name}`;
+    const list = byCard.get(key) || [];
+    list.push(row);
+    byCard.set(key, list);
+  }
+  const cards = snapshotData.cards.map((card) => {
+    const rows = byCard.get(`${card.workKey}|${card.gate}`);
+    if (!rows || !rows.length) return card;
+    const activeRow = rows.find((item) => item.gate_state === "in_gate") || rows[0];
+    const savedGateState = rows.some((item) => (item.saved_gate_state ?? item.gate_state) === "in_gate")
+      ? "in_gate"
+      : (rows[0].saved_gate_state ?? card.savedGateState ?? card.gateState);
+    return {
+      ...card,
+      status: activeRow.status ?? card.status,
+      gateState: activeRow.gate_state ?? card.gateState,
+      savedGateState,
+      currentGate: activeRow.current_gate !== undefined ? activeRow.current_gate : card.currentGate,
+      currentProc: activeRow.proc_disp !== undefined ? activeRow.proc_disp : card.currentProc,
+      isHold: rows.some((item) => item.is_hold === true),
+      passedGate: rows.every((item) => item.passed_gate === true),
+    };
+  });
+  return { ...snapshotData, arrivalRows, cards };
 };
 
 // Summary Gate uses arrival as the boundary: completion is leadDays working days later.
@@ -407,4 +540,5 @@ module.exports = {
   ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid,
   loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
   workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate, resolveBoardCardOrder,
+  mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
 };

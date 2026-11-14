@@ -119,10 +119,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     try {
       const start = dayjs().format("YYYY-MM-DD");
       const stop = dayjs().add(RANGE_DAYS - 1, "day").format("YYYY-MM-DD");
-      const next = await fetchLevelingData(start, stop, controller.signal, refresh);
+      const reset = mode === "reset" || (mode === "keep" && requiredResetRef.current);
+      const next = await fetchLevelingData(start, stop, controller.signal, refresh, reset);
       if (controller.signal.aborted || requestRef.current !== controller) return false;
       const draft = mode === "keep" ? draftRef.current : new Map<string, string>();
-      const reset = mode === "reset" || (mode === "keep" && requiredResetRef.current);
       const sourceLots = reset ? requiredLots(next.cards) : next.cards.map(toLotItem);
       setData(next);
       setLots(sourceLots.map((lot) => {
@@ -458,7 +458,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             workKey: lot.workKey, gate: lot.gate, plannedDate: lot.plannedDate,
           }));
           const order = serializeBoardCardOrder(buildBoardLots(data, lots), effectiveBoardCardOrder, today);
-          const { plan, movedCount, orderedGroupCount } = await savePlan(data.plan?.version ?? 0, moves, reason, order);
+          const { plan, movedCount, orderedGroupCount } = await savePlan(data.plan?.version ?? 0, moves, reason, order, requiredReset);
           draftRef.current = new Map();
           draftHistoryRef.current = new Map();
           setSaveModalOpen(false);

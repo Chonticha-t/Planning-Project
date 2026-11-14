@@ -58,9 +58,9 @@ export function buildWorkRows(planOrder: readonly LotItem[], savedPlanLots: read
     const done = finishedByPlan.get(lot.id);
     if (done) { all.push(done); included.add(done.key); return; }
     if (lot.kind === "lot" && completed.has(JSON.stringify([lot.gate, lot.label.trim()]))) return;
-    const row: WorkRow = { key: `plan:${lot.id}`, lot, sequence: i + 1, matchStatus: "matched" };
-    queue.push(row);
-    all.push(row);
+    all.push({ key: `plan:${lot.id}`, lot, sequence: i + 1, matchStatus: "matched" });
+    if (lot.passedGate) return;
+    queue.push({ key: `plan:${lot.id}`, lot, sequence: queue.length + 1, matchStatus: "matched" });
   });
   all.push(...finished.filter(row => !included.has(row.key)));
   return { queue, finished, all };

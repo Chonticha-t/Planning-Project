@@ -34,7 +34,7 @@ export function useFinishedToday(date: string, enabled: boolean): FinishedState 
             ids.add(row.id);
             return [row.product, row.lotNo, row.gate, row.nextGate].every(item => typeof item === "string" && item.length > 0)
               && row.gate !== "PRE_FFPC" && row.scanType === "SCAN IN"
-              && typeof row.scannedAt === "string" && row.scannedAt.startsWith(`${date}T`)
+              && typeof row.scannedAt === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(row.scannedAt)
               && (row.currentProcess === null || typeof row.currentProcess === "string")
               && (row.processGroup === null || ["EFPC_GEN", "EFPC_AUTO", "SMT"].includes(row.processGroup))
               && (row.sourceUpdatedAt === null || typeof row.sourceUpdatedAt === "string");

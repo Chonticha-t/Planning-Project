@@ -116,3 +116,15 @@ test("ambiguous finished evidence remains a single row without choosing a plan d
   assert.equal(rows.all[0].matchStatus, "ambiguous");
   assert.equal(rows.all[0].lot, null);
 });
+
+test("queue renumbers sequences after finished or passed-gate lots while keeping saved plan rows in All", () => {
+  const first = lot({ id: "first", label: "LOT-FIRST" });
+  const done = lot();
+  const passed = lot({ id: "passed", label: "LOT-PASSED", passedGate: true });
+  const last = lot({ id: "last", label: "LOT-LAST" });
+  const rows = buildWorkRows([first, done, passed, last], [first, done, passed, last], [evidence]);
+  assert.deepEqual(rows.queue.map(row => row.lot?.id), ["first", "last"]);
+  assert.deepEqual(rows.queue.map(row => row.sequence), [1, 2]);
+  assert.deepEqual(rows.all.map(row => row.lot?.id), ["first", "saved-card", "passed", "last"]);
+  assert.equal(rows.finished[0].sequence, 2);
+});

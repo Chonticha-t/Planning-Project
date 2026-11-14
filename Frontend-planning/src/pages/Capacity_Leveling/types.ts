@@ -49,10 +49,13 @@ export interface LotItem {
   sheets: number | null;
   status: string;
   gateState: string;
+  savedGateState?: string | null;
+  promotedToInGate?: boolean;
   processGroup: string | null;
   currentGate: string | null;
   currentProc: string | null;
   isHold: boolean;
+  passedGate?: boolean;
   dueDate: string;
   arriveBy: string | null;
   mustOut: string;
@@ -98,11 +101,17 @@ export interface GateInfo {
 
 export interface GateArrivalRow extends PlanningSummaryGateRow {
   workKey: string;
+  saved_gate_state?: string | null;
+  saved_current_gate?: string | null;
+  saved_proc_disp?: string | null;
+  saved_rem_proc_in_gate?: number | null;
+  saved_pri?: number | null;
   prev_gate?: string | null;
   prev_arrive_by?: string | null;
   prev_must_out?: string | null;
   next_arrive_by?: string | null;
   next_must_out?: string | null;
+  passed_gate?: boolean;
 }
 
 export interface PlanInfo {

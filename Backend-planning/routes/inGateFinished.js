@@ -2,17 +2,36 @@ const normalized = value => typeof value === "string" ? value.replace(/\u00a0/g,
 const isDay = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
-const WIP_SQL = `SELECT w.lot, w.prd_name, w.factory_desc, w.seq, w.proc_disp, w.scan_type,
-  to_char(w.in_date, 'YYYY-MM-DD"T"HH24:MI:SS.MS') AS scanned_at,
-  w.updated_at::text AS updated_at
-  FROM planning.wip_in_process w
-  WHERE w.in_date >= $1::date AND w.in_date < $1::date + INTERVAL '1 day'
-    AND UPPER(REGEXP_REPLACE(BTRIM(REPLACE(w.scan_type, chr(160), ' ')), '[[:space:]]+', ' ', 'g')) = 'SCAN IN'
-  ORDER BY w.in_date DESC, w.lot LIMIT 5001`;
-const ROUTES_SQL = `SELECT prd_name, factory_desc, seq, proc_id, proc_disp, gate_name,
-  proc_type, prd_category, step_in_gate, total_proc_in_gate, updated_at::text AS updated_at
-  FROM planning.prd_routing_master WHERE REPLACE(prd_name, '-', '') = ANY($1::text[])
-  ORDER BY prd_name, seq LIMIT 100001`;
+const FINISHED_LOG_SQL = `WITH active_plan AS (
+  SELECT baseline_snapshot->'viewSnapshot'->'data'->'cards' AS cards
+  FROM planning.work_plan
+  WHERE calculation_method = 'gate_arrival_max_target_v1'
+    AND deleted_at IS NULL
+    AND jsonb_typeof(baseline_snapshot->'viewSnapshot'->'data'->'cards') = 'array'
+  ORDER BY version_no DESC
+  LIMIT 1
+), planned_on_day AS (
+  SELECT DISTINCT BTRIM(c->>'lotNo') AS lot_no, BTRIM(c->>'gate') AS gate_name
+  FROM active_plan p, jsonb_array_elements(p.cards) AS c
+  WHERE c->>'kind' = 'lot'
+    AND c->>'plannedDate' = $1
+    AND NULLIF(BTRIM(c->>'lotNo'), '') IS NOT NULL
+    AND NULLIF(BTRIM(c->>'gate'), '') IS NOT NULL
+)
+SELECT g.prd_name, g.lot_no, g.gate_name, g.next_gate, g.source_process, g.scan_type,
+  to_char(g.source_in_date, 'YYYY-MM-DD"T"HH24:MI:SS.MS') AS scanned_at,
+  g.process_group,
+  COALESCE(g.source_updated_at::text, g.recorded_at::text) AS updated_at
+  FROM planning.gate_output_log g
+  WHERE g.gate_name <> 'PRE_FFPC'
+    AND (
+      (g.source_in_date >= $1::date AND g.source_in_date < $1::date + INTERVAL '1 day')
+      OR EXISTS (
+        SELECT 1 FROM planned_on_day p
+        WHERE p.lot_no = g.lot_no AND p.gate_name = g.gate_name
+      )
+    )
+  ORDER BY g.source_in_date DESC, g.lot_no LIMIT 5001`;
 
 // Same category rules as the Summary Gate source; conflicting product aliases stay unclassified.
 function categoryFor(product, routes) {
@@ -63,7 +82,7 @@ function inferFinished(wips, routes, date, resolveRoute) {
   return { rows: [...rows.values()].sort((a, b) => b.scannedAt.localeCompare(a.scannedAt) || a.id.localeCompare(b.id)), unresolved };
 }
 
-function createFinishedHandler({ pool, resolveRoute }) {
+function createFinishedHandler({ pool }) {
   return async (req, res) => {
     res.set("Cache-Control", "no-store");
     const date = req.query.date;
@@ -74,17 +93,25 @@ function createFinishedHandler({ pool, resolveRoute }) {
       await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout = '8s'");
       await client.query("SET LOCAL lock_timeout = '2s'");
-      const wips = (await client.query(WIP_SQL, [date])).rows;
-      if (wips.length > 5000) throw new Error("WIP_LIMIT");
-      const products = [...new Set(wips.filter(row => typeof row.prd_name === "string").map(row => row.prd_name.replace(/-/g, "")))];
-      const routes = products.length ? (await client.query(ROUTES_SQL, [products])).rows : [];
-      if (routes.length > 100000) throw new Error("ROUTE_LIMIT");
-      const result = inferFinished(wips, routes, date, resolveRoute);
+      const finished = (await client.query(FINISHED_LOG_SQL, [date])).rows;
+      if (finished.length > 5000) throw new Error("WIP_LIMIT");
+      const rows = finished.map(row => ({
+        id: JSON.stringify([row.prd_name, row.lot_no, row.gate_name]),
+        product: row.prd_name,
+        lotNo: row.lot_no,
+        gate: row.gate_name,
+        nextGate: row.next_gate,
+        currentProcess: row.source_process,
+        scannedAt: row.scanned_at,
+        scanType: "SCAN IN",
+        processGroup: row.process_group,
+        sourceUpdatedAt: row.updated_at,
+      }));
       await client.query("COMMIT");
-      return res.json({ status: "OK", data: { date, ...result, coverage: "latest_wip_only", checkedAt: new Date().toISOString() } });
+      return res.json({ status: "OK", data: { date, rows, unresolved: 0, coverage: "latest_wip_only", checkedAt: new Date().toISOString() } });
     } catch {
       if (client) await client.query("ROLLBACK").catch(() => {});
-      return res.status(503).json({ code: "FINISHED_UNAVAILABLE", message: "Unable to read finished evidence from current WIP. Please retry." });
+      return res.status(503).json({ code: "FINISHED_UNAVAILABLE", message: "Unable to read finished evidence from gate output log. Please retry." });
     } finally { client?.release(); }
   };
 }
