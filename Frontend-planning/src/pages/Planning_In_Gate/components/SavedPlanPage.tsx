@@ -12,13 +12,14 @@ import { InGateHeader } from "./InGateHeader";
 import { useSavedPlan } from "../hooks/useSavedPlan";
 import { useFinishedToday } from "../hooks/useFinishedToday";
 import { useMonthlyOutput } from "../hooks/useMonthlyOutput";
-import { observedTotals } from "../monthlyOutput";
 import { planStatus, savedPlanGates, savedPlanRows } from "../savedPlan";
 import { ApiWorkListTable } from "./ApiWorkListTable";
 import { ApiMonthlySummary } from "./ApiMonthlySummary";
 import { HistoryPanel } from "./HistoryPanel";
 
 const CATEGORIES: InGateCategory[] = ["ALL", "EFPC_GEN", "EFPC_AUTO", "SMT"];
+const DEFAULT_FPC_GATES = ["FVAC", "FADL", "FIN"];
+const DEFAULT_SMT_GATES = ["MMOT", "MBLK", "MFIN"];
 
 export default function SavedPlanPage() {
   const [params, setParams] = useSearchParams();
@@ -41,10 +42,11 @@ export default function SavedPlanPage() {
   const savedPlanLots = useMemo(() => saved ? savedPlanRows(saved.snapshot, "ALL") : [], [saved]);
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
   const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows) : new Map(), [saved, rows]);
-  const gates = useMemo(() => [...new Set([
-    ...(saved ? savedPlanGates(saved.snapshot, category).map(item => item.gate) : []),
-    ...(view === "month" ? monthly.data?.rows.map(row => row.gate) ?? [] : []),
-  ])].map(gate => ({ gate })), [saved, category, view, monthly.data]);
+  const gates = useMemo(() => {
+    if (saved) return savedPlanGates(saved.snapshot, category);
+    const list = category === "ALL" ? [...DEFAULT_FPC_GATES, ...DEFAULT_SMT_GATES] : category === "SMT" ? DEFAULT_SMT_GATES : DEFAULT_FPC_GATES;
+    return list.map(gate => ({ gate }));
+  }, [saved, category]);
   const gate = gates.find(item => item.gate === selectedGate)?.gate ?? gates[0]?.gate ?? "";
   const finishedRows = useMemo(() => finished.rows.filter(row => row.gate === gate && (category === "ALL" || row.processGroup === category)), [finished.rows, gate, category]);
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
@@ -79,11 +81,7 @@ export default function SavedPlanPage() {
         const amount = unit === "pcs" ? row.qty : row.sheets;
         return total === null || amount === null ? null : total + amount;
       }, 0);
-    const planned = `${formatGateQuantity(value, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet")} ${unit}${needs ? ` · ${needs} need` : ""}${unknown ? ` · ${unknown} no ID` : ""}`;
-    if (view !== "month") return planned;
-    const observed = monthly.data?.rows.filter(row => row.gate === gateName) ?? [];
-    const amount = observedTotals(observed, unit).total;
-    return `${observed.length ? formatGateQuantity(amount, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet") : "—"} observed · ${saved ? planned : "—"} planned`;
+    return `${formatGateQuantity(value, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet")} ${unit}${needs ? ` · ${needs} need` : ""}${unknown ? ` · ${unknown} no ID` : ""}`;
   };
   const exportPlan = async () => {
     if (!saved || loading || error || exporting || !visible.length) return;
