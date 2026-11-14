@@ -108,7 +108,7 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
               const night = group === "night" || group === "split";
               const color = day ? "#f59e0b" : night ? "#6d4fd8" : "#94a3b8";
               const previous = visible[index - 1];
-              const showSection = !previous?.lot || allocations.get(previous.lot.id)?.status !== group;
+              const showSection = !compactFinished && (!previous?.lot || allocations.get(previous.lot.id)?.status !== group);
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
                 section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
                 compactFinished={compactFinished} evidence={row.evidence} allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
