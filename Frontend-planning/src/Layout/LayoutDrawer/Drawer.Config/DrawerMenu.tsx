@@ -1,7 +1,7 @@
-import { CalendarRange } from "lucide-react";
+import { CalendarRange, Gauge } from "lucide-react";
 import DrawerMenuGroup from "../Components/DrawerMenuGroup";
 
-import { routes_planning } from "@/routes/config";
+import { routes_planning, routes_capacity } from "@/routes/config";
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -14,7 +14,14 @@ const DrawerMenu = ({ isOpen, toggleDrawer }: DrawerMenuProps) => {
       <DrawerMenuGroup
         isOpen={isOpen}
         toggleDrawer={toggleDrawer}
-      title="PLANNING SYSTEM"
+        title="CAPACITY"
+        icon={Gauge}
+        links={routes_capacity}
+      />
+      <DrawerMenuGroup
+        isOpen={isOpen}
+        toggleDrawer={toggleDrawer}
+        title="PLANNING SYSTEM"
         icon={CalendarRange}
         links={routes_planning}
       />

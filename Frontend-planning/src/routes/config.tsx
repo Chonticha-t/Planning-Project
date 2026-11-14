@@ -1,5 +1,5 @@
 import React from "react";
-import { ClipboardList, Cog, LayoutDashboard, DoorOpen, SlidersHorizontal } from "lucide-react";
+import { ClipboardList, Cog, LayoutDashboard, DoorOpen, SlidersHorizontal, TrendingUp, Cpu } from "lucide-react";
 
 // 🟧 Internal ICONS
 import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
@@ -20,6 +20,10 @@ const Planning_Summary_Gate = React.lazy(
 const Capacity_Leveling = React.lazy(
   () => import("@/pages/Capacity_Leveling/main/Capacity_Leveling")
 );
+const Forecast = React.lazy(() => import("@/pages/Forecast/main/Forecast"));
+const Machine_Loading = React.lazy(
+  () => import("@/pages/Machine_Loading/main/Machine_Loading")
+);
 
 // =========================================
 // ⚙️ BASE CONFIG
@@ -35,6 +39,26 @@ export type AppRoute = {
   icon: any; // ไม่ต้องการแสดงส่ง null
   labelClassName?: string; // สำหรับปรับแต่ง class ของ label
 };
+
+// =========================================
+// 🟦 CAPACITY ROUTES (Left Drawer Menu)
+// =========================================
+export const routes_capacity: AppRoute[] = [
+  {
+    path: `${BASE}/forecast`,
+    element: <Forecast />,
+    label: "FORECAST",
+    Title: "CAPACITY",
+    icon: TrendingUp,
+  },
+  {
+    path: `${BASE}/machine_loading`,
+    element: <Machine_Loading />,
+    label: "MACHINE LOADING",
+    Title: "CAPACITY",
+    icon: Cpu,
+  },
+];
 
 // =========================================
 // 🟦 PLANNING ROUTES (Left Drawer Menu)
@@ -74,6 +98,20 @@ export const routes_planning: AppRoute[] = [
 // Sub-routes not shown in the left Drawer menu (accessed from inside pages)
 export const routes_hidden: AppRoute[] = [
   {
+    path: `${BASE}/capacity/forecast`,
+    element: <Forecast />,
+    label: "FORECAST",
+    Title: "CAPACITY",
+    icon: TrendingUp,
+  },
+  {
+    path: `${BASE}/capacity/machine_loading`,
+    element: <Machine_Loading />,
+    label: "MACHINE LOADING",
+    Title: "CAPACITY",
+    icon: Cpu,
+  },
+  {
     path: `${BASE}/planning_summary_gate/capacity_leveling`,
     element: <Capacity_Leveling />,
     label: "CAPACITY LEVELING",
@@ -99,4 +137,8 @@ export const routes_External: AppRoute[] = [
   },
 ];
 
-export const allRoutes: AppRoute[] = [...routes_planning, ...routes_hidden];
+export const allRoutes: AppRoute[] = [
+  ...routes_capacity,
+  ...routes_planning,
+  ...routes_hidden,
+];
