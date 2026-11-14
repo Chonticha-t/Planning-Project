@@ -64,8 +64,6 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
     <h2 className="text-sm font-extrabold uppercase tracking-wider">Monthly summary</h2>
     {output.loading && <p role="status" className="text-sm text-base-content/60">Loading observed output…</p>}
     {output.error && <div role="alert" className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm">{output.error}<button type="button" className="btn btn-xs ml-2" onClick={output.reload}>Retry output</button></div>}
-    <p className="text-xs text-base-content/60">Observed output uses the next gate's SCAN IN as evidence. Missing records do not confirm zero output. Saved arrivals are shown separately; output achievement is not calculated.</p>
-    {output.data && <p className="text-xs text-base-content/50">Work date includes the overnight shift{output.data.workToday ? ` · Current work date ${output.data.workToday}` : ""}. Historical coverage is not confirmed.</p>}
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {kpis.map(kpi => <div key={kpi.title} className="rounded-xl border border-base-300 px-4 py-3">
         <div className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">{kpi.title}</div>
@@ -98,15 +96,50 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
             <th scope="row" className="sticky left-0 z-10 bg-base-100 py-2 pr-4 text-left border-b border-base-200"><div className="font-bold">{product}</div><div className="text-xs font-normal text-base-content/50">{plan ? "Saved arrivals" : "No saved arrivals"}{total ? " · Observed output" : ""}</div></th>
             {data.days.map(day => {
               const cell = actual.cells.get(JSON.stringify([product, day.date]));
-              return <td key={day.date} className="px-1 py-1 border-b border-l border-base-200 text-center">
-                <button type="button" disabled={!output.data} aria-label={`Observed output ${product} ${day.date}`} onClick={() => setSelected({ date: day.date, product, mode: "actual" })} className="w-full rounded-md px-1 py-1 hover:bg-base-200/70 disabled:opacity-50">
-                  <span className="inline-flex gap-1 text-[11px] font-semibold"><span className="rounded bg-[#fdecb3] text-[#8a5a00] px-1">{show(cell?.ds, cell?.hasDs ?? false)}</span><span className="rounded bg-[#e9e3fb] text-[#5a3fc0] px-1">{show(cell?.ns, cell?.hasNs ?? false)}</span></span>
-                  <div className="text-xs font-semibold">{show(cell?.total, Boolean(cell))}</div>
-                </button>
-                <button type="button" disabled={!snapshot} onClick={() => setSelected({ date: day.date, product, mode: "plan" })} className="w-full text-xs text-base-content/60 rounded hover:bg-base-200/70 py-0.5">Plan {snapshot ? fmt(plan ? plan.cells[day.date] : 0) : "—"}</button>
+              const planVal = snapshot ? (plan ? plan.cells[day.date] : 0) : undefined;
+              const hasPlan = planVal !== undefined && planVal !== 0;
+              if (!cell && !hasPlan) {
+                return <td key={day.date} className="px-1 py-1.5 border-b border-l border-base-200 text-center text-base-content/25">–</td>;
+              }
+              return <td key={day.date} className="px-1 py-1 border-b border-l border-base-200 text-center align-middle">
+                {cell && (
+                  <button
+                    type="button"
+                    disabled={!output.data}
+                    aria-label={`Observed output ${product} ${day.date}`}
+                    title={`D/S ${show(cell.ds, cell.hasDs)} · N/S ${show(cell.ns, cell.hasNs)} · Total ${show(cell.total, true)}`}
+                    onClick={() => setSelected({ date: day.date, product, mode: "actual" })}
+                    className="w-full rounded-md px-1 py-1 flex items-center justify-center gap-1 whitespace-nowrap hover:bg-base-200/70 disabled:opacity-50"
+                  >
+                    <span className={`min-w-5 rounded px-1 text-center text-[11px] font-semibold leading-5 ${cell.hasDs ? "bg-[#fdecb3] text-[#8a5a00]" : "bg-base-200/60 text-base-content/30"}`}>
+                      {cell.hasDs ? show(cell.ds, true) : "–"}
+                    </span>
+                    <span className={`min-w-5 rounded px-1 text-center text-[11px] font-semibold leading-5 ${cell.hasNs ? "bg-[#e9e3fb] text-[#5a3fc0]" : "bg-base-200/60 text-base-content/30"}`}>
+                      {cell.hasNs ? show(cell.ns, true) : "–"}
+                    </span>
+                    <span className="min-w-5 text-right text-[13px] font-semibold text-base-content/85">
+                      {show(cell.total, true)}
+                    </span>
+                  </button>
+                )}
+                {hasPlan && (
+                  <button
+                    type="button"
+                    disabled={!snapshot}
+                    onClick={() => setSelected({ date: day.date, product, mode: "plan" })}
+                    className={`w-full rounded px-1.5 py-0.5 text-[11px] font-medium text-base-content/60 hover:bg-base-200/70 ${cell ? "mt-0.5" : "border border-dashed border-base-content/25 bg-base-200/30 py-1"}`}
+                  >
+                    Plan {fmt(planVal)}
+                  </button>
+                )}
               </td>;
             })}
-            <td className="sticky right-0 z-10 bg-base-100 py-2 pl-3 text-right border-b border-base-200"><div className="font-semibold">{show(total?.total, Boolean(total))}</div><div className="text-xs text-base-content/50">Plan {snapshot ? fmt(plan ? plan.total : 0) : "—"}</div></td>
+            <td className="sticky right-0 z-10 bg-base-100 py-2 pl-3 text-right border-b border-base-200">
+              <div className="font-semibold">{show(total?.total, Boolean(total))}</div>
+              {snapshot && plan && plan.total !== 0 && (
+                <div className="text-xs text-base-content/50">Plan {fmt(plan.total)}</div>
+              )}
+            </td>
           </tr>;
         })}
           {!products.length && <tr><td colSpan={data.days.length + 2} className="py-10 text-center text-base-content/50">{output.loading ? "Loading monthly output…" : "No saved arrivals or observed output match this month and filter."}</td></tr>}
