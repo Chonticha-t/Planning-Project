@@ -23,14 +23,16 @@ test("daily capacity sums both shifts and multiplies by MC and efficiency", () =
   assert.equal(dayCapacity(gate({ efficiency: 0.85 }, { enabled: false }), "2026-11-16", true).capacityMin, 403.75);
 });
 
-test("missing MC is reported as not configured instead of zero capacity", () => {
+test("missing MC defaults to 1 machine and marks isDefaultMc instead of null capacity", () => {
   const result = dayCapacity(gate({ mcLines: null }), "2026-11-16", true);
-  assert.equal(result.capacityMin, null);
+  assert.equal(result.capacityMin, 950);
+  assert.equal(result.isDefaultMc, true);
+  assert.equal(result.shifts.day.isDefaultMc, true);
   assert.equal(result.off, false);
 });
 
 test("holidays and closed shifts are OFF; special days override one shift only", () => {
-  assert.deepEqual(effectiveShift(shift(), { isWorkingDay: false }), { open: false, otOn: false, capacityMin: 0 });
+  assert.deepEqual(effectiveShift(shift(), { isWorkingDay: false }), { open: false, otOn: false, capacityMin: 0, isDefaultMc: false });
   assert.equal(dayCapacity(gate(), "2026-11-15", false).off, true);
   const special = gate({ specialDays: { "2026-11-15": "ot", "2026-11-16": "off", "2026-11-17": "work" } }, { otEnabled: true });
   // OT day opens the day shift on a holiday; the night shift keeps following the calendar.
@@ -318,7 +320,8 @@ test("load endpoint returns capacity per gate and day with cards from the latest
     ]);
     assert.equal(data.capacity.FADL["2026-11-14"].capacityMin, 1900);
     assert.equal(data.capacity.FADL["2026-11-15"].off, true);
-    assert.equal(data.capacity.FVAC["2026-11-14"].capacityMin, null);
+    assert.equal(data.capacity.FVAC["2026-11-14"].capacityMin, 950);
+    assert.equal(data.capacity.FVAC["2026-11-14"].isDefaultMc, true);
     assert.equal(data.cards[0].plannedDate, "2026-11-18");
     assert.equal(data.loadBasis, "summary_gate_arrivals_v1");
     assert.equal(data.arrivalRows[0].arrive_by, work().arrive_by);
@@ -336,6 +339,7 @@ test("load endpoint returns capacity per gate and day with cards from the latest
   assert.match(works.sql, /w\.pcs_per_sheet::float8 AS pcs_per_sheet/);
   assert.match(works.sql, /w\.pri/);
   assert.match(works.sql, /w\.rem_proc_in_gate/);
+  assert.match(works.sql, /w\.total_proc_in_gate/);
   assert.doesNotMatch(works.sql, /smart_pcap_std_time|SUM\(60|uph/i);
 });
 
@@ -1282,4 +1286,21 @@ test("locked plan updates live WIP status on /load and /plans/:id?live=true with
     assert.equal(storedSnapshot.data.arrivalRows.find(r => r.lot_no === "LOT-C-1").saved_gate_state, "in_gate");
     assert.equal(storedSnapshot.data.arrivalRows.find(r => r.lot_no === "LOT-C-2").saved_gate_state, "in_gate");
   });
+});
+
+test("board workload formula scales 950 normal minutes by lead_days / total_proc_in_gate", () => {
+  const sampleRow = work({ gate_name: "FADL", lead_days: 5, total_proc_in_gate: 3 });
+  const arrival = buildArrivalCards([sampleRow], [], "2026-11-12");
+  assert.equal(arrival.cards[0].leadDays, 5);
+  assert.equal(arrival.cards[0].totalProcInGate, 3);
+  assert.equal(arrival.cards[0].loadMin, 1583.33);
+
+  const cards = buildCards([sampleRow], [], "2026-11-12");
+  assert.equal(cards.cards[0].loadMin, 1583.33);
+
+  const sixLots = Array.from({ length: 6 }, (_, i) => work({ lot_no: `LOT-${i}`, lead_days: 5, total_proc_in_gate: 3 }));
+  const totalLoad = buildArrivalCards(sixLots, [], "2026-11-12").cards.reduce((sum, c) => sum + c.loadMin, 0);
+  const eightMcCap = dayCapacity(gate({ mcLines: 8 }, { mcLines: 8 }), "2026-11-16", true).capacityMin;
+  assert.equal(eightMcCap, 7600);
+  assert.equal(Math.round((totalLoad / eightMcCap) * 100), 125);
 });

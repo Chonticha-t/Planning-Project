@@ -99,6 +99,43 @@ export const WARNING_TEXT: Record<Exclude<MoveWarning, "none">, string> = {
   order: "Arrival or completion overlaps an adjacent gate",
 };
 
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const positiveInt = (value: unknown, max = 10000): number | null => {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 && num <= max ? num : null;
+};
+
+const isPassedRow = (row: GateArrivalRow) => row.gate_state === "passed" || row.passed_gate === true;
+
+const totalBucketLotDays = (rows: GateArrivalRow[], cards: Map<string, LotItem>): number => {
+  const lots = new Map<string, { leadDays: number | null; hasInvalidLead: boolean; totalProcInGate: number | null }>();
+  for (const row of rows) {
+    if (isPassedRow(row) || isGateNeedWip(row)) continue;
+    const lotNo = row.lot_no?.trim() ?? "";
+    if (!lotNo) continue;
+    const card = cards.get(siblingKey(row.workKey, row.gate_name));
+    const leadDays = positiveInt(row.lead_days, 366) ?? positiveInt(card?.leadDays, 366);
+    const totalProcInGate = positiveInt(row.total_proc_in_gate) ?? positiveInt(card?.totalProcInGate);
+    const entry = lots.get(lotNo) ?? { leadDays: null, hasInvalidLead: false, totalProcInGate: null };
+    if (leadDays === null) entry.hasInvalidLead = true;
+    else entry.leadDays = entry.leadDays === null ? leadDays : Math.max(entry.leadDays, leadDays);
+    if (totalProcInGate !== null) {
+      entry.totalProcInGate = entry.totalProcInGate === null ? totalProcInGate : Math.max(entry.totalProcInGate, totalProcInGate);
+    }
+    lots.set(lotNo, entry);
+  }
+  let total = 0;
+  for (const entry of lots.values()) {
+    total += !entry.hasInvalidLead && entry.leadDays !== null && entry.totalProcInGate !== null
+      ? entry.leadDays / entry.totalProcInGate
+      : 1;
+  }
+  return total;
+};
+
 const emptyCell = (capacity: LevelingData["capacity"][string][string] | undefined): GateCell => ({
   loadMin: 0,
   capacityMin: capacity ? capacity.capacityMin : null,
@@ -106,6 +143,7 @@ const emptyCell = (capacity: LevelingData["capacity"][string][string] | undefine
   configured: Boolean(capacity) && capacity!.capacityMin !== null,
   off: !capacity || capacity.off,
   hasOt: Boolean(capacity?.hasOt),
+  isDefaultMc: Boolean(capacity?.isDefaultMc),
   lotCount: 0,
   needCount: 0,
   unidentifiedCount: 0,
@@ -223,6 +261,7 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
   const sources = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
   const buckets = new Map<string, { rows: GateArrivalRow[]; members: Map<string, LotItem>; date: string }>();
   for (const row of data.arrivalRows) {
+    // Keep passed_gate rows here so Planning_In_Gate and boardCardOrder still see saved passed cards.
     if (row.gate_state === "passed" || (category !== "ALL" && row.process_group !== category)) continue;
     const source = sources.get(siblingKey(row.workKey, row.gate_name));
     const date = plannedArrivalDate(row.arrive_by, source);
@@ -241,6 +280,10 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
     const summary = summarizeGateQuantities(rows);
     const deadlines = rows.map((row) => row.must_out).filter(Boolean).sort();
     const durations = sources.map((lot) => lot.leadDays);
+    const procCounts = rows
+      .map((row) => positiveInt(row.total_proc_in_gate))
+      .filter((value): value is number => value !== null);
+    const totalProcInGate = procCounts.length ? Math.max(...procCounts) : representative.totalProcInGate;
     const hasSavedState = rows.some((row) => row.saved_gate_state !== undefined);
     const savedGateState = rows.some((row) => (row.saved_gate_state ?? row.gate_state) === "in_gate")
       ? "in_gate"
@@ -273,6 +316,7 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
         : sources.every((item) => item.passedGate === true),
       sourceChanged: sources.some((lot) => lot.sourceChanged),
       mustOut: deadlines[0] || "", leadDays: durations.every((value) => value && value > 0) ? Math.max(...durations as number[]) : null,
+      ...(totalProcInGate !== undefined ? { totalProcInGate } : {}),
     };
     return { lot, priority, groupRank };
   }).sort((a, b) => a.lot.plannedDate.localeCompare(b.lot.plannedDate)
@@ -310,7 +354,7 @@ export const buildGrid = (
   const cards = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
   const buckets = new Map<GateCell, GateArrivalRow[]>();
   for (const row of data.arrivalRows) {
-    if (row.gate_state === "passed" || (category !== "ALL" && row.process_group !== category)) continue;
+    if (isPassedRow(row) || (category !== "ALL" && row.process_group !== category)) continue;
     const date = plannedArrivalDate(row.arrive_by, cards.get(siblingKey(row.workKey, row.gate_name)), useBaseDates);
     const cell = date ? byDate.get(date)?.gates[row.gate_name] : undefined;
     if (!cell) continue;
@@ -331,8 +375,9 @@ export const buildGrid = (
       standard.day < 0 || standard.night < 0 || standard.day + standard.night <= 0) {
       cell.missingPlanning = cell.lotCount;
     } else {
-      cell.shiftLoadMin = { day: cell.lotCount * standard.day, night: cell.lotCount * standard.night };
-      cell.loadMin = cell.shiftLoadMin.day + cell.shiftLoadMin.night;
+      const totalLotDays = totalBucketLotDays(rows, cards);
+      cell.shiftLoadMin = { day: round2(totalLotDays * standard.day), night: round2(totalLotDays * standard.night) };
+      cell.loadMin = round2(totalLotDays * (standard.day + standard.night));
     }
   }
 
@@ -421,14 +466,15 @@ export const calculateKpis = (
         .map(([gate]) => `${gate} · ${day.displayDate}`)
     );
   const red = overloaded(grid);
+  const activeLots = lots.filter((lot) => !lot.passedGate);
   const planned = plannedDateIndex(lots, data);
-  const warnings = lots.map((lot) => moveWarning(lot, lot.plannedDate, planned, data));
-  const late = lots.filter((_, index) => warnings[index] === "late" || warnings[index] === "order");
-  const moved = lots.filter(isMoved);
+  const warnings = activeLots.map((lot) => moveWarning(lot, lot.plannedDate, planned, data));
+  const late = activeLots.filter((_, index) => warnings[index] === "late" || warnings[index] === "order");
+  const moved = activeLots.filter(isMoved);
   const unset = new Set<string>();
   for (const day of grid) {
     for (const [gate, cell] of Object.entries(day.gates)) {
-      if (!cell.off && !cell.configured) unset.add(gate);
+      if (!cell.off && (!cell.configured || cell.isDefaultMc)) unset.add(gate);
     }
   }
   return {
@@ -442,10 +488,10 @@ export const calculateKpis = (
       ? `${late[0].label} · ${late[0].product} @ ${late[0].gate}`
       : "Projected completions are on or before must-out",
     movedCount: moved.length,
-    totalCount: lots.length,
+    totalCount: activeLots.length,
     movedEarlier: moved.filter((lot) => lot.plannedDate < lot.baseDate).length,
     movedLater: moved.filter((lot) => lot.plannedDate > lot.baseDate).length,
-    missingPlanningCards: lots.filter((lot) => isMoved(lot) && (!data || lot.plannedDate >= data.today) && (lot.loadMin === null || (data && !occupancyWindow(data, lot)))).length,
+    missingPlanningCards: activeLots.filter((lot) => isMoved(lot) && (!data || lot.plannedDate >= data.today) && (lot.loadMin === null || (data && !occupancyWindow(data, lot)))).length,
     unsetCapacityGates: [...unset],
   };
 };
@@ -459,11 +505,11 @@ export const shiftMinutesPerMachine = (cfg: ShiftConfig, otOn = cfg.otEnabled) =
   return Math.max(0, cfg.minPerShift - breaks + (otOn ? cfg.otMinutes : 0));
 };
 
-/** Shift capacity in minutes; null while MC is not entered, 0 when the shift is off. */
+/** Shift capacity in minutes; defaults to 1 MC while MC is not entered, 0 when the shift is off. */
 export const shiftCapacityMin = (cfg: ShiftConfig, otOn = cfg.otEnabled): number | null => {
   if (!cfg.enabled) return 0;
-  if (cfg.mcLines === null) return null;
-  return Math.round(cfg.mcLines * cfg.efficiency * shiftMinutesPerMachine(cfg, otOn) * 100) / 100;
+  const mc = cfg.mcLines ?? 1;
+  return round2(mc * cfg.efficiency * shiftMinutesPerMachine(cfg, otOn));
 };
 
 export const formatMinutes = (value: number | null) =>

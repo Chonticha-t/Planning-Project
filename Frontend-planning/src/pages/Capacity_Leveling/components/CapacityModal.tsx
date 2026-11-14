@@ -34,11 +34,15 @@ const SHIFTS = [
   { id: "night", label: "Night Shift", Icon: Moon },
 ] as const;
 
-/** Day capacity of a gate; null while an active shift has no MC. */
+/** Day capacity of a gate; defaults unconfigured active shifts to 1 MC. */
 const calcGateCapacityMin = (cfg: GateShiftConfig, forceOt?: boolean): number | null => {
   const shifts = [cfg.shifts.day, cfg.shifts.night].map((shift) => shiftCapacityMin(shift, forceOt ?? shift.otEnabled));
   return shifts.some((value) => value === null) ? null : Math.round(shifts.reduce<number>((sum, value) => sum + (value ?? 0), 0));
 };
+
+const isGateDefaultMc = (gCfg: GateShiftConfig) =>
+  (gCfg.shifts.day.enabled && gCfg.shifts.day.mcLines === null) ||
+  (gCfg.shifts.night.enabled && gCfg.shifts.night.mcLines === null);
 
 type OverrideTarget = Shift | "both";
 type SpecialAction = SpecialDay | "clear";
@@ -406,7 +410,20 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                             isActive ? "bg-primary text-primary-content shadow-xs" : "text-base-content/80 hover:bg-base-200"
                           }`}
                         >
-                          <span>{g}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <span>{g}</span>
+                            {isGateDefaultMc(configs[g]) && (
+                              <span
+                                className={`px-1 py-0.5 rounded text-[9px] font-semibold leading-none border ${
+                                  isActive
+                                    ? "bg-white/20 text-primary-content border-white/30"
+                                    : "bg-amber-100 text-amber-800 border-amber-300"
+                                }`}
+                              >
+                                default
+                              </span>
+                            )}
+                          </span>
                           <span className={`text-[10.5px] font-semibold ${isActive ? "text-primary-content/85" : "text-base-content/45"}`}>
                             {shortCap(calcGateCapacityMin(configs[g]))}
                           </span>
@@ -511,7 +528,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                   <NumField
                     label="MC (lines)"
                     icon={<Folder size={13} />}
-                    hint="Empty until known"
+                    hint={cfg.mcLines === null ? "Default: 1 MC (not set)" : "Empty until known"}
                     value={cfg.mcLines}
                     onChange={(v) => updateCurrentShift({ mcLines: optionalNumber(v) })}
                   />
@@ -758,7 +775,18 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                           <span className="px-2 py-0.5 rounded bg-base-200 text-[11px] font-bold">{gate.group}</span>
                         </td>
                         <td className="font-bold text-[color:var(--shift-label-color)]">{gate.gate}</td>
-                        <td className="font-semibold">{gCfg.mcLines ?? "-"}</td>
+                        <td className="font-semibold">
+                          {gCfg.mcLines !== null ? (
+                            gCfg.mcLines
+                          ) : (
+                            <span className="inline-flex items-center gap-1">
+                              <span>1</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                                default
+                              </span>
+                            </span>
+                          )}
+                        </td>
                         <td className="font-semibold text-base-content/75">{gCfg.manpower ?? "-"}</td>
                         <td className="whitespace-nowrap">
                           {shiftLabel}

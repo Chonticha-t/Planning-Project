@@ -98,6 +98,30 @@ export function savedPlanGates(snapshot: LevelingData, category: ProcessCategory
   return snapshot.gates.filter(gate => category === "ALL" || gate.group === (category === "SMT" ? "SMT" : "FPC"));
 }
 
+/** Day work lists exclude lots that have already passed the gate; monthly summaries keep the full plan baseline. */
+export function savedViewRows(rows: readonly LotItem[], view: "day" | "month", target: string): LotItem[] {
+  if (view === "month") return rows.filter(row => row.plannedDate.startsWith(`${target}-`));
+  return rows.filter(row => row.plannedDate === target && !row.passedGate);
+}
+
+/** Summarize active (not-yet-passed) lots for the day's saved plan metrics and capacity bar. */
+export function summarizeActivePlan(lots: readonly LotItem[], capacityMin?: number | null) {
+  const active = lots.filter(lot => !lot.passedGate);
+  const totalLoad = active.reduce<number | null>((sum, lot) => lot.kind !== "lot" ? sum
+    : sum === null || lot.loadMin === null ? null : sum + lot.loadMin, 0);
+  const pct = totalLoad !== null && typeof capacityMin === "number" && capacityMin > 0
+    ? Math.round(totalLoad / capacityMin * 100) : null;
+  return {
+    active,
+    lotCount: planQuantity(active, "lots"),
+    sheets: planQuantity(active, "sheets"),
+    pcs: planQuantity(active, "pcs"),
+    needs: active.filter(lot => lot.kind !== "lot").length,
+    totalLoad,
+    pct,
+  };
+}
+
 /** Unknown quantities stay unknown; requirements never become physical lots. */
 export function planQuantity(rows: LotItem[], unit: CountUnit): number | null {
   if (unit === "lots") return rows.filter(row => row.kind === "lot").length;

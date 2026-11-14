@@ -16,7 +16,11 @@ type Budget = { day: number; night: number; fullDay: number; fullNight: number; 
  * else it is over capacity (open OT or move the date). Only a lot larger than a whole shift
  * (e.g. one machine) spans Day and Night.
  */
-export const allocateBoardShifts = (data: Pick<LevelingData, "capacity">, orderedLots: LotItem[]) => {
+export const allocateBoardShifts = (
+  data: Pick<LevelingData, "capacity">,
+  orderedLots: LotItem[],
+  options: { excludePassed?: boolean } = {}
+) => {
   const result = new Map<string, BoardShiftAllocation>();
   const budgets = new Map<string, Budget>();
   const physicalLots = new Map<string, BoardShiftAllocation>();
@@ -26,7 +30,7 @@ export const allocateBoardShifts = (data: Pick<LevelingData, "capacity">, ordere
   };
 
   for (const lot of orderedLots) {
-    if (lotKind(lot) !== "lot") {
+    if (lotKind(lot) !== "lot" || (options.excludePassed && lot.passedGate)) {
       record(lot, { status: "none", dayMin: 0, nightMin: 0, overflowMin: 0 });
       continue;
     }

@@ -507,14 +507,14 @@ test("zero capacity with arrivals is unavailable and counts as an overloaded gat
   assert.equal(calculateKpis(grid, grid, lots, source).overloadCells, 1);
 });
 
-test("shift capacity: 475 min per machine, 655 with OT, empty MC is not zero", () => {
+test("shift capacity: 475 min per machine, 655 with OT, empty MC defaults to 1 MC", () => {
   const shift: ShiftConfig = {
     settingId: null, enabled: true, mcLines: 2, manpower: null, minPerShift: 540, otEnabled: false, otMinutes: 180,
     break1: true, break1Min: 10, break2: true, break2Min: 10, lunch: true, lunchMin: 45, efficiency: 1, specialDays: {},
   };
   assert.equal(shiftCapacityMin(shift), 950);
   assert.equal(shiftCapacityMin(shift, true), 1310);
-  assert.equal(shiftCapacityMin({ ...shift, mcLines: null }), null);
+  assert.equal(shiftCapacityMin({ ...shift, mcLines: null }), 475);
   assert.equal(shiftCapacityMin({ ...shift, enabled: false }), 0);
 });
 
@@ -738,4 +738,67 @@ test("arrival warnings compare projected completion and every allocation with ne
   assert.equal(moveWarning(lots[0], "2026-11-18", plannedDateIndex(movedNext, source), source), "late");
   const other = { ...rows[0], pri: 99, next_arrive_by: "2026-11-17" };
   assert.equal(moveWarning({ ...lots[0], allocations: [rows[0], other] }, "2026-11-16", undefined, source), "order");
+});
+
+test("buildGrid applies board workload formula (lead_days / total_proc_in_gate * normalMin) and default 1 MC", () => {
+  const oneLotSource = data([card({ leadDays: 5, totalProcInGate: 3, loadMin: 1583.33 })]);
+  oneLotSource.arrivalRows[0].total_proc_in_gate = 3;
+  oneLotSource.capacity.FADL["2026-11-16"] = { ...open(950), isDefaultMc: true };
+  const oneGrid = buildGrid(oneLotSource, oneLotSource.cards.map(toLotItem));
+  const oneCell = cellOf(oneGrid, "2026-11-16", "FADL");
+  assert.equal(oneCell.loadMin, 1583.33);
+  assert.equal(oneCell.isDefaultMc, true);
+  assert.equal(oneCell.pct, 167);
+  assert.ok(calculateKpis(oneGrid, oneGrid, oneLotSource.cards.map(toLotItem), oneLotSource).unsetCapacityGates.includes("FADL"));
+
+  const sixLots = Array.from({ length: 6 }, (_, i) =>
+    card({ id: `lot-${i}`, lotNo: `LOT-${i}`, workKey: `work-${i}`, leadDays: 5, totalProcInGate: 3, loadMin: 1583.33 })
+  );
+  const sixSource = data(sixLots);
+  sixSource.arrivalRows.forEach((row) => { row.total_proc_in_gate = 3; });
+  sixSource.capacity.FADL["2026-11-16"] = shiftDay(3800, 3800);
+  const sixCell = cellOf(buildGrid(sixSource, sixSource.cards.map(toLotItem)), "2026-11-16", "FADL");
+  assert.equal(sixCell.loadMin, 9500);
+  assert.equal(sixCell.pct, 125);
+});
+
+test("passed_gate rows are excluded from buildGrid, calculateKpis and Capacity Leveling shift allocations while kept by buildBoardLots", () => {
+  const source = data([
+    card({ id: "passed-1", workKey: "passed-1", lotNo: "PASSED-1", passedGate: true, qty: 3000, plannedDate: "2026-11-18", mustOut: "2026-11-17", loadMin: null, leadDays: null }),
+    card({ id: "active-1", workKey: "active-1", lotNo: "ACTIVE-1", passedGate: false, qty: 1000 }),
+    card({ id: "need-1", workKey: "need-1", lotNo: "NEED WIP", gateState: "need_wip", passedGate: false, qty: 500, loadMin: 0 }),
+  ]);
+  source.arrivalRows[0].passed_gate = true;
+  source.arrivalRows[0].qty = 3000;
+  source.arrivalRows[1].passed_gate = false;
+  source.arrivalRows[2].passed_gate = false;
+  source.capacity.FADL["2026-11-16"] = shiftDay(950, 950);
+
+  const lots = source.cards.map(toLotItem);
+  const grid = buildGrid(source, lots, false, "EFPC_GEN");
+  const required = buildGrid(source, lots, true, "EFPC_GEN");
+  const cell = cellOf(grid, "2026-11-16", "FADL");
+  const reqCell = cellOf(required, "2026-11-16", "FADL");
+  const board = buildBoardLots(source, lots, "EFPC_GEN");
+  const visibleBoard = board.filter((lot) => !lot.passedGate);
+
+  assert.equal(board.length, 3, "buildBoardLots retains passedGate cards for Planning In Gate and boardCardOrder");
+  assert.equal(board.find((lot) => lot.label === "PASSED-1")?.passedGate, true);
+  assert.deepEqual(boardCounts(visibleBoard), { lots: 1, need: 1, unidentified: 0 });
+  assert.deepEqual([cell.lotCount, cell.needCount, cell.totalPcs, cell.loadMin, cell.pct], [1, 1, 1500, 950, 50]);
+  assert.deepEqual([reqCell.lotCount, reqCell.needCount, reqCell.totalPcs, reqCell.loadMin, reqCell.pct], [1, 1, 1500, 950, 50]);
+
+  const kpis = calculateKpis(grid, required, lots, source);
+  assert.deepEqual(
+    [kpis.overloadCells, kpis.lateCards, kpis.movedLateCards, kpis.movedCount, kpis.totalCount, kpis.missingPlanningCards],
+    [0, 0, 0, 0, 2, 0]
+  );
+
+  // Move PASSED-1 back to 2026-11-16 to verify allocateBoardShifts({ excludePassed: true }) does not reserve Day capacity for it.
+  const sameDayBoard = buildBoardLots(source, lots.map((lot) => lot.id === "passed-1" ? { ...lot, plannedDate: "2026-11-16", loadMin: 950 } : lot), "EFPC_GEN");
+  const withPassed = allocateBoardShifts(source, sameDayBoard);
+  assert.equal(withPassed.get("active-1")?.status, "night");
+  const withoutPassed = allocateBoardShifts(source, sameDayBoard, { excludePassed: true });
+  assert.equal(withoutPassed.get("passed-1")?.status, "none");
+  assert.equal(withoutPassed.get("active-1")?.status, "day");
 });

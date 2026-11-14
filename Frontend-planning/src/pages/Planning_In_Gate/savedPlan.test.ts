@@ -2,7 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ApiCard, LevelingData, PlanHistoryDetail, PlanHistoryInfo } from "../Capacity_Leveling/types";
-import { planQuantity, planStatus, readLatestSavedPlan, savedMonth, savedPlanGates, savedPlanRows, validateSnapshot } from "./savedPlan.ts";
+import { allocateBoardShifts } from "../Capacity_Leveling/utils/boardShiftAllocation.ts";
+import { planQuantity, planStatus, readLatestSavedPlan, savedMonth, savedPlanGates, savedPlanRows, savedViewRows, summarizeActivePlan, validateSnapshot } from "./savedPlan.ts";
 
 const day = "2026-11-16";
 function snapshot(): LevelingData {
@@ -188,4 +189,49 @@ test("live-enriched saved plan preserves unchanged order and places newly in_gat
   assert.equal(planStatus(rows.find(row => row.label === "LOT-F")!), "In gate");
   assert.equal(planStatus(rows.find(row => row.label === "LOT-A")!), "HOLD");
   assert.equal(planStatus(rows.find(row => row.label === "LOT-C")!), "Coming");
+});
+
+test("day work list and active summary exclude passedGate lots while monthly baseline keeps them", () => {
+  const data = snapshot();
+  data.cards[0] = { ...data.cards[0], passedGate: true, gateState: "in_gate", loadMin: 400, qty: 200, sheets: 20 };
+  data.cards[1] = { ...data.cards[1], plannedDate: day, passedGate: false, loadMin: 500, qty: 150, sheets: 15 };
+  data.cards[2] = { ...data.cards[2], kind: "need", lotNo: null, gateState: "need_wip", passedGate: false, loadMin: 0, qty: 80, sheets: 8 };
+  data.arrivalRows[0] = { ...data.arrivalRows[0], passed_gate: true, qty: 200, pcs_per_sheet: 10 };
+  data.arrivalRows[1] = { ...data.arrivalRows[1], qty: 150, pcs_per_sheet: 10 };
+  data.arrivalRows[2] = { ...data.arrivalRows[2], lot_no: null, gate_state: "need_wip", passed_gate: false, qty: 80, pcs_per_sheet: 10 };
+  data.capacity = {
+    GATE_A: {
+      [day]: {
+        off: false, hasOt: false, capacityMin: 1000,
+        shifts: {
+          day: { open: true, otOn: false, capacityMin: 500 },
+          night: { open: true, otOn: false, capacityMin: 500 },
+        },
+      },
+    },
+  };
+
+  const rows = savedPlanRows(data, "ALL");
+  assert.equal(rows.length, 3);
+
+  const dayRows = savedViewRows(rows, "day", day);
+  assert.deepEqual(dayRows.map(row => row.label), ["LOT-B", "Need WIP"]);
+
+  const monthRows = savedViewRows(rows, "month", day.slice(0, 7));
+  assert.equal(monthRows.length, 3);
+  assert.equal(monthRows.some(row => row.passedGate), true);
+
+  const summary = summarizeActivePlan(rows.filter(row => row.plannedDate === day), 1000);
+  assert.equal(summary.lotCount, 1);
+  assert.equal(summary.needs, 1);
+  assert.equal(summary.pcs, 230);
+  assert.equal(summary.sheets, 23);
+  assert.equal(summary.totalLoad, 500);
+  assert.equal(summary.pct, 50);
+
+  const allocations = allocateBoardShifts(data, rows, { excludePassed: true });
+  const lotA = rows.find(row => row.label === "LOT-A")!;
+  const lotB = rows.find(row => row.label === "LOT-B")!;
+  assert.deepEqual(allocations.get(lotA.id), { status: "none", dayMin: 0, nightMin: 0, overflowMin: 0 });
+  assert.deepEqual(allocations.get(lotB.id), { status: "day", dayMin: 500, nightMin: 0, overflowMin: 0 });
 });

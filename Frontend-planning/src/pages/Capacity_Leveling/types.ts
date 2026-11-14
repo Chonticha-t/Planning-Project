@@ -75,6 +75,7 @@ export interface LotItem {
   /** Normal minutes per occupied planning day; excludes OT, MC count and efficiency. */
   loadMin: number | null;
   leadDays: number | null;
+  totalProcInGate?: number | null;
   standardShiftMin: Record<Shift, number>;
   moveHistory?: MoveHistoryEntry[];
 }
@@ -83,11 +84,13 @@ export interface ShiftCapacity {
   open: boolean;
   otOn: boolean;
   capacityMin: number | null;
+  isDefaultMc?: boolean;
 }
 
 export interface CapacityDay {
   off: boolean;
   hasOt: boolean;
+  isDefaultMc?: boolean;
   /** null = MC is not configured for an open shift */
   capacityMin: number | null;
   shifts: Record<Shift, ShiftCapacity>;
@@ -189,6 +192,7 @@ export interface GateCell {
   configured: boolean;
   off: boolean;
   hasOt: boolean;
+  isDefaultMc?: boolean;
   previewPct?: number; // while dragging
   lotCount: number;
   needCount: number;

@@ -164,6 +164,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               const gate = { id: gateInfo.gate, name: gateInfo.gate };
               const isGateSelected =
                 selectedGate === gate.id && !selectedDate;
+              const isGateDefaultMc = data.some((col) => Boolean(col.gates[gate.id]?.isDefaultMc));
               return (
                 <tr key={gate.id}>
                   <td className="text-left text-xs px-2.5 py-1.5 sticky left-0 bg-base-100 z-10">
@@ -171,13 +172,18 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                       type="button"
                       onClick={() => handleCellClick(gate.id, null)}
                       title={`Show ${gate.name} on the Gate Arrival Board`}
-                      className={`font-bold cursor-pointer transition-colors ${
+                      className={`font-bold cursor-pointer transition-colors inline-flex items-center ${
                         selectedGate === gate.id || boardGate === gate.id
                           ? "text-[#4f46e5]"
                           : "text-base-content hover:text-[#4f46e5]"
                       }`}
                     >
-                      {gate.name}
+                      <span>{gate.name}</span>
+                      {isGateDefaultMc && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                          default
+                        </span>
+                      )}
                     </button>
                   </td>
                   {data.map((col) => {
@@ -262,7 +268,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                           type="button"
                           aria-pressed={isCellSelected}
                           onClick={() => handleCellClick(gate.id, col.date)}
-                          title={`${gate.name} · ${col.displayDate}: ${displayPct}% load (${Math.round(gInfo.loadMin).toLocaleString()} / ${Math.round(gInfo.capacityMin ?? 0).toLocaleString()} min${gInfo.hasOt ? ", OT open" : ""}) | ${formatGateQuantity(pcs, "piece")} pcs | ${formatGateQuantity(sheets, "sheet")} sheets | ${lots} lots${missingNote}`}
+                          title={`${gate.name} · ${col.displayDate}: ${displayPct}% load (${Math.round(gInfo.loadMin).toLocaleString()} / ${Math.round(gInfo.capacityMin ?? 0).toLocaleString()} min${gInfo.isDefaultMc ? " (default 1 MC)" : ""}${gInfo.hasOt ? ", OT open" : ""}) | ${formatGateQuantity(pcs, "piece")} pcs | ${formatGateQuantity(sheets, "sheet")} sheets | ${lots} lots${missingNote}`}
                           className={`w-full h-[66px] min-h-[66px] rounded-[8px] flex flex-col items-center justify-center gap-1 py-1.5 px-1.5 transition-all cursor-pointer tabular-nums hover:brightness-95 focus-visible:outline-2 focus-visible:outline-primary ${pillStyle} ${
                             isCellSelected
                               ? "ring-2 ring-[#4f46e5] shadow-xs"

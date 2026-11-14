@@ -91,6 +91,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   const isNeed = activeLot.gateState === "need_wip" || activeLot.label.trim().toUpperCase() === "NEED WIP";
   const standard = data.gates.find((gate) => gate.gate === activeLot.gate)?.standardShiftMin;
   const normalMinutes = standard ? standard.day + standard.night : null;
+  const lotMinutes = activeLot.loadMin ?? normalMinutes;
   const isLate = warning === "late" || warning === "order";
   const projectedEnd = occupancyWindow(data, activeLot)?.endDate;
   const diffDays = projectedEnd && activeLot.mustOut ? dayjs(activeLot.mustOut).diff(dayjs(projectedEnd), "day") : null;
@@ -296,9 +297,18 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-base-content/60">Normal minutes / actual arrival lot</span>
                   <span className="font-semibold text-base-content">
-                    {isNeed ? "0 min (Need WIP)" : normalMinutes === null || normalMinutes <= 0
+                    {isNeed ? "0 min (Need WIP)" : lotMinutes === null || lotMinutes <= 0
                       ? "Check normal shift minutes"
-                      : `${Math.round(normalMinutes).toLocaleString()} min`}
+                      : (
+                        <>
+                          {`${Math.round(lotMinutes).toLocaleString()} min`}
+                          {activeLot.leadDays && activeLot.totalProcInGate ? (
+                            <span className="ml-1 text-[10.5px] font-normal text-base-content/55">
+                              ({activeLot.leadDays}d / {activeLot.totalProcInGate} proc)
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                   </span>
                 </div>
                 <div className="text-[11px] leading-snug text-base-content/60">
@@ -308,6 +318,14 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
                   <span className="text-base-content/60">Arrival load / capacity ({formatDate(arrivalDate)})</span>
                   <span className="font-semibold text-base-content">
                     {Math.round(cell.loadMin).toLocaleString()} / {cell.off ? "OFF" : formatMinutes(cell.capacityMin)}
+                    {!cell.off && (dayCapacity?.isDefaultMc || cell.isDefaultMc) && (
+                      <span
+                        title="1 MC default (not configured)"
+                        className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300"
+                      >
+                        default
+                      </span>
+                    )}
                     {cell.hasOt && (
                       <span className="ml-1 px-1.5 rounded-sm text-[10px] font-bold bg-amber-100 text-amber-800">OT</span>
                     )}
@@ -338,6 +356,14 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
                           <div className="flex items-center gap-1.5">
                             <span className={`w-2 h-2 rounded-full ${!shift.open ? "bg-slate-300" : shift.otOn ? "bg-amber-500" : "bg-primary"}`} />
                             <span className="font-semibold text-base-content">{code === "day" ? "D/S" : "N/S"}</span>
+                            {shift.open && shift.isDefaultMc && (
+                              <span
+                                title="1 MC default"
+                                className="px-1 rounded text-[9px] font-semibold bg-amber-100 text-amber-800 border border-amber-300"
+                              >
+                                default
+                              </span>
+                            )}
                           </div>
                           <span className="text-[11px] font-medium text-base-content/70">
                             {!shift.open ? "Off" : `${formatMinutes(shift.capacityMin)}${shift.otOn ? " · OT" : ""}`}

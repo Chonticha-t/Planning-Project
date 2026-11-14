@@ -36,6 +36,17 @@ const dateRange = (start, end) => {
 
 const round2 = (value) => Math.round(value * 100) / 100;
 
+const positiveInt = (value, max = 10000) => {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0 && num <= max ? num : null;
+};
+
+const calculateLotLoadMin = (leadDays, totalProcInGate, normalMin) => {
+  if (leadDays === null || normalMin <= 0) return null;
+  const lotDays = totalProcInGate !== null ? leadDays / totalProcInGate : 1;
+  return round2(lotDays * normalMin);
+};
+
 // Minutes one machine can run in the shift: regular - enabled breaks (+ OT when open).
 const shiftMinutesPerMachine = (shift, otOn = shift.otEnabled) => {
   const breaks = (shift.break1 ? shift.break1Min : 0) + (shift.break2 ? shift.break2Min : 0) +
@@ -50,12 +61,12 @@ const effectiveShift = (shift, { isWorkingDay, special }) => {
   if (special === "off") open = false;
   if (special === "ot") { open = true; otOn = true; }
   if (special === "work") { open = true; otOn = false; }
-  if (!open) return { open: false, otOn: false, capacityMin: 0 };
-  // A missing machine count is "not configured", never zero capacity.
-  const capacityMin = shift.mcLines === null
-    ? null
-    : round2(shift.mcLines * shift.efficiency * shiftMinutesPerMachine(shift, otOn));
-  return { open: true, otOn, capacityMin };
+  if (!open) return { open: false, otOn: false, capacityMin: 0, isDefaultMc: false };
+  // Unconfigured machine count defaults to 1 MC for calculation without persisting 1 to DB.
+  const isDefaultMc = shift.mcLines === null;
+  const mc = isDefaultMc ? 1 : shift.mcLines;
+  const capacityMin = round2(mc * shift.efficiency * shiftMinutesPerMachine(shift, otOn));
+  return { open: true, otOn, capacityMin, isDefaultMc };
 };
 
 const dayCapacity = (gateConfig, date, isWorkingDay) => {
@@ -69,6 +80,7 @@ const dayCapacity = (gateConfig, date, isWorkingDay) => {
   return {
     off: open.length === 0,
     hasOt: open.some((shift) => shift.otOn),
+    isDefaultMc: open.some((shift) => shift.isDefaultMc),
     capacityMin: open.length === 0 ? 0 : configured
       ? round2(open.reduce((sum, shift) => sum + shift.capacityMin, 0)) : null,
     shifts,
@@ -293,6 +305,7 @@ const mergeLiveStatusIntoLockedRows = (lockedRows, liveRows) => {
       current_gate: live.current_gate,
       proc_disp: live.proc_disp,
       rem_proc_in_gate: live.rem_proc_in_gate,
+      total_proc_in_gate: live.total_proc_in_gate ?? row.total_proc_in_gate,
       is_hold: Boolean(live.is_hold),
       status: live.status ?? row.status,
       pri: live.pri !== undefined ? live.pri : row.pri,
@@ -325,7 +338,10 @@ const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([]))
     const standardShiftMin = Object.fromEntries(SHIFTS.map((code) => [code, gate ? shiftMinutesPerMachine(gate.shifts[code], false) : 0]));
     const durations = allocations.map((item) => Number(item.lead_days));
     const leadDays = durations.every((value) => Number.isInteger(value) && value > 0 && value <= 366) ? Math.max(...durations) : null;
+    const procCounts = allocations.map((item) => positiveInt(item.total_proc_in_gate)).filter((v) => v !== null);
+    const totalProcInGate = procCounts.length > 0 ? Math.max(...procCounts) : null;
     const normal = standardShiftMin.day + standardShiftMin.night;
+    const loadMin = kind === "lot" ? calculateLotLoadMin(leadDays, totalProcInGate, normal) : 0;
     const deadlines = allocations.map((item) => item.must_out).filter(isDate).sort();
     const dueDates = allocations.map((item) => item.due_date).filter(isDate).sort();
     const activeRow = allocations.find((item) => item.gate_state === "in_gate") || row;
@@ -342,7 +358,7 @@ const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([]))
       baseDate: row.arrive_by, plannedDate: move?.planned_date || row.arrive_by, moved: Boolean(move),
       sourceChanged: Boolean(move) && move.original_date !== row.arrive_by, overdue: row.arrive_by < today,
       prevGate: row.prev_gate, prevDate: row.prev_must_out, nextGate: row.next_gate, nextDate: row.next_arrive_by,
-      leadDays, standardShiftMin, loadMin: kind === "lot" ? normal > 0 ? normal : null : 0,
+      leadDays, totalProcInGate, standardShiftMin, loadMin,
       kind, allocations, sourceIds: [id],
     };
   });
@@ -422,9 +438,9 @@ const buildCards = (rows, moves, today, config = buildCapacityConfig([])) => {
     // Work that is already overdue still has to be done, so it loads today.
     const baseDate = row.must_out < today ? today : row.must_out;
     const target = move ? move.planned_date : baseDate;
-    const duration = Number(row.lead_days);
     // Bound calendar expansion and flag bad/missing master values instead of inventing a duration.
-    const leadDays = Number.isInteger(duration) && duration > 0 && duration <= 366 ? duration : null;
+    const leadDays = positiveInt(row.lead_days, 366);
+    const totalProcInGate = positiveInt(row.total_proc_in_gate);
     const standardShiftMin = standards.get(row.gate_name) ?? { day: 0, night: 0 };
     const standardMin = round2(standardShiftMin.day + standardShiftMin.night);
     cards.push({
@@ -443,8 +459,8 @@ const buildCards = (rows, moves, today, config = buildCapacityConfig([])) => {
       overdue: row.must_out < today,
       prevGate: row.prev_gate, prevDate: row.prev_must_out,
       nextGate: row.next_gate, nextDate: row.next_must_out,
-      leadDays, standardShiftMin,
-      loadMin: leadDays !== null && standardMin > 0 ? standardMin : null,
+      leadDays, totalProcInGate, standardShiftMin,
+      loadMin: calculateLotLoadMin(leadDays, totalProcInGate, standardMin),
     });
   }
   const orphanMoves = moves.filter((move) => !used.has(`${move.work_key}|${move.gate_name}`)).map((move) => ({

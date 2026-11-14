@@ -12,7 +12,7 @@ import { InGateHeader } from "./InGateHeader";
 import { useSavedPlan } from "../hooks/useSavedPlan";
 import { useFinishedToday } from "../hooks/useFinishedToday";
 import { useMonthlyOutput } from "../hooks/useMonthlyOutput";
-import { planStatus, savedPlanGates, savedPlanRows } from "../savedPlan";
+import { planStatus, savedPlanGates, savedPlanRows, savedViewRows } from "../savedPlan";
 import { ApiWorkListTable } from "./ApiWorkListTable";
 import { ApiMonthlySummary } from "./ApiMonthlySummary";
 import { HistoryPanel } from "./HistoryPanel";
@@ -41,7 +41,7 @@ export default function SavedPlanPage() {
   const monthly = useMonthlyOutput(month, category, search, view === "month");
   const savedPlanLots = useMemo(() => saved ? savedPlanRows(saved.snapshot, "ALL") : [], [saved]);
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
-  const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows) : new Map(), [saved, rows]);
+  const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows, { excludePassed: true }) : new Map(), [saved, rows]);
   const gates = useMemo(() => {
     if (saved) return savedPlanGates(saved.snapshot, category);
     const list = category === "ALL" ? [...DEFAULT_FPC_GATES, ...DEFAULT_SMT_GATES] : category === "SMT" ? DEFAULT_SMT_GATES : DEFAULT_FPC_GATES;
@@ -50,7 +50,8 @@ export default function SavedPlanPage() {
   const gate = gates.find(item => item.gate === selectedGate)?.gate ?? gates[0]?.gate ?? "";
   const finishedRows = useMemo(() => finished.rows.filter(row => row.gate === gate && (category === "ALL" || row.processGroup === category)), [finished.rows, gate, category]);
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
-  const dayRows = useMemo(() => rows.filter(row => view === "month" ? row.plannedDate.startsWith(`${month}-`) : row.plannedDate === date), [rows, date, month, view]);
+  const dayRows = useMemo(() => savedViewRows(rows, view, view === "month" ? month : date), [rows, date, month, view]);
+  const dayPlanLots = useMemo(() => rows.filter(row => row.plannedDate === date && row.gate === gate), [rows, date, gate]);
   const scheduledDates = useMemo(() => [...new Set(gateRows.map(row => row.plannedDate))].sort(), [gateRows]);
   const queue = useMemo(() => dayRows.filter(row => row.gate === gate).map((lot, index) => ({ lot, sequence: index + 1 })), [dayRows, gate]);
   const visible = useMemo(() => {
@@ -166,11 +167,11 @@ export default function SavedPlanPage() {
                 {scheduledDates.length > 0 && <select aria-label="Scheduled day" className="select select-xs select-bordered ml-auto" value={scheduledDates.includes(date) ? date : ""} onChange={event => event.target.value && setDate(event.target.value)}><option value="" disabled>Select a planned day</option>{scheduledDates.map(day => <option key={day} value={day}>{day}</option>)}</select>}
               </div>
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}
-              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={queue.map(({ lot }) => lot)} savedPlanLots={savedPlanLots} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
+              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={dayPlanLots} savedPlanLots={savedPlanLots} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
             </div> : null}
         </div>
         {saved && <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}
-          snapshotLots={queue.map(({ lot }) => lot)} plan={{ version: saved.plan.version, savedAt: saved.plan.savedAt, savedBy: saved.plan.savedBy, reason: saved.plan.note ?? undefined, sourceCategory: category }} />}
+          snapshotLots={dayPlanLots} plan={{ version: saved.plan.version, savedAt: saved.plan.savedAt, savedBy: saved.plan.savedBy, reason: saved.plan.note ?? undefined, sourceCategory: category }} />}
       </>}
   </div>;
 }

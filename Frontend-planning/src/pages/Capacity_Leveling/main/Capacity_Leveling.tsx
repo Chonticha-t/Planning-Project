@@ -206,7 +206,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     () => data ? applyBoardCardOrder(buildBoardLots(data, lots, category), effectiveBoardCardOrder) : [],
     [data, lots, category, effectiveBoardCardOrder]
   );
-  const gateLots = useMemo(() => allBoardLots.filter((lot) => lot.gate === boardGate), [allBoardLots, boardGate]);
+  const gateLots = useMemo(
+    () => allBoardLots.filter((lot) => lot.gate === boardGate && !lot.passedGate),
+    [allBoardLots, boardGate]
+  );
   const boardLots = useMemo(
     () => gateLots.filter((lot) => rangeDates.has(lot.plannedDate)),
     [gateLots, rangeDates]
@@ -235,7 +238,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       // Rebuild to merge physical lots and apply priority at the destination before allocating shifts.
       projectedBoard = applyBoardCardOrder(buildBoardLots(data, projectedLots, category), effectiveBoardCardOrder);
     }
-    return allocateBoardShifts(data, projectedBoard);
+    return allocateBoardShifts(data, projectedBoard, { excludePassed: true });
   }, [data, allBoardLots, lots, category, effectiveBoardCardOrder, activeMovingLots, activePreviewTargetDate]);
 
   const displayGrid = useMemo(() => {

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, GripVertical } from "lucide-react";
 import type { BoardShiftAllocation, CapacityDay, LotItem } from "../../Capacity_Leveling/types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { planQuantity, planStatus } from "../savedPlan";
+import { planStatus, summarizeActivePlan } from "../savedPlan";
 import { useLotRouting, type LotRouting } from "../hooks/useLotRouting";
 import { LiveRouteDetails } from "./LiveRouteDetails";
 import type { FinishedEvidence, FinishedState } from "../hooks/useFinishedToday";
@@ -11,7 +11,11 @@ import { buildWorkRows } from "../finishedPlan";
 const unavailable = <span className="text-base-content/40" title="Not available in the saved plan">—</span>;
 const PAGE_SIZE = 100;
 type Filter = "all" | "queue" | "finished";
-const shiftName = (allocation?: BoardShiftAllocation) => {
+const rowShiftGroup = (lot: LotItem, allocation?: BoardShiftAllocation) =>
+  lot.kind === "lot" && lot.passedGate ? "passed" : allocation?.status;
+
+const shiftName = (allocation?: BoardShiftAllocation, lot?: LotItem | null) => {
+  if (lot?.kind === "lot" && lot.passedGate) return "PASSED GATE · Already passed gate";
   switch (allocation?.status) {
     case "day": return "DAY SHIFT · Planned allocation";
     case "night": return "NIGHT SHIFT · Planned allocation";
@@ -41,26 +45,22 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
   const work = useMemo(() => buildWorkRows(planOrder, savedPlanLots, finished.rows), [planOrder, savedPlanLots, finished.rows]);
   const display = work[filter].filter(row => !query || [row.lot?.product, row.lot?.label, row.evidence?.product, row.evidence?.lotNo]
     .some(value => value?.toLowerCase().includes(query)));
-  const totalLoad = planOrder.reduce<number | null>((sum, lot) => lot.kind !== "lot" ? sum
-    : sum === null || lot.loadMin === null ? null : sum + lot.loadMin, 0);
-  const capacityMin = capacity?.capacityMin;
-  const pct = totalLoad !== null && typeof capacityMin === "number" && capacityMin > 0 ? Math.round(totalLoad / capacityMin * 100) : null;
+  const summary = useMemo(() => summarizeActivePlan(planOrder, capacity?.capacityMin), [planOrder, capacity?.capacityMin]);
   const currentPage = Math.min(page, Math.max(0, Math.ceil(display.length / PAGE_SIZE) - 1));
   const visible = display.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const routing = useLotRouting(visible.flatMap(row => row.lot ? [row.lot] : []));
-  const lotCount = planQuantity(planOrder, "lots");
-  const needs = planOrder.filter(lot => lot.kind !== "lot").length;
   const pendingCount = work.queue.filter(row => row.lot?.kind === "lot").length;
+  const allLotCount = work.all.filter(row => !row.lot || row.lot.kind === "lot").length;
   const countAvailable = !finished.loading && !finished.error;
   const finishedCount = countAvailable ? finished.rows.length : "—";
 
   return <div className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-base-300 bg-base-200/45 px-3 py-2">
       <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-base-200 p-1">
-        {([['all', `All lots (${countAvailable ? pendingCount + finished.rows.length : "—"})`], ['queue', `In queue (${pendingCount})`], ['finished', `Finished today (${finishedCount})`]] as const).map(([value, text]) =>
+        {([['all', `All lots (${countAvailable ? allLotCount : "—"})`], ['queue', `In queue (${pendingCount})`], ['finished', `Finished today (${finishedCount})`]] as const).map(([value, text]) =>
           <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setPage(0); }}
             className={`rounded-md px-3 py-1 text-xs font-bold transition-colors cursor-pointer ${filter === value ? "bg-base-100 text-[#316be8] shadow-2xs" : "text-base-content/65 hover:text-base-content"}`}>{text}</button>)}
-        {needs > 0 && <span className="px-2 text-xs text-base-content/60">+ {needs} requirements / no ID</span>}
+        {summary.needs > 0 && <span className="px-2 text-xs text-base-content/60">+ {summary.needs} requirements / no ID</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-base-content/70 tabular-nums">
         <span>Finished today: <b>{finishedCount} lots observed</b></span>
@@ -90,12 +90,12 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
             {filter !== "finished" &&
             <tr className="h-10 bg-slate-50 border-b border-base-300 text-xs">
               <td colSpan={3} className="px-3 font-extrabold uppercase tracking-wider text-slate-700 border-r border-base-200">SAVED PLAN SUMMARY</td>
-              <td className="px-2.5 text-right font-bold border-r border-base-200">{formatGateQuantity(planQuantity(planOrder, "sheets"), "sheet")}</td>
-              <td className="px-2.5 text-right font-bold border-r border-base-200">{formatGateQuantity(planQuantity(planOrder, "pcs"), "piece")}</td>
+              <td className="px-2.5 text-right font-bold border-r border-base-200">{formatGateQuantity(summary.sheets, "sheet")}</td>
+              <td className="px-2.5 text-right font-bold border-r border-base-200">{formatGateQuantity(summary.pcs, "piece")}</td>
               <td className="text-center border-r border-base-200">{unavailable}</td>
-              <td className="text-center font-extrabold border-r border-base-200">{lotCount}</td>
-              <td className="px-2.5 text-right font-bold border-r border-base-200" title="Saved daily planning load; not remaining runtime">{totalLoad === null ? unavailable : totalLoad.toLocaleString()}</td>
-              <td className="px-3 border-r border-base-200"><CapacityBar pct={pct} /></td>
+              <td className="text-center font-extrabold border-r border-base-200">{summary.lotCount}</td>
+              <td className="px-2.5 text-right font-bold border-r border-base-200" title="Saved daily planning load; not remaining runtime">{summary.totalLoad === null ? unavailable : summary.totalLoad.toLocaleString()}</td>
+              <td className="px-3 border-r border-base-200"><CapacityBar pct={summary.pct} /></td>
               <td className="text-center">{unavailable}</td>
             </tr>}
             {visible.map((row, index) => {
@@ -103,14 +103,14 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
               if (!row.lot) return null;
               const { lot, sequence } = row;
               const allocation = allocations.get(lot.id);
-              const group = allocation?.status;
+              const group = rowShiftGroup(lot, allocation);
               const day = group === "day";
               const night = group === "night" || group === "split";
               const color = day ? "#f59e0b" : night ? "#6d4fd8" : "#94a3b8";
               const previous = visible[index - 1];
-              const showSection = !compactFinished && (!previous?.lot || allocations.get(previous.lot.id)?.status !== group);
+              const showSection = !compactFinished && (!previous?.lot || rowShiftGroup(previous.lot, allocations.get(previous.lot.id)) !== group);
               return <QueueRow key={lot.id} lot={lot} sequence={sequence} color={color} showSection={showSection}
-                section={shiftName(allocation)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
+                section={shiftName(allocation, lot)} sectionClass={day ? "bg-[#fef3c7] text-[#8a5a00] border-[#f5c542]" : night ? "bg-[#e9e3fb] text-[#5a3fc0] border-[#c4b5fd]" : "bg-base-200/70 text-base-content/60 border-base-300"}
                 compactFinished={compactFinished} evidence={row.evidence} allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
                 routeUnavailable={Boolean(routing.error)} onRoute={() => setRouteLot(lot)} />;
             })}
@@ -174,7 +174,7 @@ function QueueRow({ lot, sequence, color, showSection, section, sectionClass, al
     <tr data-plan-row={!evidence ? true : undefined} data-finished-row={evidence ? true : undefined} className="h-14 border-b border-base-300 bg-base-100 hover:bg-base-200/60" style={{ boxShadow: `inset 4px 0 0 ${color}` }}>
       <td className="px-2 text-center border-r border-base-200"><div className="inline-flex gap-1 items-center">{evidence ? <Check size={13} className="text-base-content/40" /> : <GripVertical size={14} className="text-base-content/15" />}<span className="w-5 text-xs font-extrabold">{sequence}</span></div></td>
       <td className="px-3 py-1.5 border-r border-base-200"><div className="font-bold text-sm break-words">{lot.product}</div><div className="mt-0.5 text-xs font-semibold text-base-content/55">{lot.kind === "unidentified" ? "No lot identity" : lot.label}</div>{evidence && <div className="text-[10px] text-base-content/50">Plan: {lot.plannedDate}</div>}</td>
-      <td className="px-2.5 text-center border-r border-base-200"><span title={evidence ? `Next gate SCAN IN: ${evidence.scannedAt}` : "Status captured when this plan was saved"} className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${evidence ? "bg-base-200 text-base-content/70" : lot.isHold ? "bg-[#fdecb3] text-[#8a5a00]" : lot.gateState === "in_gate" ? "bg-[#316be8] text-white" : "bg-base-200 text-base-content/70"}`}>{evidence ? "Finished" : planStatus(lot)}</span>{evidence && <div className="mt-1 text-[11px] tabular-nums">{evidence.scannedAt.slice(11, 19)}</div>}</td>
+      <td className="px-2.5 text-center border-r border-base-200"><span title={evidence ? `Next gate SCAN IN: ${evidence.scannedAt}` : "Status captured when this plan was saved"} className={`inline-flex rounded-md px-2.5 py-0.5 text-xs font-bold ${evidence || lot.passedGate ? "bg-base-200 text-base-content/70" : lot.isHold ? "bg-[#fdecb3] text-[#8a5a00]" : lot.gateState === "in_gate" ? "bg-[#316be8] text-white" : "bg-base-200 text-base-content/70"}`}>{evidence ? "Finished" : lot.passedGate ? "Passed gate" : planStatus(lot)}</span>{evidence && <div className="mt-1 text-[11px] tabular-nums">{evidence.scannedAt.slice(11, 19)}</div>}</td>
     {!compactFinished && <><td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.sheets, "sheet")}</td>
       <td className="px-2.5 text-right font-bold text-xs border-r border-base-200">{formatGateQuantity(lot.qty, "piece")}</td></>}
       <td className="px-3 text-center border-r border-base-200"><button type="button" onClick={onRoute} title="Inspect routing and current WIP" className="inline-flex max-w-full items-center gap-2 rounded-full border border-base-300/80 bg-base-100 px-3 py-1 hover:border-[#316be8]/50 text-xs"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${route?.status === "matched" ? "bg-[#316be8]" : "bg-base-300"}`} /><span className="truncate">{routeLoading ? "Loading…" : routeUnavailable ? "Routing unavailable" : route?.status === "matched" ? route.current?.process || route.current?.gate || "Details" : "Position unconfirmed"}</span></button></td>
