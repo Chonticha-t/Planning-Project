@@ -48,14 +48,14 @@ export const routes_capacity: AppRoute[] = [
     path: `${BASE}/forecast`,
     element: <Forecast />,
     label: "FORECAST",
-    Title: "FORECAST",
+    Title: "CAPACITY",
     icon: TrendingUp,
   },
   {
     path: `${BASE}/machine_loading`,
     element: <Machine_Loading />,
     label: "MACHINE LOADING",
-    Title: "MACHINE LOADING",
+    Title: "CAPACITY",
     icon: Cpu,
   },
 ];
@@ -101,14 +101,14 @@ export const routes_hidden: AppRoute[] = [
     path: `${BASE}/capacity/forecast`,
     element: <Forecast />,
     label: "FORECAST",
-    Title: "FORECAST",
+    Title: "CAPACITY",
     icon: TrendingUp,
   },
   {
     path: `${BASE}/capacity/machine_loading`,
     element: <Machine_Loading />,
     label: "MACHINE LOADING",
-    Title: "MACHINE LOADING",
+    Title: "CAPACITY",
     icon: Cpu,
   },
   {
