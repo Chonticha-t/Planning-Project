@@ -1,19 +1,15 @@
-import { useEffect, useRef, useState, memo, type ReactNode } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import {
-  Search,
-  RotateCcw,
-  FileSpreadsheet,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   ChevronDown,
   Check,
-  CircleDollarSign,
 } from "lucide-react";
 import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
 import { ITEM_UNIT_OPTIONS, SORT_OPTIONS, type PlanningFilter } from "../types";
 import ProductCombobox from "./ProductCombobox";
-import CallyDatePicker from "@/components/CallyCalendar";
+import DueDateFilter from "@/components/DueDateFilter";
 
 interface FilterBarProps {
   filter: PlanningFilter;
@@ -22,18 +18,9 @@ interface FilterBarProps {
   onSortModelChange: (model: GridSortModel) => void;
   onChange: (filter: PlanningFilter) => void;
   onSearch: (filter?: PlanningFilter) => void;
-  onReset?: () => void;
-  onExport: () => void;
-  loading?: boolean;
-  onOpenExchangeRate?: () => void;
+  /** Clear all filters and sort, then search */
+  onReset: () => void;
 }
-
-const Field = ({ label, className = "", children }: { label: string; className?: string; children: ReactNode }) => (
-  <div className={`flex flex-col gap-1.5 ${className}`}>
-    <span className="text-[11px] font-semibold text-base-content/50 uppercase tracking-wider">{label}</span>
-    {children}
-  </div>
-);
 
 const SortByDropdown = ({
   sortModel,
@@ -88,12 +75,10 @@ const SortByDropdown = ({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`btn btn-sm bg-base-100 text-base-content text-[13px] gap-1.5 font-medium shadow-none hover:bg-base-200/60 rounded-lg focus:outline-none transition-colors border ${
-          open
-            ? "border-primary bg-primary/5 text-primary"
-            : activeField
-              ? "border-primary/50 text-primary bg-primary/5"
-              : "border-base-content/20 hover:border-base-content/30"
+        className={`inline-flex h-8 items-center gap-1.5 px-3 rounded-lg border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap focus:outline-none ${
+          open || activeField
+            ? "bg-primary/10 border-primary/40 text-primary"
+            : "bg-base-200/40 border-base-300 text-base-content/80 hover:bg-base-200/70"
         }`}
       >
         {activeField ? (
@@ -197,6 +182,41 @@ const SortByDropdown = ({
   );
 };
 
+const STATUS_OPTIONS: { value: PlanningFilter["status"]; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "ready", label: "Ready" },
+  { value: "production plan", label: "Production Plan" },
+];
+
+// Same pill switcher as Planning Summary Gate / Capacity Leveling
+const PillGroup = <T extends string>({
+  label,
+  value,
+  options,
+  onSelect,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onSelect: (value: T) => void;
+}) => (
+  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+    {options.map((opt) => (
+      <button
+        key={opt.label}
+        type="button"
+        aria-pressed={value === opt.value}
+        onClick={() => onSelect(opt.value)}
+        className={`btn btn-xs h-full min-h-0 rounded-md px-3 whitespace-nowrap font-bold transition-all ${
+          value === opt.value ? "btn-primary shadow-xs" : "btn-ghost text-base-content/70 hover:bg-base-300/50"
+        }`}
+      >
+        {opt.label}
+      </button>
+    ))}
+  </div>
+);
+
 const FilterBar = ({
   filter,
   products,
@@ -204,139 +224,77 @@ const FilterBar = ({
   onSortModelChange,
   onChange,
   onSearch,
-  onReset: _onReset,
-  onExport,
-  loading: _loading,
-  onOpenExchangeRate,
+  onReset,
 }: FilterBarProps) => {
   const set = (key: keyof PlanningFilter, value: string) =>
     onChange({ ...filter, [key]: value });
 
-  const handleClearDate = () => {
-    const next = { ...filter, startdate: "", stopdate: "" };
+  // Same as before: choosing a pill / product searches immediately
+  const apply = (next: PlanningFilter) => {
     onChange(next);
     onSearch(next);
   };
 
+  const handleClearDate = () => apply({ ...filter, startdate: "", stopdate: "" });
+
   return (
-    <div className="rounded-2xl border border-base-200/80 bg-base-100 p-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label="Product" className="w-full sm:w-60">
+    <div className="flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+      {/* Left controls: Type, Status, Product, Due date, Sort */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <PillGroup
+          label="Type"
+          value={filter.item_prefix}
+          options={ITEM_UNIT_OPTIONS}
+          onSelect={(nextPrefix) =>
+            apply({
+              ...filter,
+              item_prefix: nextPrefix,
+              ...(nextPrefix && filter.item_prefix !== nextPrefix ? { prd_name: "" } : {}),
+            })
+          }
+        />
+
+        <div className="flex items-center gap-1.5 text-xs text-base-content/70 pl-1">
+          <span className="font-semibold">Status</span>
+          <PillGroup
+            label="Status"
+            value={filter.status}
+            options={STATUS_OPTIONS}
+            onSelect={(status) => apply({ ...filter, status })}
+          />
+        </div>
+
+        <div className="min-w-36 flex-1 basis-40 max-w-64">
           <ProductCombobox
             value={filter.prd_name}
             options={products}
             onChange={(v) => set("prd_name", v)}
-            onSelect={(v) => {
-              const next = { ...filter, prd_name: v };
-              onChange(next);
-              onSearch(next);
-            }}
+            onSelect={(v) => apply({ ...filter, prd_name: v })}
             onEnter={() => onSearch()}
           />
-        </Field>
-
-        <Field label="Type" className="w-full sm:w-28">
-          <select
-            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
-            value={filter.item_prefix}
-            onChange={(e) => {
-              const nextPrefix = e.target.value as PlanningFilter["item_prefix"];
-              const next: PlanningFilter = {
-                ...filter,
-                item_prefix: nextPrefix,
-                ...(nextPrefix && filter.item_prefix !== nextPrefix ? { prd_name: "" } : {}),
-              };
-              onChange(next);
-              onSearch(next);
-            }}
-          >
-            {ITEM_UNIT_OPTIONS.map((opt) => (
-              <option key={opt.label} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Status" className="w-full sm:w-40">
-          <select
-            className="select select-sm text-[13px] w-full rounded-lg border-base-content/20 bg-base-100 hover:border-base-content/30 focus:border-primary focus:outline-none transition-colors"
-            value={filter.status}
-            onChange={(e) => {
-              const next = { ...filter, status: e.target.value as PlanningFilter["status"] };
-              onChange(next);
-              onSearch(next);
-            }}
-          >
-            <option value="">All Statuses</option>
-            <option value="ready">Ready</option>
-            <option value="production plan">Production Plan</option>
-          </select>
-        </Field>
-
-        <Field label="Sort">
-          <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
-        </Field>
-
-        <Field label="Due date" className="w-full sm:w-auto">
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-            <CallyDatePicker
-              value={filter.startdate}
-              max={filter.stopdate || undefined}
-              placeholder="Start date"
-              className="w-full sm:w-36"
-              onChange={(v) => set("startdate", v)}
-            />
-            <span className="text-base-content/40">–</span>
-            <CallyDatePicker
-              value={filter.stopdate}
-              min={filter.startdate || undefined}
-              placeholder="End date"
-              className="w-full sm:w-36"
-              onChange={(v) => set("stopdate", v)}
-            />
-            <button
-              type="button"
-              className="btn btn-sm btn-primary rounded-lg text-[13px] font-medium shadow-xs px-3.5 gap-1.5 cursor-pointer"
-              onClick={() => onSearch()}
-            >
-              <Search size={14} className="shrink-0" />
-              <span>Search</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost rounded-lg text-[13px] gap-1 text-base-content/60 hover:text-base-content cursor-pointer"
-              onClick={handleClearDate}
-              disabled={!filter.startdate && !filter.stopdate}
-              title="Clear date"
-            >
-              <RotateCcw size={14} />
-              Clear
-            </button>
-          </div>
-        </Field>
-
-        <div className="flex items-center gap-2 ml-auto">
-          {onOpenExchangeRate && (
-            <button
-              type="button"
-              onClick={onOpenExchangeRate}
-              className="btn btn-sm btn-primary rounded-lg text-[13px] gap-1.5 font-medium shadow-xs transition-colors cursor-pointer"
-              title="Exchange Rate"
-            >
-              <CircleDollarSign size={15} className="shrink-0" />
-              <span className="hidden sm:inline">Exchange Rate</span>
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white border-none rounded-lg text-[13px] gap-1.5 font-medium shadow-xs transition-colors cursor-pointer"
-            onClick={onExport}
-          >
-            <FileSpreadsheet size={15} />
-            Export Excel
-          </button>
         </div>
+
+        <SortByDropdown sortModel={sortModel} onSortModelChange={onSortModelChange} />
+
+        {/* Due date — one compact button; pickers + Search / Clear open in a panel */}
+        <DueDateFilter
+          startdate={filter.startdate}
+          stopdate={filter.stopdate}
+          onStartChange={(v) => set("startdate", v)}
+          onStopChange={(v) => set("stopdate", v)}
+          onSearch={() => onSearch()}
+          onClear={handleClearDate}
+        />
+
+        {/* Reset every filter and sort */}
+        <button
+          type="button"
+          className="btn btn-xs h-8 px-2.5 btn-ghost rounded-lg text-xs font-semibold gap-1 text-base-content/60 hover:text-base-content cursor-pointer"
+          onClick={onReset}
+          title="Reset all filters"
+        >
+          Reset All
+        </button>
       </div>
     </div>
   );

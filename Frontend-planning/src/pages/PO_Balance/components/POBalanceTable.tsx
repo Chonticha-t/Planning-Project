@@ -5,7 +5,7 @@ import {
   GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { ClipboardList, History } from "lucide-react";
+import { CircleDollarSign, ClipboardList, FileSpreadsheet, History } from "lucide-react";
 import { SORT_OPTIONS, type PlanningRow, type PlanningStatus } from "../types";
 import { toDMY } from "../utils";
 
@@ -17,6 +17,8 @@ interface POBalanceTableProps {
   sortModel: GridSortModel;
   onSortModelChange: (model: GridSortModel) => void;
   onViewHistory?: (row: PlanningRow) => void;
+  onExport?: () => void;
+  onOpenExchangeRate?: () => void;
 }
 
 const num = (value: number, decimals = 0) =>
@@ -153,8 +155,8 @@ const getColumns = (
     field: "po_bal",
     headerName: "PO Bal",
     type: "number",
-    flex: 1,
-    minWidth: 120,
+    flex: 1.15,
+    minWidth: 150,
     align: "center",
     headerAlign: "center",
     renderCell: ({ row, value }) => {
@@ -169,14 +171,15 @@ const getColumns = (
             e.stopPropagation();
             onViewHistory?.(row);
           }}
-          className="group inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-md text-[14px] tabular-nums font-semibold text-base-content/85 hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
-          title="คลิกดูประวัติการคำนวณ (History)"
+          className="group inline-flex items-center justify-center gap-2 pl-2 pr-1 py-0.5 rounded-md text-[14px] tabular-nums font-semibold text-base-content/85 hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
+          title="ดูประวัติการคำนวณ (PO History)"
+          aria-label={`View PO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
         >
           <span>{val}</span>
-          <History
-            size={12}
-            className="opacity-0 group-hover:opacity-75 transition-opacity duration-150 shrink-0 text-primary"
-          />
+          {/* Always visible so users know history is available */}
+          <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors group-hover:bg-primary group-hover:text-primary-content">
+            <History size={13} />
+          </span>
         </button>
       );
     },
@@ -229,26 +232,51 @@ const POBalanceTable = ({
   sortModel,
   onSortModelChange,
   onViewHistory,
+  onExport,
+  onOpenExchangeRate,
 }: POBalanceTableProps) => {
   const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
-    <div className="rounded-2xl border border-base-300/80 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-base-300/80 bg-base-100">
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-            <ClipboardList size={17} />
-          </div>
-          <h2 className="font-bold text-base-content tracking-wide text-sm">PO BALANCE</h2>
+    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ClipboardList size={15} className="text-primary" />
+          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">PO Balance</h3>
+          <span className="text-[11px] text-base-content/60">Click PO Bal to view calculation history</span>
         </div>
-        <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70 tabular-nums">
-          {rows.length.toLocaleString("en-US")} rows
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-7 items-center px-2.5 rounded-md bg-base-200/80 border border-base-300 text-[11px] font-bold text-base-content/70 tabular-nums">
+            {rows.length.toLocaleString("en-US")} rows
+          </span>
+          {onOpenExchangeRate && (
+            <button
+              type="button"
+              onClick={onOpenExchangeRate}
+              className="btn btn-xs h-7 px-2.5 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs gap-1.5 cursor-pointer"
+              title="Exchange Rate"
+            >
+              <CircleDollarSign size={13} className="shrink-0" />
+              <span className="hidden sm:inline">Exchange Rate</span>
+            </button>
+          )}
+          {onExport && (
+            <button
+              type="button"
+              onClick={onExport}
+              className="btn btn-xs h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-xs gap-1.5 cursor-pointer"
+              title="Export Excel"
+            >
+              <FileSpreadsheet size={13} className="shrink-0" />
+              <span className="hidden sm:inline">Export Excel</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div
-        className="datagrid-outer"
+        className="datagrid-outer rounded-xl border border-base-300 overflow-hidden"
         style={{
-          height: "calc(100vh - 260px)",
+          height: "calc(100vh - 300px)",
           minHeight: 520,
           position: "relative",
         }}
@@ -404,6 +432,24 @@ const POBalanceTable = ({
                   "color-mix(in oklab, var(--color-base-content) 70%, transparent)",
               },
             "& .MuiDataGrid-overlay": { backgroundColor: "transparent" },
+
+            // ── Slim scrollbars without the ▲ ▼ arrow buttons ──
+            // daisyUI sets the standard `scrollbar-color` on :root (inherited); Chromium then ignores
+            // ::-webkit-scrollbar rules, so reset it to auto inside the grid.
+            "& *": { scrollbarColor: "auto", scrollbarWidth: "auto" },
+            // The pagination bar overflowed by a pixel and showed its own tiny scrollbar.
+            "& .MuiTablePagination-root": { overflow: "hidden" },
+            "& *::-webkit-scrollbar": { width: 8, height: 8 },
+            "& *::-webkit-scrollbar-button": { display: "none", width: 0, height: 0 },
+            "& *::-webkit-scrollbar-track": { backgroundColor: "transparent" },
+            "& *::-webkit-scrollbar-thumb": {
+              backgroundColor: "color-mix(in oklab, var(--color-base-content) 22%, transparent)",
+              borderRadius: 8,
+            },
+            "& *::-webkit-scrollbar-thumb:hover": {
+              backgroundColor: "color-mix(in oklab, var(--color-base-content) 35%, transparent)",
+            },
+            "& *::-webkit-scrollbar-corner": { backgroundColor: "transparent" },
           }}
         />
       </div>
