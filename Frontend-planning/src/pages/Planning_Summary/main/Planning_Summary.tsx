@@ -11,6 +11,7 @@ import PlanningSummaryTable, {
 } from "../components/PlanningSummaryTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import { toDMY } from "../../PO_Balance/utils";
+import "../../Planning_Summary_Gate/gateTheme.css";
 
 const Planning_Summary: React.FC = () => {
   const [filter, setFilter] = useState<PlanningSummaryFilter>(EMPTY_FILTER);
@@ -117,11 +118,8 @@ const Planning_Summary: React.FC = () => {
   }, [rows]);
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* 1. สรุปภาพรวม KPI Cards */}
-      <SummaryCards kpi={kpi} />
-
-      {/* 2. เมนูกรองข้อมูล Filter Bar */}
+    <div className="planning-summary-gate flex flex-col gap-3 w-full">
+      {/* 1. เมนูกรองข้อมูล Filter Bar (อยู่บนสุดเหมือนหน้า PO Balance / Summary Gate) */}
       <FilterBar
         filter={filter}
         filterOptions={filtersOptions}
@@ -133,6 +131,9 @@ const Planning_Summary: React.FC = () => {
         onExport={handleExport}
         loading={loading}
       />
+
+      {/* 2. สรุปภาพรวม KPI Cards */}
+      <SummaryCards kpi={kpi} />
 
       {/* 3. ตารางข้อมูล Planning Summary Table พร้อม Column Grouping */}
       <PlanningSummaryTable

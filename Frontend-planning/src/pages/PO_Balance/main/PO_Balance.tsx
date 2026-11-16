@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import type { GridSortModel } from "@mui/x-data-grid";
 
@@ -10,6 +10,7 @@ import ExchangeRateModal from "../components/ExchangeRateModal";
 import POBalanceTable from "../components/POBalanceTable";
 import POBalanceHistoryModal from "../components/POBalanceHistoryModal";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
+import "../../Planning_Summary_Gate/gateTheme.css";
 import { toDMY } from "../utils";
 
 const PO_Balance = () => {
@@ -73,9 +74,10 @@ const PO_Balance = () => {
     });
   }, [rows]);
 
+  const productCount = useMemo(() => new Set(rows.map((r) => r.prd_name)).size, [rows]);
+
   return (
-    <div className="flex flex-col gap-3">
-      <SummaryCards summary={summary} lastUpdatedAt={lastUpdatedAt} />
+    <div className="planning-summary-gate flex flex-col gap-3 w-full">
       <FilterBar
         filter={filter}
         products={products}
@@ -84,9 +86,11 @@ const PO_Balance = () => {
         onChange={setFilter}
         onSearch={handleSearch}
         onReset={handleReset}
-        onExport={handleExport}
-        onOpenExchangeRate={handleOpenExchangeRate}
-        loading={loading}
+      />
+      <SummaryCards
+        summary={summary}
+        lastUpdatedAt={lastUpdatedAt}
+        productCount={productCount}
       />
       <POBalanceTable
         rows={rows}
@@ -94,6 +98,8 @@ const PO_Balance = () => {
         sortModel={sortModel}
         onSortModelChange={setSortModel}
         onViewHistory={setSelectedHistoryRow}
+        onExport={handleExport}
+        onOpenExchangeRate={handleOpenExchangeRate}
       />
       <ExchangeRateModal
         isOpen={isExchangeRateModalOpen}

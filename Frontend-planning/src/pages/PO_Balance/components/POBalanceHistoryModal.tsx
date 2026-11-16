@@ -7,7 +7,7 @@ import {
   Calendar,
   Layers,
   ArrowDownRight,
-  TrendingDown,
+  ArrowUpRight,
   Info,
   Loader2,
   Package,
@@ -30,6 +30,14 @@ const num = (value: number | null | undefined, decimals = 0) =>
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,
       });
+
+/** "YYYY-MM-DD HH:mm:ss" → { date: "DD/MM/YYYY", time: "HH:mm" } */
+const splitDateTime = (value?: string | null) => {
+  if (!value) return { date: "-", time: "" };
+  return { date: toDMY(value.slice(0, 10)), time: value.slice(11, 16) };
+};
+
+const TH = "px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-base-content/60 whitespace-nowrap";
 
 const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
   isOpen,
@@ -81,12 +89,18 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
     fetchHistory();
   }, [isOpen, row]);
 
+  // Close with Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   if (typeof document === "undefined") return null;
 
-  // Calculate summary statistics from the available history.
-  const maxPoBal = history.length > 0 ? Math.max(...history.map((h) => h.po_bal ?? 0)) : row?.po_bal ?? 0;
-  const currentPoBal = row?.po_bal ?? 0;
-  const diff = maxPoBal - currentPoBal;
   const highestRev = history.reduce(
     (maxRev, item) => Math.max(maxRev, item.source_rev ?? -Infinity),
     -Infinity
@@ -108,41 +122,44 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
 
           {/* Modal Container */}
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="PO Balance History"
             initial={{ scale: 0.95, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 6 }}
             transition={{ type: "spring", duration: 0.25, bounce: 0.1 }}
-            className="relative w-full max-w-4xl bg-base-100 border border-base-300 rounded-2xl shadow-2xl overflow-hidden z-10 flex flex-col max-h-[90vh]"
+            className="relative z-10 flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-start justify-between p-5 border-b border-base-300/80 bg-base-100">
-              <div className="flex items-center gap-3.5">
-                <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0">
-                  <History size={22} />
-                </div>
-                <div>
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-base-300">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                  <History size={18} />
+                </span>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-base-content tracking-tight">
-                      PO Balance History
-                    </h2>
-                    <span className="badge badge-sm badge-ghost font-semibold text-xs text-base-content/70">
-                      {history.length} {history.length === 1 ? "Revision" : "Revisions"}
+                    <h2 className="text-base font-bold text-base-content">PO Balance History</h2>
+                    <span className="inline-flex h-5 items-center rounded-md bg-base-200 border border-base-300 px-2 text-[11px] font-bold text-base-content/70 tabular-nums">
+                      {history.length} {history.length === 1 ? "revision" : "revisions"}
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-base-content/70">
-                    <span className="font-semibold text-base-content flex items-center gap-1">
-                      <Package size={13} className="text-primary" />
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-base-content/60">
+                    <span className="inline-flex items-center gap-1 font-semibold text-base-content">
+                      <Package size={12} className="text-primary" />
                       {row.prd_name}
                     </span>
                     {row.item && (
-                      <span className="badge badge-xs badge-outline text-[11px] font-mono">
-                        {row.item}
-                      </span>
+                      <>
+                        <span className="text-base-content/30">•</span>
+                        <span className="font-mono text-[11px]">{row.item}</span>
+                      </>
                     )}
-                    <span className="flex items-center gap-1 text-base-content/60">
+                    <span className="text-base-content/30">•</span>
+                    <span className="inline-flex items-center gap-1">
                       <Calendar size={12} />
-                      Due Date: <strong className="text-base-content">{toDMY(row.due_date)}</strong>
+                      Due <strong className="font-semibold text-base-content">{toDMY(row.due_date)}</strong>
                     </span>
                   </div>
                 </div>
@@ -151,205 +168,162 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="btn btn-circle btn-sm btn-ghost text-base-content/60 hover:text-base-content"
+                className="btn btn-circle btn-sm btn-ghost shrink-0 text-base-content/60 hover:text-base-content"
                 aria-label="Close"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Quick Stat Highlights */}
-            {history.length > 0 && (
-              <div className="grid grid-cols-3 gap-3 p-4 bg-base-200/40 border-b border-base-300/60 text-xs">
-                <div className="flex flex-col p-2.5 rounded-xl bg-base-100 border border-base-300/70">
-                  <span className="text-base-content/60 font-medium">Initial PO Bal (Highest)</span>
-                  <span className="text-base font-bold text-base-content tabular-nums mt-0.5">
-                    {num(maxPoBal)} <span className="text-[11px] font-normal text-base-content/50">pcs</span>
-                  </span>
-                </div>
-                <div className="flex flex-col p-2.5 rounded-xl bg-base-100 border border-base-300/70">
-                  <span className="text-base-content/60 font-medium flex items-center gap-1">
-                    Current PO Bal (Table)
-                    <span className="badge badge-xs badge-success py-0 px-1 text-[10px]">Active</span>
-                  </span>
-                  <span className="text-base font-bold text-primary tabular-nums mt-0.5">
-                    {num(currentPoBal)} <span className="text-[11px] font-normal text-base-content/50">pcs</span>
-                  </span>
-                </div>
-                <div className="flex flex-col p-2.5 rounded-xl bg-base-100 border border-base-300/70">
-                  <span className="text-base-content/60 font-medium flex items-center gap-1">
-                    <TrendingDown size={13} className="text-emerald-500" />
-                    PO Bal Reduction
-                  </span>
-                  <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
-                    {diff > 0 ? `-${num(diff)}` : "0"}{" "}
-                    <span className="text-[11px] font-normal text-base-content/50">
-                      {maxPoBal > 0 ? `(${((diff / maxPoBal) * 100).toFixed(0)}%)` : ""}
-                    </span>
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Body / Table */}
-            <div className="p-4 overflow-y-auto flex-1">
+            {/* Body */}
+            <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-5">
               {loading ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3 text-base-content/60">
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-base-content/60">
                   <Loader2 size={28} className="animate-spin text-primary" />
                   <span className="text-sm">Loading PO Balance history...</span>
                 </div>
               ) : error ? (
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
+                <div className="flex items-center gap-3 rounded-xl border border-error/20 bg-error/10 p-4 text-sm text-error">
                   <Info size={18} />
                   <span>{error}</span>
                 </div>
               ) : history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-14 text-center px-4">
-                  <div className="p-3 rounded-full bg-base-200 text-base-content/40 mb-3">
+                <div className="flex flex-col items-center justify-center px-4 py-14 text-center">
+                  <div className="mb-3 rounded-full bg-base-200 p-3 text-base-content/40">
                     <Layers size={28} />
                   </div>
-                  <h3 className="font-bold text-base text-base-content mb-1">
-                    No history available
-                  </h3>
-                  <p className="text-xs text-base-content/60 max-w-sm mb-4">
+                  <h3 className="mb-1 text-base font-bold text-base-content">No history available</h3>
+                  <p className="mb-4 max-w-sm text-xs text-base-content/60">
                     No calculation history has been recorded for this product and due date.
                   </p>
-                  <div className="p-3 rounded-xl bg-base-200/70 border border-base-300/80 text-xs inline-flex items-center gap-2">
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-base-300 bg-base-200/70 p-3 text-xs">
                     <span className="text-base-content/60">Current PO balance in the main table:</span>
-                    <strong className="text-primary tabular-nums font-bold text-sm">
-                      {num(row.po_bal)} pcs
-                    </strong>
+                    <strong className="text-sm font-bold tabular-nums text-primary">{num(row.po_bal)} pcs</strong>
                   </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-base-300/80">
-                  <table className="table table-sm w-full text-center">
-                    <thead>
-                      <tr className="bg-base-200/70 text-base-content/70 text-[12px] border-b border-base-300/80">
-                        <th className="py-2.5 px-3 text-center">Source Rev</th>
-                        <th className="py-2.5 px-3 text-center">Updated At</th>
-                        <th className="py-2.5 px-3 text-center">PO Bal</th>
-                        <th className="py-2.5 px-3 text-center">Change</th>
-                        <th className="py-2.5 px-3 text-center">Unmovement</th>
-                        <th className="py-2.5 px-3 text-center">F/G</th>
-                        <th className="py-2.5 px-3 text-center">Net Required</th>
-                        <th className="py-2.5 px-3 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-base-300/50 text-[13px]">
-                      {history.map((item, idx) => {
-                        const isCurrentRow = item.source_rev === highestRev;
-                        const prevItem = idx > 0 ? history[idx - 1] : null;
-                        const changeFromPrev = prevItem ? (item.po_bal ?? 0) - (prevItem.po_bal ?? 0) : 0;
+                <>
+                  {/* Revisions table */}
+                  <div className="overflow-x-auto rounded-xl border border-base-300">
+                    <table className="w-full min-w-[760px] border-collapse text-[13px]">
+                      <thead className="bg-base-200">
+                        <tr className="border-b border-base-300">
+                          <th className={`${TH} text-left`}>Revision</th>
+                          <th className={`${TH} text-left`}>Updated At</th>
+                          <th className={`${TH} text-right`}>PO Bal</th>
+                          <th className={`${TH} text-right`}>Change</th>
+                          <th className={`${TH} text-right`}>Unmovement</th>
+                          <th className={`${TH} text-right`}>F/G</th>
+                          <th className={`${TH} text-right`}>Net Required</th>
+                          <th className={`${TH} text-center`}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {history.map((item, idx) => {
+                          const isCurrentRow = item.source_rev === highestRev;
+                          const prevItem = idx > 0 ? history[idx - 1] : null;
+                          const changeFromPrev = prevItem ? (item.po_bal ?? 0) - (prevItem.po_bal ?? 0) : 0;
+                          const updated = splitDateTime(item.source_update_at);
+                          const isReady = item.status === "ready";
 
-                        return (
-                          <tr
-                            key={item.run_id || idx}
-                            className={`transition-colors ${
-                              isCurrentRow
-                                ? "bg-primary/5 hover:bg-primary/10 font-medium"
-                                : "hover:bg-base-200/50"
-                            }`}
-                          >
-                            {/* Source Rev */}
-                            <td className="py-2.5 px-3 whitespace-nowrap">
-                              <span className="inline-flex w-max flex-nowrap items-center gap-1.5 font-bold text-base-content">
-                                <span className="badge badge-sm badge-outline shrink-0 whitespace-nowrap font-mono text-[11px]">
-                                  Rev {item.source_rev}
-                                </span>
-                                {isCurrentRow && (
-                                  <span className="badge badge-xs badge-primary shrink-0 whitespace-nowrap text-[10px] font-semibold">
-                                    Current
+                          return (
+                            <tr
+                              key={item.run_id || idx}
+                              className={`border-b border-base-300/70 last:border-b-0 transition-colors ${
+                                isCurrentRow ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-base-200/50"
+                              }`}
+                            >
+                              {/* Revision */}
+                              <td
+                                className={`px-3 py-2.5 whitespace-nowrap border-l-[3px] ${
+                                  isCurrentRow ? "border-l-primary" : "border-l-transparent"
+                                }`}
+                              >
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="inline-flex h-6 min-w-12 items-center justify-center rounded-md border border-base-300 bg-base-100 px-2 font-mono text-[11.5px] font-bold text-base-content">
+                                    Rev {item.source_rev}
                                   </span>
+                                  {isCurrentRow && (
+                                    <span className="inline-flex h-5 items-center rounded-md bg-primary px-1.5 text-[10px] font-bold text-primary-content">
+                                      Current
+                                    </span>
+                                  )}
+                                </span>
+                              </td>
+
+                              {/* Updated At */}
+                              <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
+                                <span className="font-medium text-base-content">{updated.date}</span>
+                                {updated.time && <span className="ml-1.5 text-base-content/50">{updated.time}</span>}
+                              </td>
+
+                              {/* PO Bal */}
+                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                <span className={`text-[14px] font-bold tabular-nums ${isCurrentRow ? "text-primary" : "text-base-content"}`}>
+                                  {num(item.po_bal)}
+                                </span>
+                              </td>
+
+                              {/* Change */}
+                              <td className="px-3 py-2.5 text-right whitespace-nowrap text-[12.5px]">
+                                {idx === 0 ? (
+                                  <span className="text-base-content/40">Initial</span>
+                                ) : changeFromPrev < 0 ? (
+                                  <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-emerald-600">
+                                    <ArrowDownRight size={13} />
+                                    {num(changeFromPrev)}
+                                  </span>
+                                ) : changeFromPrev > 0 ? (
+                                  <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-rose-500">
+                                    <ArrowUpRight size={13} />+{num(changeFromPrev)}
+                                  </span>
+                                ) : (
+                                  <span className="text-base-content/40">—</span>
                                 )}
-                              </span>
-                            </td>
+                              </td>
 
-                            {/* Updated At */}
-                            <td className="py-2.5 px-3 font-mono text-[12px] text-base-content/80 whitespace-nowrap">
-                              {item.source_update_at || "-"}
-                            </td>
+                              {/* Unmovement */}
+                              <td className="px-3 py-2.5 text-right tabular-nums text-base-content/75">{num(item.unmovement)}</td>
 
-                            {/* PO Bal */}
-                            <td className="py-2.5 px-3">
-                              <span
-                                className={`tabular-nums font-bold text-[14px] ${
-                                  isCurrentRow ? "text-primary" : "text-base-content/90"
-                                }`}
-                              >
-                                {num(item.po_bal)}
-                              </span>
-                            </td>
+                              {/* F/G */}
+                              <td className="px-3 py-2.5 text-right tabular-nums text-base-content/75">{num(item.f_g)}</td>
 
-                            {/* Change */}
-                            <td className="py-2.5 px-3 whitespace-nowrap text-xs">
-                              {idx === 0 ? (
-                                <span className="text-base-content/40 italic">Initial balance</span>
-                              ) : changeFromPrev < 0 ? (
-                                <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
-                                  <ArrowDownRight size={13} />
-                                  {num(changeFromPrev)}
-                                </span>
-                              ) : changeFromPrev > 0 ? (
-                                <span className="text-error font-semibold tabular-nums">
-                                  +{num(changeFromPrev)}
-                                </span>
-                              ) : (
-                                <span className="text-base-content/40">-</span>
-                              )}
-                            </td>
+                              {/* Net Required */}
+                              <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${item.net_required_pcs ? "text-rose-500" : "text-base-content/40"}`}>
+                                {num(item.net_required_pcs)}
+                              </td>
 
-                            {/* Unmovement */}
-                            <td className="py-2.5 px-3 tabular-nums text-base-content/75">
-                              {num(item.unmovement)}
-                            </td>
-
-                            {/* F/G */}
-                            <td className="py-2.5 px-3 tabular-nums text-base-content/75">
-                              {num(item.f_g)}
-                            </td>
-
-                            {/* Net Required */}
-                            <td className="py-2.5 px-3 tabular-nums font-semibold text-error">
-                              {num(item.net_required_pcs)}
-                            </td>
-
-                            {/* Status */}
-                            <td className="py-2.5 px-3">
-                              <span
-                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                                  item.status === "ready"
-                                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                                    : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                                }`}
-                              >
+                              {/* Status — same pills as the main table */}
+                              <td className="px-3 py-2.5 text-center whitespace-nowrap">
                                 <span
-                                  className={`size-1.5 rounded-full ${
-                                    item.status === "ready" ? "bg-emerald-500" : "bg-amber-500"
+                                  className={`status-pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                                    isReady ? "status-pill-ready" : "status-pill-plan"
                                   }`}
-                                />
-                                {item.status === "ready" ? "Ready" : "Production Plan"}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                                >
+                                  <span className="status-dot size-1.5 shrink-0 rounded-full" />
+                                  {isReady ? "Ready" : "Production Plan"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-5 py-3 border-t border-base-300/80 bg-base-100 text-xs text-base-content/60">
+            <div className="flex items-center justify-between gap-3 border-t border-base-300 bg-base-200/40 px-5 py-3 text-xs text-base-content/60">
               <span className="flex items-center gap-1.5">
-                <Info size={14} className="text-primary" />
-                Revisions are sorted from lowest to highest. The highest revision is marked Current.
+                <Info size={13} className="shrink-0 text-primary" />
+                Oldest revision first. The highest revision is marked Current.
               </span>
               <button
                 type="button"
                 onClick={onClose}
-                className="btn btn-sm btn-ghost px-4 rounded-lg font-medium"
+                className="btn btn-sm btn-primary rounded-lg px-5 font-semibold"
               >
                 Close
               </button>
@@ -363,4 +337,3 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
 };
 
 export default POBalanceHistoryModal;
-

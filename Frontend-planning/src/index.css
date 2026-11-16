@@ -585,3 +585,10 @@ html[data-sidebar-animating] .datagrid-outer * {
   border: none !important;
   box-shadow: none !important;
 }
+
+/* Fix DaisyUI v5 base-select picker inheriting semi-transparent background from select trigger */
+.select::picker(select),
+select::picker(select) {
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}

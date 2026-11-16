@@ -78,11 +78,11 @@ const ProductCombobox = ({
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <label className="input input-sm rounded-lg text-[13px] w-full border border-base-content/20 bg-base-100 hover:border-base-content/30 focus-within:border-primary focus-within:outline-none transition-colors flex items-center gap-2">
+      <label className="input input-sm h-8 rounded-lg text-xs w-full border border-base-300 bg-base-200/40 focus-within:bg-base-100 focus-within:border-primary focus-within:outline-none transition-colors flex items-center gap-2">
         <Search size={14} className="opacity-50 shrink-0" />
         <input
           type="text"
-          className="text-[13px] grow bg-transparent outline-none placeholder:text-base-content/40"
+          className="text-xs grow bg-transparent outline-none placeholder:text-base-content/40"
           placeholder={placeholder}
           value={value}
           onFocus={() => setOpen(true)}
