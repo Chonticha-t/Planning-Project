@@ -385,6 +385,9 @@ router.get("/history", async (req, res) => {
   }
 
   try {
+    // Prefer the latest 'calculated' snapshot per source_rev so newer 'source_only'
+    // rows (logged with NULL inventory/status after a newer rev arrives) do not hide
+    // previously calculated F/G history.
     const queryStr = `
       SELECT DISTINCT ON (h.prd_name, h.due_date, h.source_rev)
         run_id,
@@ -401,6 +404,7 @@ router.get("/history", async (req, res) => {
         rem_unmovement::float8                          AS rem_unmovement,
         rem_fg::float8                                  AS rem_fg,
         status,
+        calculation_state,
         to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS')   AS updated_at,
         sheet_per_lot::int                              AS sheet_per_lot,
         pcs_per_lot::int                                AS pcs_per_lot,
@@ -411,6 +415,7 @@ router.get("/history", async (req, res) => {
         h.prd_name,
         h.due_date,
         h.source_rev DESC,
+        (COALESCE(h.calculation_state, '') = 'calculated') DESC,
         h.calculated_at DESC,
         h.run_id DESC
     `;

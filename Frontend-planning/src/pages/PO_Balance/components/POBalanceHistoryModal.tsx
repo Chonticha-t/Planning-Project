@@ -225,6 +225,8 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                           const changeFromPrev = prevItem ? (item.po_bal ?? 0) - (prevItem.po_bal ?? 0) : 0;
                           const updated = splitDateTime(item.source_update_at);
                           const isReady = item.status === "ready";
+                          const isSourceOnly =
+                            item.calculation_state === "source_only" || !item.status;
 
                           return (
                             <tr
@@ -293,16 +295,23 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                                 {num(item.net_required_pcs)}
                               </td>
 
-                              {/* Status — same pills as the main table */}
+                              {/* Status — same pills as the main table; show neutral pill for uncalculated source_only rows */}
                               <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                                <span
-                                  className={`status-pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                                    isReady ? "status-pill-ready" : "status-pill-plan"
-                                  }`}
-                                >
-                                  <span className="status-dot size-1.5 shrink-0 rounded-full" />
-                                  {isReady ? "Ready" : "Production Plan"}
-                                </span>
+                                {isSourceOnly ? (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full border border-base-300 bg-base-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-base-content/55">
+                                    <span className="size-1.5 shrink-0 rounded-full bg-base-content/40" />
+                                    Not Calculated
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`status-pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                                      isReady ? "status-pill-ready" : "status-pill-plan"
+                                    }`}
+                                  >
+                                    <span className="status-dot size-1.5 shrink-0 rounded-full" />
+                                    {isReady ? "Ready" : "Production Plan"}
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
