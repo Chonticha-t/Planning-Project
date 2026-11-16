@@ -55,11 +55,12 @@ const shiftMinutesPerMachine = (shift, otOn = shift.otEnabled) => {
 };
 
 // A special day replaces the calendar and the shift switch for that date and shift only.
-const effectiveShift = (shift, { isWorkingDay, special }) => {
+// When includeOt is false (Required baseline), both default OT and Special-Day OT overrides are omitted.
+const effectiveShift = (shift, { isWorkingDay, special }, { includeOt = true } = {}) => {
   let open = shift.enabled && isWorkingDay;
-  let otOn = shift.otEnabled;
+  let otOn = includeOt ? shift.otEnabled : false;
   if (special === "off") open = false;
-  if (special === "ot") { open = true; otOn = true; }
+  if (special === "ot" && includeOt) { open = true; otOn = true; }
   if (special === "work") { open = true; otOn = false; }
   if (!open) return { open: false, otOn: false, capacityMin: 0, isDefaultMc: false };
   // Unconfigured machine count defaults to 1 MC for calculation without persisting 1 to DB.
@@ -69,11 +70,11 @@ const effectiveShift = (shift, { isWorkingDay, special }) => {
   return { open: true, otOn, capacityMin, isDefaultMc };
 };
 
-const dayCapacity = (gateConfig, date, isWorkingDay) => {
+const dayCapacity = (gateConfig, date, isWorkingDay, options) => {
   const shifts = {};
   for (const code of SHIFTS) {
     const shift = gateConfig.shifts[code];
-    shifts[code] = effectiveShift(shift, { isWorkingDay, special: shift.specialDays[date] });
+    shifts[code] = effectiveShift(shift, { isWorkingDay, special: shift.specialDays[date] }, options);
   }
   const open = SHIFTS.map((code) => shifts[code]).filter((shift) => shift.open);
   const configured = open.every((shift) => shift.capacityMin !== null);
@@ -87,9 +88,9 @@ const dayCapacity = (gateConfig, date, isWorkingDay) => {
   };
 };
 
-const capacityGrid = (config, days) => Object.fromEntries(config.map((gate) => [
+const capacityGrid = (config, days, options) => Object.fromEntries(config.map((gate) => [
   gate.gate,
-  Object.fromEntries(days.map((day) => [day.date, dayCapacity(gate, day.date, day.isWorking)])),
+  Object.fromEntries(days.map((day) => [day.date, dayCapacity(gate, day.date, day.isWorking, options)])),
 ]));
 
 // Green up to 85%, yellow up to 100%, red above.

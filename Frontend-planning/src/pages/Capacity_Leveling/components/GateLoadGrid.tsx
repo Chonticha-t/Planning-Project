@@ -584,7 +584,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
             <div className="mb-1 flex items-center gap-2 text-xs font-bold tracking-wide text-base-content/70">
               <span className="h-2 w-2 rounded-full bg-base-content/40" />
               REQUIRED
-              <span className="font-normal text-base-content/50">· arrival dates from Summary Gate</span>
+              <span className="font-normal text-base-content/50">· arrival dates from Summary Gate · before OT</span>
             </div>
             {renderTable(requiredGridData ?? [], 0, false)}
           </div>

@@ -1304,3 +1304,47 @@ test("board workload formula scales 950 normal minutes by lead_days / total_proc
   assert.equal(eightMcCap, 7600);
   assert.equal(Math.round((totalLoad / eightMcCap) * 100), 125);
 });
+
+test("includeOt=false excludes default OT and Special-Day OT overrides while keeping normal, work and off days", () => {
+  const cfg = gate(
+    { mcLines: 2, otEnabled: true, specialDays: { "2026-11-15": "ot", "2026-11-17": "off", "2026-11-18": "work" } },
+    { enabled: false, mcLines: 2, specialDays: { "2026-11-16": "ot", "2026-11-18": "work" } }
+  );
+  // Working day: Day OT is stripped to 950; Night special "ot" on disabled shift reverts to closed.
+  const mon = dayCapacity(cfg, "2026-11-16", true, { includeOt: false });
+  assert.deepEqual([mon.capacityMin, mon.hasOt, mon.shifts.day.otOn, mon.shifts.night.open], [950, false, false, false]);
+  // Holiday opened via Special-Day "ot": stays OFF before OT.
+  const sun = dayCapacity(cfg, "2026-11-15", false, { includeOt: false });
+  assert.deepEqual([sun.off, sun.capacityMin, sun.hasOt], [true, 0, false]);
+  // Explicit Day Off stays OFF.
+  const tue = dayCapacity(cfg, "2026-11-17", true, { includeOt: false });
+  assert.deepEqual([tue.off, tue.capacityMin], [true, 0]);
+  // Explicit Normal ("work") special day opens closed night shift without OT.
+  const wed = dayCapacity(cfg, "2026-11-18", true, { includeOt: false });
+  assert.deepEqual([wed.capacityMin, wed.hasOt, wed.shifts.day.open, wed.shifts.night.open], [1900, false, true, true]);
+});
+
+test("load endpoint returns pre-OT requiredCapacity alongside OT-enabled capacity", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.capacity_setting/, [
+      row({ gate_name: "FADL", resource_count: 2, ot_enabled: true }),
+      row({ setting_id: "s2", gate_name: "FADL", shift_code: "night", resource_count: 2, ot_enabled: true }),
+      row({ setting_id: "x1", gate_name: "FADL", shift_code: "day", setting_kind: "exception", valid_from: "2026-11-15", ot_enabled: true }),
+    ]],
+    [/planning_summary_gate/, [work()]],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/load?startdate=2026-11-14&stopdate=2026-11-16");
+    assert.equal(response.status, 200);
+    const { data } = await response.json();
+    assert.equal(data.capacity.FADL["2026-11-14"].capacityMin, 2620);
+    assert.equal(data.capacity.FADL["2026-11-14"].hasOt, true);
+    assert.equal(data.requiredCapacity.FADL["2026-11-14"].capacityMin, 1900);
+    assert.equal(data.requiredCapacity.FADL["2026-11-14"].hasOt, false);
+    assert.equal(data.capacity.FADL["2026-11-15"].off, false);
+    assert.equal(data.capacity.FADL["2026-11-15"].capacityMin, 1310);
+    assert.equal(data.requiredCapacity.FADL["2026-11-15"].off, true);
+    assert.equal(data.requiredCapacity.FADL["2026-11-15"].capacityMin, 0);
+  });
+});

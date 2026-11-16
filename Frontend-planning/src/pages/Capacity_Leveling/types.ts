@@ -164,6 +164,8 @@ export interface LevelingData {
   calendarDays: { date: string; isWorking: boolean }[];
   gates: GateInfo[];
   capacity: Record<string, Record<string, CapacityDay>>;
+  /** Daily capacity before OT (excludes default OT and Special-Day OT overrides). */
+  requiredCapacity?: Record<string, Record<string, CapacityDay>>;
   cards: ApiCard[];
   arrivalRows: GateArrivalRow[];
   undatedArrivalCount: number;

@@ -839,3 +839,46 @@ test("passed_gate rows are excluded from buildGrid, calculateKpis and Capacity L
   assert.equal(withoutPassed.get("passed-1")?.status, "none");
   assert.equal(withoutPassed.get("active-1")?.status, "day");
 });
+
+test("Required grid uses pre-OT requiredCapacity when provided while Planned uses OT-enabled capacity", () => {
+  const source = data([
+    card({ id: "c1", workKey: "w1", lotNo: "L1", arriveBy: "2026-11-16", loadMin: 1100 }),
+    card({ id: "c2", workKey: "w2", lotNo: "L2", arriveBy: "2026-11-19", loadMin: 950 }),
+  ]);
+  source.arrivalRows[0].lead_days = 1;
+  source.arrivalRows[0].total_proc_in_gate = null;
+  // Total load on 2026-11-16 is 950 (from 1 actual lot * standard 950). Use 2 lots on 2026-11-16 so pre-OT is overloaded (>100%) and with-OT fits (<=100%).
+  source.arrivalRows[0] = { ...source.arrivalRows[0], lot_no: "L1", lead_days: 1 };
+  source.arrivalRows.push({ ...source.arrivalRows[0], workKey: "w1b", lot_no: "L1B", pri: 99 });
+  source.capacity.FADL["2026-11-16"] = open(2620, true);
+  source.capacity.FADL["2026-11-19"] = open(1310, true); // holiday opened via Special-Day OT
+  source.requiredCapacity = structuredClone(source.capacity);
+  source.requiredCapacity.FADL["2026-11-16"] = open(1900, false);
+  source.requiredCapacity.FADL["2026-11-19"] = closed;
+
+  const lots = source.cards.map(toLotItem);
+  const planned = buildGrid(source, lots, false, "EFPC_GEN");
+  const required = buildGrid(source, lots, true, "EFPC_GEN");
+
+  const plannedMon = cellOf(planned, "2026-11-16", "FADL");
+  const requiredMon = cellOf(required, "2026-11-16", "FADL");
+  assert.deepEqual([plannedMon.loadMin, plannedMon.capacityMin, plannedMon.pct, plannedMon.hasOt], [1900, 2620, 73, true]);
+  assert.deepEqual([requiredMon.loadMin, requiredMon.capacityMin, requiredMon.pct, requiredMon.hasOt], [1900, 1900, 100, false]);
+
+  // Move L1 from 2026-11-16 to 2026-11-17 and check holiday 2026-11-19 (OFF in Required vs OT open in Planned).
+  const plannedSun = cellOf(planned, "2026-11-19", "FADL");
+  const requiredSun = cellOf(required, "2026-11-19", "FADL");
+  assert.deepEqual([plannedSun.off, plannedSun.pct, plannedSun.hasOt], [false, 73, true]);
+  assert.deepEqual([requiredSun.off, requiredSun.capacityMin, cellPct(requiredSun)], [true, 0, null]);
+
+  // Add a 3rd lot on 2026-11-16 so Required (2850/1900 = 150%) is red while Planned (2850/2620 = 109% -> make cap 3000) differs.
+  source.capacity.FADL["2026-11-16"] = open(3000, true);
+  source.arrivalRows.push({ ...source.arrivalRows[0], workKey: "w1c", lot_no: "L1C", pri: 100 });
+  const planned3 = buildGrid(source, lots, false, "EFPC_GEN");
+  const required3 = buildGrid(source, lots, true, "EFPC_GEN");
+  assert.equal(cellOf(required3, "2026-11-16", "FADL").pct, 150);
+  assert.equal(cellOf(planned3, "2026-11-16", "FADL").pct, 95);
+  const kpis = calculateKpis(planned3, required3, lots, source);
+  assert.equal(kpis.overloadCells, 0);
+  assert.equal(kpis.overloadCellsRequired, 2); // 2026-11-16 (150%) + 2026-11-19 (OFF with arrival)
+});

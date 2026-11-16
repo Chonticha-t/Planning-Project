@@ -335,9 +335,10 @@ export const buildGrid = (
   useBaseDates = false,
   category: ProcessCategory = "ALL"
 ): DayGateLoad[] => {
+  const capacityByGate = useBaseDates ? (data.requiredCapacity ?? data.capacity) : data.capacity;
   const grid: DayGateLoad[] = data.days.map((day) => {
     const gates: DayGateLoad["gates"] = {};
-    for (const { gate } of data.gates) gates[gate] = emptyCell(data.capacity[gate]?.[day.date]);
+    for (const { gate } of data.gates) gates[gate] = emptyCell(capacityByGate[gate]?.[day.date]);
     const d = dayjs(day.date);
     return {
       date: day.date,
