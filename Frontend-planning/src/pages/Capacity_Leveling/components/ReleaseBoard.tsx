@@ -1,8 +1,6 @@
 import React, { useMemo, useRef, useEffect, useState } from "react";
 import dayjs from "dayjs";
 import {
-  LayoutGrid,
-  List,
   AlertCircle,
   CheckCircle2,
   ChevronLeft,
@@ -35,9 +33,7 @@ interface ReleaseBoardProps {
   today: string;
   plannedIndex: Map<string, string>;
   viewMode: ViewMode;
-  onViewModeChange: (vm: ViewMode) => void;
   granularity: Granularity;
-  onGranularityChange: (g: Granularity) => void;
   selectedLot: LotItem | null;
   onSelectLot: (lot: LotItem) => void;
   onMoveLot: (lot: LotItem, targetDate: string) => void;
@@ -86,9 +82,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   today,
   plannedIndex,
   viewMode,
-  onViewModeChange,
   granularity,
-  onGranularityChange,
   selectedLot,
   onSelectLot,
   onMoveLot,
@@ -282,7 +276,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
   return (
     <div className="flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
-      {/* Persistent Header Bar with List/Board, Days/Weeks & Horizontal Scroll Buttons */}
+      {/* Persistent Header Bar with Board Controls & Horizontal Scroll Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
@@ -361,40 +355,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             Edit
           </button>
 
-          {/* List / Board Toggle */}
-          <div
-            role="group"
-            aria-label="View mode"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
-          >
-            <button
-              type="button"
-              aria-pressed={viewMode === "list"}
-              onClick={() => onViewModeChange("list")}
-              className={`rounded-md px-3 py-1 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                viewMode === "list"
-                  ? "bg-primary text-primary-content shadow-xs"
-                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-              }`}
-            >
-              <List size={13} />
-              <span>List</span>
-            </button>
-            <button
-              type="button"
-              aria-pressed={viewMode === "board"}
-              onClick={() => onViewModeChange("board")}
-              className={`rounded-md px-3 py-1 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                viewMode === "board"
-                  ? "bg-primary text-primary-content shadow-xs"
-                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-              }`}
-            >
-              <LayoutGrid size={13} />
-              <span>Board</span>
-            </button>
-          </div>
-
           {viewMode === "board" && (
             <div role="group" aria-label="Board size"
               className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5">
@@ -416,37 +376,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </div>
           )}
 
-          {/* Days / Weeks Toggle */}
-          <div
-            role="group"
-            aria-label="Granularity"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
-          >
-            <button
-              type="button"
-              aria-pressed={granularity === "days"}
-              onClick={() => onGranularityChange("days")}
-              className={`rounded-md px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
-                granularity === "days"
-                  ? "bg-primary text-primary-content shadow-xs"
-                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-              }`}
-            >
-              Days
-            </button>
-            <button
-              type="button"
-              aria-pressed={granularity === "weeks"}
-              onClick={() => onGranularityChange("weeks")}
-              className={`rounded-md px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
-                granularity === "weeks"
-                  ? "bg-primary text-primary-content shadow-xs"
-                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-              }`}
-            >
-              Weeks
-            </button>
-          </div>
         </div>
       </div>
 

@@ -647,9 +647,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 today={today}
                 plannedIndex={plannedIndex}
                 viewMode={viewMode}
-                onViewModeChange={setViewMode}
                 granularity={granularity}
-                onGranularityChange={setGranularity}
                 selectedLot={selectedLot}
                 onSelectLot={(lot) => setSelectedLotId((prev) => (prev === lot.id ? null : lot.id))}
                 onMoveLot={handleStageMoveLot}
