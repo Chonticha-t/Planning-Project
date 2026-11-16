@@ -66,14 +66,20 @@ test("mixed-product board quantities cannot be attributed in full to one finishe
 });
 
 test("matched identity uses the full saved queue's allocation, preserving Night and Over minutes", () => {
-  const saved = lot();
-  const earlier = lot({ id: "earlier", label: "LOT-EARLIER", loadMin: 100 });
+  const earlier = lot({ id: "earlier", label: "LOT-EARLIER", loadMin: 60 });
+  const nightLot = lot({ id: "night-card", label: "LOT-NIGHT", loadMin: 60 });
+  const saved = lot({ loadMin: 80 });
   const allocations = allocateBoardShifts({ capacity: { "GATE-A": { "2026-11-11": {
-    off: false, hasOt: false, capacityMin: 200,
-    shifts: { day: { open: true, otOn: false, capacityMin: 100 }, night: { open: true, otOn: false, capacityMin: 100 } },
-  } } } }, [earlier, saved]);
-  const matched = matchFinishedPlan(evidence, indexFinishedPlans([earlier, saved]));
-  assert.deepEqual(allocations.get(matched.lot!.id), { status: "over", dayMin: 0, nightMin: 100, overflowMin: 50 });
+    off: false, hasOt: false, capacityMin: 180,
+    shifts: { day: { open: true, otOn: false, capacityMin: 100 }, night: { open: true, otOn: false, capacityMin: 80 } },
+  } } } }, [earlier, nightLot, saved]);
+  const matchedNight = matchFinishedPlan({ ...evidence, lotNo: "LOT-NIGHT" }, indexFinishedPlans([earlier, nightLot, saved]));
+  const matchedOver = matchFinishedPlan(evidence, indexFinishedPlans([earlier, nightLot, saved]));
+  assert.deepEqual(allocations.get(matchedNight.lot!.id), { status: "night", dayMin: 0, nightMin: 60, overflowMin: 0 });
+  assert.deepEqual(allocations.get(matchedOver.lot!.id), {
+    status: "over", dayMin: 0, nightMin: 0, overflowMin: 80,
+    reason: "Day has 40 min and Night has 20 min left; neither fits the whole lot. Open OT or move the date.",
+  });
 });
 
 test("a queued row changes to Finished with the exact same lot data and original position", () => {

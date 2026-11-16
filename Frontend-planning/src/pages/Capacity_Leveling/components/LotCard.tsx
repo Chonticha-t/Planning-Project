@@ -8,7 +8,6 @@ import {
   AlertCircle,
   Sun,
   Moon,
-  SunMoon,
   AlertTriangle,
   Clock3,
 } from "lucide-react";
@@ -19,7 +18,6 @@ import { DatePickerPopover } from "./DatePickerPopover";
 const SHIFT_THEMES = {
   day: { label: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: "color-mix(in oklab, #facc15 10%, var(--color-base-100))" },
   night: { label: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: "color-mix(in oklab, #4f46e5 7%, var(--color-base-100))" },
-  split: { label: "Day + Night", Icon: SunMoon, badge: "bg-violet-100 text-violet-950 border-violet-200", background: "linear-gradient(115deg, color-mix(in oklab, #facc15 10%, var(--color-base-100)), color-mix(in oklab, #4f46e5 7%, var(--color-base-100)))" },
   over: { label: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: "color-mix(in oklab, #f43f5e 6%, var(--color-base-100))" },
   unassigned: { label: "Shift pending", Icon: Clock3, badge: "bg-base-200 text-base-content/70 border-base-300", background: undefined },
   none: { label: "No shift", Icon: Clock3, badge: "", background: undefined },

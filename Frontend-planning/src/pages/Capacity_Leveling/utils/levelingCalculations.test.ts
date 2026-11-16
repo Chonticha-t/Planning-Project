@@ -212,13 +212,50 @@ test("a lot that does not fit the remaining Day moves wholly to Night; leftovers
   assert.deepEqual(board.map(lot => withOt.get(lot.id)?.status), ["day", "day", "night"]);
 });
 
-test("a lot larger than any whole shift spans shifts and reports only the remainder as overflow", () => {
-  const source = data([card(), card({ id: "second", workKey: "second", lotNo: "SECOND" })]);
+test("a lot larger than any whole shift overflows without splitting shifts or locking normal lots", () => {
+  const source = data([
+    card({ loadMin: 950 }),
+    card({ id: "second", workKey: "second", lotNo: "SECOND", loadMin: 400 }),
+    card({ id: "third", workKey: "third", lotNo: "THIRD", loadMin: 400 }),
+  ]);
   source.capacity.FADL["2026-11-16"] = shiftDay(600, 500);
   const board = buildBoardLots(source, source.cards.map(toLotItem));
   const allocations = allocateBoardShifts(source, board);
-  assert.deepEqual(allocations.get(board[0].id), { status: "split", dayMin: 600, nightMin: 350, overflowMin: 0 });
-  assert.deepEqual(allocations.get(board[1].id), { status: "over", dayMin: 0, nightMin: 150, overflowMin: 800 });
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["over", "day", "night"]);
+  assert.deepEqual(allocations.get(board[0].id), {
+    status: "over", dayMin: 0, nightMin: 0, overflowMin: 950,
+    reason: "Lot requires 950 min, which exceeds one full shift (Day 600 min, Night 500 min). Open OT, add MC, or move the date.",
+  });
+  assert.deepEqual(allocations.get(board[1].id), { status: "day", dayMin: 400, nightMin: 0, overflowMin: 0 });
+  assert.deepEqual(allocations.get(board[2].id), { status: "night", dayMin: 0, nightMin: 400, overflowMin: 0 });
+});
+
+test("variable workloads keep strict Day -> Night -> Over order without jumping backward into leftover minutes", () => {
+  const source = data([
+    card({ id: "c1", workKey: "w1", lotNo: "LOT-1", loadMin: 633.33 }),
+    card({ id: "c2", workKey: "w2", lotNo: "LOT-2", loadMin: 633.33 }),
+    card({ id: "c3", workKey: "w3", lotNo: "LOT-3", loadMin: 316.67 }),
+    card({ id: "c4", workKey: "w4", lotNo: "LOT-4", loadMin: 633.33 }),
+    card({ id: "c5", workKey: "w5", lotNo: "LOT-5", loadMin: 316.67 }),
+  ]);
+  source.capacity.FADL["2026-11-16"] = shiftDay(950, 950);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["day", "night", "night", "over", "over"]);
+  assert.equal(allocations.get(board[3].id)?.overflowMin, 633.33);
+  assert.equal(allocations.get(board[4].id)?.overflowMin, 316.67);
+});
+
+test("asymmetric Day OT overflow locks Day without blocking Night for normal-sized lots", () => {
+  const source = data([
+    card({ id: "c1", workKey: "w1", lotNo: "LOT-1", loadMin: 910 }),
+    card({ id: "c2", workKey: "w2", lotNo: "LOT-2", loadMin: 1000 }),
+    card({ id: "c3", workKey: "w3", lotNo: "LOT-3", loadMin: 300 }),
+  ]);
+  source.capacity.FADL["2026-11-16"] = shiftDay(1310, 950);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(board.map(lot => allocations.get(lot.id)?.status), ["day", "over", "night"]);
 });
 
 test("closed shifts are skipped, closed days overflow, and updated capacity changes assignments", () => {

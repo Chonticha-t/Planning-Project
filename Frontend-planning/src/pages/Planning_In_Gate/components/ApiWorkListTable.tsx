@@ -19,7 +19,6 @@ const shiftName = (allocation?: BoardShiftAllocation, lot?: LotItem | null) => {
   switch (allocation?.status) {
     case "day": return "DAY SHIFT · Planned allocation";
     case "night": return "NIGHT SHIFT · Planned allocation";
-    case "split": return "D/S + N/S · Planned allocation";
     case "over": return "OVER CAPACITY · Review plan";
     case "none": return "REQUIREMENTS · No production lot";
     default: return "SHIFT UNASSIGNED · Capacity unavailable";
@@ -105,7 +104,7 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
               const allocation = allocations.get(lot.id);
               const group = rowShiftGroup(lot, allocation);
               const day = group === "day";
-              const night = group === "night" || group === "split";
+              const night = group === "night";
               const color = day ? "#f59e0b" : night ? "#6d4fd8" : "#94a3b8";
               const previous = visible[index - 1];
               const showSection = !compactFinished && (!previous?.lot || rowShiftGroup(previous.lot, allocations.get(previous.lot.id)) !== group);

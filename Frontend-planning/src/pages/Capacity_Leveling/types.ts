@@ -9,7 +9,7 @@ export type Shift = "day" | "night";
 export type SpecialDay = "ot" | "work" | "off";
 export type LoadStatus = "green" | "yellow" | "red";
 export interface BoardShiftAllocation {
-  status: "day" | "night" | "split" | "over" | "unassigned" | "none";
+  status: "day" | "night" | "over" | "unassigned" | "none";
   dayMin: number;
   nightMin: number;
   overflowMin: number;
