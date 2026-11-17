@@ -5,11 +5,11 @@ import { ROUTING_MESSAGES, type LotRouting } from "../hooks/useLotRouting";
 import { gateTransitions } from "../routingWindow";
 
 interface Props {
-  lot: LotItem; route?: LotRouting; loading: boolean; error?: string; checkedAt?: string;
+  lot: LotItem; route?: LotRouting; loading: boolean; error?: string;
   retry: () => void; onClose: () => void;
 }
 
-export function LiveRouteDetails({ lot, route, loading, error, checkedAt, retry, onClose }: Props) {
+export function LiveRouteDetails({ lot, route, loading, error, retry, onClose }: Props) {
   const current = route?.status === "matched" ? route.current : null;
   const transitions = gateTransitions(route?.steps ?? [], lot.gate);
   return createPortal(<div className="planning-summary-gate fixed inset-0 z-[120] flex items-center justify-center p-4" onKeyDown={event => event.key === "Escape" && onClose()}>
@@ -50,7 +50,7 @@ export function LiveRouteDetails({ lot, route, loading, error, checkedAt, retry,
           {transition.steps.length > 100 && <p className="mt-2 text-xs text-base-content/55">Showing positions {start + 1}–{Math.min(start + 100, transition.steps.length)} of {transition.steps.length} within this gate.</p>}
             </section>;
           })}
-          <dl className="grid grid-cols-2 gap-2 mt-4 text-xs"><dt>WIP source updated</dt><dd>{current?.updatedAt || route?.observed?.updatedAt || "Unavailable"}</dd><dt>Checked at</dt><dd>{checkedAt || "—"}</dd><dt>Saved planned arrival</dt><dd>{lot.plannedDate}</dd></dl>
+          <dl className="grid grid-cols-2 gap-2 mt-4 text-xs"><dt>WIP source updated</dt><dd>{(current?.updatedAt || route?.observed?.updatedAt)?.replace(/\.\d+/, "") || "Unavailable"}</dd><dt>Saved planned arrival</dt><dd>{lot.plannedDate}</dd></dl>
           <p className="mt-3 text-xs text-base-content/50">WIP reflects its source refresh. Routing order does not confirm scan completion; scan times and ETA are unavailable.</p>
         </>}
     </div>
