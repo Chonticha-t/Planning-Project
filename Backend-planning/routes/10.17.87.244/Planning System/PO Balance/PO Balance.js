@@ -370,7 +370,7 @@ router.get("/last_updated", async (req, res) => {
   }
 });
 
-// GET /api_p1/planning/history — ดึงประวัติการคำนวณ PO Balance จากตาราง planning.po_balance_history
+// GET /api_p1/planning/history - one saved PO balance per source revision.
 router.get("/history", async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.query.prd_name);
@@ -384,51 +384,41 @@ router.get("/history", async (req, res) => {
     });
   }
 
+  const parsedDate = new Date(due_date + "T00:00:00.000Z");
+  if (prd_name.length > 100 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(due_date) ||
+      due_date.startsWith("0000-") ||
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== due_date) {
+    return res.status(400).json({
+      status: "ERROR",
+      message: "Provide a product name up to 100 characters and a valid YYYY-MM-DD date.",
+      data: [],
+    });
+  }
+
   try {
-    // Prefer the latest 'calculated' snapshot per source_rev so newer 'source_only'
-    // rows (logged with NULL inventory/status after a newer rev arrives) do not hide
-    // previously calculated F/G history.
+    // The primary key guarantees one row per revision; source timestamps are preserved.
     const queryStr = `
-      SELECT DISTINCT ON (h.prd_name, h.due_date, h.source_rev)
-        run_id,
-        to_char(calculated_at, 'YYYY-MM-DD HH24:MI:SS') AS calculated_at,
-        to_char(h.source_update_at, 'YYYY-MM-DD HH24:MI:SS') AS source_update_at,
-        source_rev::int                                 AS source_rev,
-        prd_name,
-        item,
-        to_char(due_date, 'YYYY-MM-DD')                 AS due_date,
-        po_bal::float8                                  AS po_bal,
-        unmovement::float8                              AS unmovement,
-        f_g::float8                                     AS f_g,
-        net_required_pcs::float8                        AS net_required_pcs,
-        rem_unmovement::float8                          AS rem_unmovement,
-        rem_fg::float8                                  AS rem_fg,
-        status,
-        calculation_state,
-        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS')   AS updated_at,
-        sheet_per_lot::int                              AS sheet_per_lot,
-        pcs_per_lot::int                                AS pcs_per_lot,
-        pcs_per_sheet::float8                           AS pcs_per_sheet
+      SELECT h.prd_name,
+             to_char(h.due_date, 'YYYY-MM-DD') AS due_date,
+             h.rev::int AS source_rev,
+             h.po_bal::float8 AS po_bal,
+             to_char(h.updated_at, 'YYYY-MM-DD HH24:MI:SS') AS source_update_at
       FROM planning.po_balance_history h
       WHERE h.prd_name = $1 AND h.due_date = CAST($2 AS date)
-      ORDER BY
-        h.prd_name,
-        h.due_date,
-        h.source_rev DESC,
-        (COALESCE(h.calculation_state, '') = 'calculated') DESC,
-        h.calculated_at DESC,
-        h.run_id DESC
+      ORDER BY h.rev ASC
     `;
 
     const { rows } = await query(queryStr, [prd_name, due_date]);
-
     return res.json({
       status: "OK",
       data: rows,
       message: rows.length > 0 ? "History data found." : "No history data found.",
     });
-  } catch (err) {
-    console.error("Database error in /history:", err);
+  } catch {
+    // Query errors can contain confidential products, parameters or connection details.
+    console.error("Database error in /history.");
     return res.status(500).json({
       status: "ERROR",
       data: [],

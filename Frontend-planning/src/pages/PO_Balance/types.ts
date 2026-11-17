@@ -65,23 +65,9 @@ export interface ApiResponse<T> {
 }
 
 export interface POBalanceHistoryRow {
-  run_id: string;
-  calculated_at: string;
   source_update_at: string | null;
   source_rev: number;
   prd_name: string;
-  item?: string | null;
   due_date: string;
-  po_bal: number;
-  unmovement: number | null;
-  f_g: number | null;
-  net_required_pcs: number | null;
-  rem_unmovement?: number | null;
-  rem_fg?: number | null;
-  status?: string | null;
-  calculation_state?: string | null;
-  updated_at?: string | null;
-  sheet_per_lot?: number | null;
-  pcs_per_lot?: number | null;
-  pcs_per_sheet?: number | null;
+  po_bal: number | null;
 }

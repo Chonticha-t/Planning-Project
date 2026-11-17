@@ -55,7 +55,9 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
       return;
     }
 
+    const controller = new AbortController();
     const fetchHistory = async () => {
+      setHistory([]);
       setLoading(true);
       setError(null);
       try {
@@ -67,10 +69,12 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
               due_date: row.due_date,
             },
             timeout: 8000,
+            signal: controller.signal,
           }
         );
 
-        if (res.data?.status === "OK") {
+        if (controller.signal.aborted) return;
+        if (res.data?.status === "OK" && Array.isArray(res.data.data)) {
           const sortedHistory = [...(res.data.data || [])].sort(
             (a, b) => (a.source_rev ?? -1) - (b.source_rev ?? -1)
           );
@@ -78,15 +82,17 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
         } else {
           setError(res.data?.message || "Unable to load history.");
         }
-      } catch (err: unknown) {
-        console.error("Failed to fetch PO balance history:", err);
+      } catch {
+        if (controller.signal.aborted) return;
+        console.error("Failed to fetch PO balance history.");
         setError("Unable to connect to the server to load history.");
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     fetchHistory();
+    return () => controller.abort();
   }, [isOpen, row]);
 
   // Close with Escape
@@ -129,7 +135,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 6 }}
             transition={{ type: "spring", duration: 0.25, bounce: 0.1 }}
-            className="relative z-10 flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
+            className="relative z-10 flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -194,7 +200,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                   </div>
                   <h3 className="mb-1 text-base font-bold text-base-content">No history available</h3>
                   <p className="mb-4 max-w-sm text-xs text-base-content/60">
-                    No calculation history has been recorded for this product and due date.
+                    No PO revision history has been recorded for this product and due date.
                   </p>
                   <div className="inline-flex items-center gap-2 rounded-xl border border-base-300 bg-base-200/70 p-3 text-xs">
                     <span className="text-base-content/60">Current PO balance in the main table:</span>
@@ -205,32 +211,28 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                 <>
                   {/* Revisions table */}
                   <div className="overflow-x-auto rounded-xl border border-base-300">
-                    <table className="w-full min-w-[760px] border-collapse text-[13px]">
+                    <table className="w-full min-w-[480px] border-collapse text-[13px]">
                       <thead className="bg-base-200">
                         <tr className="border-b border-base-300">
                           <th className={`${TH} text-left`}>Revision</th>
                           <th className={`${TH} text-left`}>Updated At</th>
                           <th className={`${TH} text-right`}>PO Bal</th>
                           <th className={`${TH} text-right`}>Change</th>
-                          <th className={`${TH} text-right`}>Unmovement</th>
-                          <th className={`${TH} text-right`}>F/G</th>
-                          <th className={`${TH} text-right`}>Net Required</th>
-                          <th className={`${TH} text-center`}>Status</th>
                         </tr>
                       </thead>
                       <tbody>
                         {history.map((item, idx) => {
                           const isCurrentRow = item.source_rev === highestRev;
                           const prevItem = idx > 0 ? history[idx - 1] : null;
-                          const changeFromPrev = prevItem ? (item.po_bal ?? 0) - (prevItem.po_bal ?? 0) : 0;
+                          const changeFromPrev =
+                            prevItem && item.po_bal != null && prevItem.po_bal != null
+                              ? item.po_bal - prevItem.po_bal
+                              : null;
                           const updated = splitDateTime(item.source_update_at);
-                          const isReady = item.status === "ready";
-                          const isSourceOnly =
-                            item.calculation_state === "source_only" || !item.status;
 
                           return (
                             <tr
-                              key={item.run_id || idx}
+                              key={JSON.stringify([item.prd_name, item.due_date, item.source_rev])}
                               className={`border-b border-base-300/70 last:border-b-0 transition-colors ${
                                 isCurrentRow ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-base-200/50"
                               }`}
@@ -270,6 +272,8 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                               <td className="px-3 py-2.5 text-right whitespace-nowrap text-[12.5px]">
                                 {idx === 0 ? (
                                   <span className="text-base-content/40">Initial</span>
+                                ) : changeFromPrev == null ? (
+                                  <span className="text-base-content/40" title="A balance is missing">-</span>
                                 ) : changeFromPrev < 0 ? (
                                   <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-emerald-600">
                                     <ArrowDownRight size={13} />
@@ -284,35 +288,6 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                                 )}
                               </td>
 
-                              {/* Unmovement */}
-                              <td className="px-3 py-2.5 text-right tabular-nums text-base-content/75">{num(item.unmovement)}</td>
-
-                              {/* F/G */}
-                              <td className="px-3 py-2.5 text-right tabular-nums text-base-content/75">{num(item.f_g)}</td>
-
-                              {/* Net Required */}
-                              <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${item.net_required_pcs ? "text-rose-500" : "text-base-content/40"}`}>
-                                {num(item.net_required_pcs)}
-                              </td>
-
-                              {/* Status — same pills as the main table; show neutral pill for uncalculated source_only rows */}
-                              <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                                {isSourceOnly ? (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full border border-base-300 bg-base-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-base-content/55">
-                                    <span className="size-1.5 shrink-0 rounded-full bg-base-content/40" />
-                                    Not Calculated
-                                  </span>
-                                ) : (
-                                  <span
-                                    className={`status-pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                                      isReady ? "status-pill-ready" : "status-pill-plan"
-                                    }`}
-                                  >
-                                    <span className="status-dot size-1.5 shrink-0 rounded-full" />
-                                    {isReady ? "Ready" : "Production Plan"}
-                                  </span>
-                                )}
-                              </td>
                             </tr>
                           );
                         })}

@@ -5,228 +5,144 @@ const path = require("node:path");
 const vm = require("node:vm");
 const express = require("express");
 
-const routePath = path.join(
-  __dirname,
-  "../routes/10.17.87.244/Planning System/PO Balance/PO Balance.js"
-);
+const routesRoot = path.resolve(__dirname, "../routes");
+const routePaths = fs.readdirSync(routesRoot, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => path.join(routesRoot, entry.name, "Planning System/PO Balance/PO Balance.js"))
+  .filter((candidate) => fs.existsSync(candidate));
+assert.equal(routePaths.length, 1, "Expected one PO Balance route");
 
-function selectDistinctHistoryRows(rows, sql) {
-  assert.match(sql, /SELECT DISTINCT ON \(h\.prd_name, h\.due_date, h\.source_rev\)/i);
-  assert.match(sql, /\bcalculation_state\b/i);
-  assert.match(
-    sql,
-    /ORDER BY[\s\S]*h\.source_rev DESC,\s*\(COALESCE\(h\.calculation_state, ''\) = 'calculated'\) DESC,\s*h\.calculated_at DESC,\s*h\.run_id DESC/i
-  );
-
-  const sorted = [...rows].sort((a, b) => {
-    if (a.prd_name !== b.prd_name) return a.prd_name.localeCompare(b.prd_name);
-    if (a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
-    if (a.source_rev !== b.source_rev) return b.source_rev - a.source_rev;
-
-    const aCalc = a.calculation_state === "calculated" ? 1 : 0;
-    const bCalc = b.calculation_state === "calculated" ? 1 : 0;
-    if (aCalc !== bCalc) return bCalc - aCalc;
-
-    if (a.calculated_at !== b.calculated_at) {
-      return b.calculated_at.localeCompare(a.calculated_at);
-    }
-    return b.run_id.localeCompare(a.run_id);
-  });
-
-  const seen = new Set();
-  const result = [];
-  for (const row of sorted) {
-    const key = `${row.prd_name}|${row.due_date}|${row.source_rev}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(row);
-  }
-  return result;
-}
-
-async function withPOBalanceApi(rows, callback) {
+async function withPOBalanceApi({ rows = [], fail = false } = {}, callback) {
   const queries = [];
+  const errors = [];
   const pool = {
-    query: async (sql, params) => {
+    async query(sql, params) {
       queries.push({ sql, params });
-      if (sql.includes("FROM planning.po_balance_history")) {
-        const [prdName, dueDate] = params;
-        const filtered = rows.filter(
-          (r) => r.prd_name === prdName && r.due_date === dueDate
-        );
-        return { rows: selectDistinctHistoryRows(filtered, sql) };
-      }
-      return { rows: [] };
+      if (fail) throw new Error("SYNTHETIC_PRIVATE_DETAIL");
+      return { rows };
     },
-    connect: async () => ({
-      query: async () => ({ rows: [] }),
-      release() {},
-    }),
+    async connect() {
+      return { query: async () => ({ rows: [] }), release() {} };
+    },
   };
-
   const context = {
     module: { exports: {} },
     exports: {},
-    console,
+    console: { ...console, error: (...args) => errors.push(args) },
     process,
     setInterval: () => 0,
-    clearInterval: () => {},
+    clearInterval() {},
     require(name) {
       if (name === "express") return express;
       if (name === "../../config") return { pool_smart: pool };
       if (name === "../Auth/Auth") {
         return { verifyPlanner: (_req, _res, next) => next() };
       }
-      throw new Error(`Unexpected dependency in PO Balance.js: ${name}`);
+      throw new Error("Unexpected PO Balance dependency");
     },
   };
-
-  vm.runInNewContext(fs.readFileSync(routePath, "utf8"), context);
-
+  vm.runInNewContext(fs.readFileSync(routePaths[0], "utf8"), context);
   const app = express();
   app.use(express.json());
   app.use(context.module.exports);
-
   const server = app.listen(0, "127.0.0.1");
-  await new Promise((resolve) => server.once("listening", resolve));
+  await new Promise((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
   const port = server.address().port;
-
   try {
     await callback(async (urlPath) => {
-      const response = await fetch(`http://127.0.0.1:${port}${urlPath}`);
+      const response = await fetch("http://127.0.0.1:" + port + urlPath);
       return {
         status: response.status,
         body: await response.json(),
         cacheControl: response.headers.get("cache-control"),
       };
-    }, queries);
+    }, queries, errors);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
 }
 
-test("GET /history validates required prd_name and due_date parameters", async () => {
-  await withPOBalanceApi([], async (get, queries) => {
-    const missingDue = await get("/history?prd_name=MCI-224S-0E");
-    assert.equal(missingDue.status, 400);
-    assert.equal(missingDue.body.status, "ERROR");
+test("history rejects missing product or due date before querying", async () => {
+  await withPOBalanceApi({}, async (get, queries) => {
+    for (const url of ["/history", "/history?prd_name=TEST-PRODUCT", "/history?due_date=2026-11-23"]) {
+      const res = await get(url);
+      assert.equal(res.status, 400);
+      assert.equal(res.body.status, "ERROR");
+    }
     assert.equal(queries.length, 0);
   });
 });
 
-test("GET /history prefers calculated snapshot over newer source_only rows for the same source_rev", async () => {
-  const sampleRows = [
-    // Rev 0 had calculated F/G before newer source revisions caused subsequent runs to log source_only
-    {
-      run_id: "run-0a",
-      calculated_at: "2026-11-09 10:07:02",
-      source_update_at: "2026-11-06 08:00:01",
-      source_rev: 0,
-      prd_name: "MCI-224S-0E",
-      item: "94MCI224S0E",
-      due_date: "2026-11-23",
-      po_bal: 50000,
-      unmovement: 0,
-      f_g: 21009,
-      net_required_pcs: -28991,
-      rem_unmovement: 0,
-      rem_fg: 0,
-      status: "production plan",
-      calculation_state: "calculated",
-    },
-    {
-      run_id: "run-0b",
-      calculated_at: "2026-11-11 16:39:18",
-      source_update_at: "2026-11-06 08:00:01",
-      source_rev: 0,
-      prd_name: "MCI-224S-0E",
-      item: "94MCI224S0E",
-      due_date: "2026-11-23",
-      po_bal: 50000,
-      unmovement: 0,
-      f_g: 63764,
-      net_required_pcs: 0,
-      rem_unmovement: 0,
-      rem_fg: 13764,
-      status: "ready",
-      calculation_state: "calculated",
-    },
-    {
-      run_id: "run-2a",
-      calculated_at: "2026-11-16 13:55:17",
-      source_update_at: "2026-11-06 08:00:01",
-      source_rev: 0,
-      prd_name: "MCI-224S-0E",
-      item: null,
-      due_date: "2026-11-23",
-      po_bal: 50000,
-      unmovement: null,
-      f_g: null,
-      net_required_pcs: null,
-      rem_unmovement: null,
-      rem_fg: null,
-      status: null,
-      calculation_state: "source_only",
-    },
-    // Rev 1 was only ever logged as source_only
-    {
-      run_id: "run-2a",
-      calculated_at: "2026-11-16 13:55:17",
-      source_update_at: "2026-11-11 17:09:53",
-      source_rev: 1,
-      prd_name: "MCI-224S-0E",
-      item: null,
-      due_date: "2026-11-23",
-      po_bal: 37500,
-      unmovement: null,
-      f_g: null,
-      net_required_pcs: null,
-      rem_unmovement: null,
-      rem_fg: null,
-      status: null,
-      calculation_state: "source_only",
-    },
-    // Rev 2 is the active calculated revision
-    {
-      run_id: "run-2a",
-      calculated_at: "2026-11-16 13:55:17",
-      source_update_at: "2026-11-11 18:00:09",
-      source_rev: 2,
-      prd_name: "MCI-224S-0E",
-      item: "94MCI224S0E",
-      due_date: "2026-11-23",
-      po_bal: 50000,
-      unmovement: 0,
-      f_g: 118425,
-      net_required_pcs: 0,
-      rem_unmovement: 0,
-      rem_fg: 68425,
-      status: "ready",
-      calculation_state: "calculated",
-    },
-  ];
+test("history rejects invalid dates and overlong products before querying", async () => {
+  await withPOBalanceApi({}, async (get, queries) => {
+    for (const due of ["2026-02-30", "2026-02-29", "2026-13-01", "invalid", "0000-01-01"]) {
+      const res = await get("/history?prd_name=TEST-PRODUCT&due_date=" + due);
+      assert.equal(res.status, 400);
+    }
+    const res = await get("/history?prd_name=" + "X".repeat(101) + "&due_date=2026-11-23");
+    assert.equal(res.status, 400);
+    assert.equal(queries.length, 0);
+  });
+});
 
-  await withPOBalanceApi(sampleRows, async (get) => {
-    const res = await get("/history?prd_name=MCI-224S-0E&due_date=2026-11-23");
+test("history returns compact revision rows including revision zero and NULL values", async () => {
+  const rows = [
+    { prd_name: "TEST-PRODUCT", due_date: "2026-11-23", source_rev: 0, po_bal: null, source_update_at: null },
+    { prd_name: "TEST-PRODUCT", due_date: "2026-11-23", source_rev: 1, po_bal: 0, source_update_at: "2026-11-17 08:30:00" },
+  ];
+  await withPOBalanceApi({ rows }, async (get, queries) => {
+    const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.data, rows);
+    assert.match(res.cacheControl, /no-store/);
+    assert.equal(queries.length, 1);
+    const { sql, params } = queries[0];
+    assert.match(sql, /FROM planning\.po_balance_history h/);
+    assert.match(sql, /h\.rev::int AS source_rev/);
+    assert.match(sql, /to_char\(h\.updated_at,[^\n]+AS source_update_at/);
+    assert.match(sql, /WHERE h\.prd_name = \$1 AND h\.due_date = CAST\(\$2 AS date\)/);
+    assert.match(sql, /ORDER BY h\.rev ASC/);
+    assert.doesNotMatch(sql, /DISTINCT|calculation_state|run_id|calculated_at|unmovement|net_required_pcs/);
+    assert.deepEqual(Array.from(params), ["TEST-PRODUCT", "2026-11-23"]);
+  });
+});
+
+test("history accepts a valid leap date", async () => {
+  await withPOBalanceApi({}, async (get, queries) => {
+    const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2028-02-29");
+    assert.equal(res.status, 200);
+    assert.equal(queries[0].params[1], "2028-02-29");
+  });
+});
+
+test("history binds a product containing SQL syntax as a parameter", async () => {
+  const product = "TEST-' OR 1=1 --";
+  await withPOBalanceApi({}, async (get, queries) => {
+    const res = await get("/history?prd_name=" + encodeURIComponent(product) + "&due_date=2026-11-23");
+    assert.equal(res.status, 200);
+    assert.equal(queries[0].params[0], product);
+    assert.equal(queries[0].sql.includes(product), false);
+  });
+});
+
+test("history returns an empty successful result when no revisions were saved", async () => {
+  await withPOBalanceApi({}, async (get) => {
+    const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "OK");
-    assert.equal(res.body.data.length, 3);
+    assert.deepEqual(res.body.data, []);
+  });
+});
 
-    const byRev = new Map(res.body.data.map((r) => [r.source_rev, r]));
-
-    assert.equal(byRev.get(0).calculation_state, "calculated");
-    assert.equal(byRev.get(0).f_g, 63764);
-    assert.equal(byRev.get(0).status, "ready");
-    assert.equal(byRev.get(0).calculated_at, "2026-11-11 16:39:18");
-
-    assert.equal(byRev.get(1).calculation_state, "source_only");
-    assert.equal(byRev.get(1).po_bal, 37500);
-    assert.equal(byRev.get(1).f_g, null);
-    assert.equal(byRev.get(1).status, null);
-
-    assert.equal(byRev.get(2).calculation_state, "calculated");
-    assert.equal(byRev.get(2).f_g, 118425);
-    assert.equal(byRev.get(2).status, "ready");
+test("history hides database details in both the response and log", async () => {
+  await withPOBalanceApi({ fail: true }, async (get, _queries, errors) => {
+    const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
+    assert.equal(res.status, 500);
+    assert.deepEqual(res.body, { status: "ERROR", data: [], message: "Internal Server Error" });
+    assert.equal(JSON.stringify(errors).includes("SYNTHETIC_PRIVATE_DETAIL"), false);
   });
 });
