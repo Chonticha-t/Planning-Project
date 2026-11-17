@@ -5,7 +5,7 @@ import {
   GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { CircleDollarSign, ClipboardList, FileSpreadsheet, History } from "lucide-react";
+import { CircleDollarSign, ClipboardList, FileSpreadsheet } from "lucide-react";
 import { SORT_OPTIONS, type PlanningRow, type PlanningStatus } from "../types";
 import { toDMY } from "../utils";
 
@@ -176,9 +176,9 @@ const getColumns = (
           aria-label={`View PO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
         >
           <span>{val}</span>
-          {/* Always visible so users know history is available */}
-          <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors group-hover:bg-primary group-hover:text-primary-content">
-            <History size={13} />
+          {/* Show current revision; click to open full history */}
+          <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md bg-primary/10 px-1.5 text-[11px] font-bold text-primary ring-1 ring-primary/20 transition-colors group-hover:bg-primary group-hover:text-primary-content">
+            {row.source_rev == null ? "Rev -" : `Rev ${row.source_rev}`}
           </span>
         </button>
       );

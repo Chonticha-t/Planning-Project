@@ -24,6 +24,8 @@ export interface PlanningRow {
   output_amount: number | null;
   status: PlanningStatus;
   updated_at: string;
+  // revision ล่าสุดของ PO (null ถ้าไม่มีประวัติ)
+  source_rev?: number | null;
 }
 
 export const SORT_OPTIONS: { field: keyof PlanningRow; label: string }[] = [

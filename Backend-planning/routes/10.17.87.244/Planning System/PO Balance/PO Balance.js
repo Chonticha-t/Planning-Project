@@ -224,7 +224,13 @@ router.get("/table", async (req, res) => {
         v.wh_fg_amount::float8                          AS wh_fg_amount,
         v.output_amount::float8                         AS output_amount,
         v.status,
-        to_char(v.updated_at, 'YYYY-MM-DD HH24:MI:SS')  AS updated_at
+        to_char(v.updated_at, 'YYYY-MM-DD HH24:MI:SS')  AS updated_at,
+        -- revision ล่าสุดของ PO (ตรงกับตัวที่ขึ้น Current ใน History modal)
+        (
+          SELECT MAX(h.rev)::int
+          FROM planning.po_balance_history h
+          WHERE h.prd_name = v.prd_name AND h.due_date = v.due_date
+        )                                               AS source_rev
       FROM planning.v_po_amount v
       LEFT JOIN planning.po_balance pb
         ON pb.prd_name = v.prd_name AND pb.due_date = v.due_date
