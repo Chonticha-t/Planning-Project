@@ -5,6 +5,7 @@ export type ProcessCategory = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 export type ViewMode = "board" | "list";
 export type Granularity = "days" | "weeks";
 export type PlanMode = "required" | "planned";
+export type BoardGateStateFilter = "ALL" | "in_gate" | "coming" | "need_wip";
 export type Shift = "day" | "night";
 export type SpecialDay = "ot" | "work" | "off";
 export type LoadStatus = "green" | "yellow" | "red";

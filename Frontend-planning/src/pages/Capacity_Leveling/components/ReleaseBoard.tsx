@@ -9,8 +9,10 @@ import {
   ChevronUp,
   Calendar,
   Pencil,
+  Search,
+  X,
 } from "lucide-react";
-import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData } from "../types";
+import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData, BoardGateStateFilter } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
@@ -101,6 +103,38 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   readOnly = false,
 }) => {
   const lots = useMemo(() => rawLots.filter((lot) => !lot.passedGate), [rawLots]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [gateStateFilter, setGateStateFilter] = useState<BoardGateStateFilter>("ALL");
+
+  const filteredLots = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return lots.filter((lot) => {
+      if (q) {
+        const matchLotNo = (lot.label || "").toLowerCase().includes(q);
+        const matchProduct = (lot.product || "").toLowerCase().includes(q);
+        const matchItem = lot.item ? lot.item.toLowerCase().includes(q) : false;
+        if (!matchLotNo && !matchProduct && !matchItem) return false;
+      }
+
+      if (gateStateFilter === "in_gate") {
+        return lot.gateState === "in_gate";
+      }
+      if (gateStateFilter === "coming") {
+        return lot.gateState === "coming";
+      }
+      if (gateStateFilter === "need_wip") {
+        return (
+          lot.gateState === "need_wip" ||
+          lot.label.trim().toUpperCase() === "NEED WIP" ||
+          lotKind(lot) === "need"
+        );
+      }
+
+      return true;
+    });
+  }, [lots, searchQuery, gateStateFilter]);
+
+  const isFiltered = searchQuery.trim() !== "" || gateStateFilter !== "ALL";
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
@@ -173,10 +207,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     });
   }, [visibleDays, boardGate, gates]);
 
-  const selectedLots = lots.filter((lot) => selectedLotIds.has(lot.id));
+  const selectedLots = filteredLots.filter((lot) => selectedLotIds.has(lot.id));
   const movingIds = new Set(activeMovingLots.map((lot) => lot.id));
   const planningDates = new Set(planningDays.map((day) => day.date));
-  const selectableLots = lots;
+  const selectableLots = filteredLots;
   const toggleLotSelection = (lot: LotItem) => {
     const next = new Set(selectedLotIds);
     if (next.has(lot.id)) next.delete(lot.id);
@@ -276,55 +310,124 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
   return (
     <div className="flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
-      {/* Persistent Header Bar with Board Controls & Horizontal Scroll Buttons */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
+      {/* Persistent Header Bar with Board Controls, Search/Filter & Actions (Guaranteed Single Row) */}
+      <div className="flex flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-0.5">
+        {/* Left: Title + Gate Switcher + Divider + Search + Status Dropdown */}
+        <div className="flex flex-nowrap items-center gap-2 shrink-0">
+          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase shrink-0">
             Gate Arrival Board
           </h3>
+
           {/* One gate at a time: moving a card changes this gate's date only */}
-          <div role="group" aria-label="Gate shown on the board"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5">
+          <div
+            role="group"
+            aria-label="Gate shown on the board"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
+          >
             {gates.map(({ gate }) => (
-              <button key={gate} type="button" aria-pressed={boardGate === gate}
+              <button
+                key={gate}
+                type="button"
+                aria-pressed={boardGate === gate}
                 onClick={() => onBoardGateChange(gate)}
-                className={`rounded-md px-2.5 py-1 text-xs font-bold transition-colors cursor-pointer ${
+                className={`rounded-md px-2.5 py-1 text-xs font-bold transition-colors cursor-pointer shrink-0 ${
                   boardGate === gate
                     ? "bg-primary text-primary-content shadow-xs"
                     : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-                }`}>
+                }`}
+              >
                 {gate}
               </button>
             ))}
           </div>
-          <span className="badge badge-sm bg-base-200 text-base-content/70 border-base-300 font-semibold tabular-nums">
-            {boardCountLabel(lots)}
-          </span>
-          {pastArrivalCount > 0 && (
-            <span className="text-[11px] text-base-content/50" title="Historical arrivals remain on their source dates and are not moved to today.">{pastArrivalCount} earlier arrival card(s)</span>
-          )}
-          {beyondRangeCount > 0 && (
-            <span className="text-[11px] text-base-content/50 tabular-nums"
-              title="These cards are planned after the last day shown.">
-              +{beyondRangeCount} after this period
+
+          <div className="h-4 w-[1px] bg-base-300 shrink-0 mx-0.5" />
+
+          {/* Compact Search Input (w-36 sm:w-40) */}
+          <div className="relative w-36 sm:w-40 shrink-0">
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+            />
+            <input
+              type="text"
+              placeholder="Search Lot / Product"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-7 text-xs bg-base-200/40 focus:bg-base-100 placeholder:text-base-content/40"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Compact Status Dropdown (fixed width w-28) */}
+          <select
+            aria-label="Filter by status"
+            value={gateStateFilter}
+            onChange={(e) => setGateStateFilter(e.target.value as BoardGateStateFilter)}
+            className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
+              gateStateFilter !== "ALL"
+                ? "bg-[#eef2ff] border-primary text-primary"
+                : "bg-base-200/40 border-base-300 text-base-content/75"
+            }`}
+          >
+            <option value="ALL">All Status</option>
+            <option value="in_gate">In Gate</option>
+            <option value="coming">Coming</option>
+            <option value="need_wip">Need WIP</option>
+          </select>
+
+          {/* Count Badge / Reset */}
+          {isFiltered ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setGateStateFilter("ALL");
+              }}
+              className="badge badge-sm bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 text-[11px] font-semibold gap-1 cursor-pointer shrink-0"
+              title="Click to reset filters"
+            >
+              <span>{filteredLots.length} cards</span>
+              <X size={10} />
+            </button>
+          ) : (
+            <span
+              className="badge badge-sm bg-base-200 text-base-content/60 border-base-300 font-semibold tabular-nums text-[11px] shrink-0"
+              title={`${pastArrivalCount > 0 ? `${pastArrivalCount} earlier arrivals. ` : ""}${beyondRangeCount > 0 ? `+${beyondRangeCount} after this period.` : ""}`}
+            >
+              {boardCountLabel(lots)}
             </span>
           )}
-          {isEditMode && <button type="button"
-            onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
-            disabled={selectableLots.length === 0}
-            className="btn btn-xs btn-ghost text-xs">
-            Select all cards
-          </button>}
+
+          {isEditMode && (
+            <button
+              type="button"
+              onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
+              disabled={selectableLots.length === 0}
+              className="btn btn-xs btn-ghost text-xs text-primary font-semibold shrink-0"
+            >
+              Select all ({selectableLots.length})
+            </button>
+          )}
         </div>
 
         {/* Right Switchers & Scroll Controls */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-nowrap items-center gap-2 shrink-0">
           {viewMode === "board" && granularity === "days" && (
-            <div className="inline-flex items-center gap-1 mr-1">
+            <div className="inline-flex items-center gap-1 mr-1 shrink-0">
               <button
                 type="button"
                 onClick={() => scrollBoard("left")}
-                className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70"
+                className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70 cursor-pointer"
                 title="Scroll board left"
               >
                 <ChevronLeft size={14} />
@@ -332,7 +435,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               <button
                 type="button"
                 onClick={() => scrollBoard("right")}
-                className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70"
+                className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70 cursor-pointer"
                 title="Scroll board right"
               >
                 <ChevronRight size={14} />
@@ -340,7 +443,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </div>
           )}
 
-          <button type="button" disabled={readOnly} aria-pressed={isEditMode}
+          <button
+            type="button"
+            disabled={readOnly}
+            aria-pressed={isEditMode}
             onClick={() => {
               if (isEditMode) {
                 onSelectionChange([]);
@@ -348,34 +454,42 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               }
               setIsEditMode((prev) => !prev);
             }}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer ${
-              isEditMode ? "border-primary bg-primary text-primary-content" : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
-            }`}>
+            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+              isEditMode
+                ? "border-primary bg-primary text-primary-content"
+                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+            }`}
+          >
             <Pencil size={13} />
             Edit
           </button>
 
           {viewMode === "board" && (
-            <div role="group" aria-label="Board size"
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5">
+            <div
+              role="group"
+              aria-label="Board size"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
+            >
               {([
                 { label: "Normal", compact: false },
                 { label: "Compact", compact: true },
               ] as const).map((option) => (
-                <button key={option.label} type="button"
+                <button
+                  key={option.label}
+                  type="button"
                   aria-pressed={isCompact === option.compact}
                   onClick={() => setIsCompact(option.compact)}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                     isCompact === option.compact
                       ? "bg-primary text-primary-content shadow-xs"
                       : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-                  }`}>
+                  }`}
+                >
                   {option.label}
                 </button>
               ))}
             </div>
           )}
-
         </div>
       </div>
 
@@ -413,7 +527,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         >
           {/* Scrollable Day Columns for ALL planning days */}
           {visibleDays.map((col) => {
-            const colLots = lots.filter((l) => l.plannedDate === col.date);
+            const colLots = filteredLots.filter((l) => l.plannedDate === col.date);
             const colPct = cellPct(col.gates[boardGate]);
             const isDayExpanded = Boolean(expandedDayCols[col.date]);
             const visibleLots = isDayExpanded
@@ -596,7 +710,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           <div className={`grid grid-cols-1 gap-3 flex-1 ${isCompact ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 xl:grid-cols-3"}`}>
             {weekGroups.map((wg) => {
               const weekDates = new Set(wg.days.map((d) => d.date));
-              const weekLots = lots.filter((l) => weekDates.has(l.plannedDate));
+              const weekLots = filteredLots.filter((l) => weekDates.has(l.plannedDate));
               const isWeekHovered =
                 hoverTargetDate !== null && weekDates.has(hoverTargetDate);
 
@@ -730,7 +844,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               {(granularity === "weeks"
                 ? weekGroups.flatMap((wg) => {
                     const weekDates = new Set(wg.days.map((d) => d.date));
-                    const weekLots = lots.filter((l) =>
+                    const weekLots = filteredLots.filter((l) =>
                       weekDates.has(l.plannedDate)
                     );
                     if (weekLots.length === 0) return [];
@@ -745,7 +859,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       ...weekLots.map((lot) => ({ type: "row" as const, lot })),
                     ];
                   })
-                : lots.map((lot) => ({ type: "row" as const, lot }))
+                : filteredLots.map((lot) => ({ type: "row" as const, lot }))
               ).map((item) => {
                 if (item.type === "header") {
                   return (

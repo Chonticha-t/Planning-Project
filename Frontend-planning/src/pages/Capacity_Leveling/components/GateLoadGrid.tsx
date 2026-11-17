@@ -437,9 +437,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">
             Gate Load by Day
           </h3>
-          <span className="text-[10px] text-base-content/55">
-            Max Target · arrivals · {category === "ALL" ? "all groups" : category === "EFPC_GEN" ? "FPC-GEN" : category === "EFPC_AUTO" ? "FPC-AUTO" : "SMT"}
-          </span>
 
           {/* Display Units Switcher matching GateMatrixTable (Load % | Piece | Sheet | Lot) */}
           <div
