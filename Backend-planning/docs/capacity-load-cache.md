@@ -32,6 +32,14 @@ behavior. Identical pending loads share expensive work; every caller still check
 The frontend uses this after saves/conflicts and for explicit Refresh/retry. Normal navigation uses
 the cache. All original response fields, drafts and snapshot preview behavior are preserved.
 
+## Locked plan rows
+
+The active plan's locked `arrivalRows` are read from `baseline_snapshot` once per `plan_id` and kept
+in memory (one entry, frozen). Saved plan versions are immutable, so this needs no TTL: a new save
+has a new `plan_id` and replaces the entry. Only `arrivalRows` is fetched, not the whole saved view.
+Failed reads are not cached. A manual database edit of an existing `baseline_snapshot` is not seen
+until the backend restarts.
+
 ## Diagnostics
 
 `X-Capacity-Cache`, `X-Capacity-Cache-Reason`, and `X-Capacity-Cache-Age-Ms` report reuse and freshness.

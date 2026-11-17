@@ -150,6 +150,9 @@ test("board order payload rejects invalid groups, duplicate cards and oversized 
 });
 
 // A scripted pool: each query is answered by the first matching rule and recorded.
+// Mirrors PLAN_SNAPSHOT_SQL: the version check and only the locked arrival rows.
+const snapshotRow = (snapshot) => ({ is_v1: snapshot?.version === 1, arrival_rows: snapshot?.data?.arrivalRows ?? null });
+
 function fakePool(rules) {
   const log = [];
   const query = async (sql, params) => {
@@ -1094,6 +1097,66 @@ test("invalid date ranges never run works SQL and disabled load caching remains 
   }, { cacheOptions: { ttlMs: 0 } });
 });
 
+test("locked plan rows are read once per plan_id, are not mutated by loads, and a new save reads its own snapshot", async () => {
+  const base = { gate_name: "FVAC", arrive_by: "2026-11-14", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null };
+  const initialRows = [work({ ...base, lot_no: "L001", rem_proc_in_gate: 8, pri: 1 }), work({ ...base, lot_no: "L002", rem_proc_in_gate: 3, pri: 2 })];
+  let liveRows = initialRows;
+  let header = null;
+  let storedSnapshot = null;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
+    [/FROM planning\.capacity_setting/, () => [row({ gate_name: "FVAC", resource_count: 1 })]],
+    [/AS arrival_rows/, params => header && params[0] === header.plan_id ? [snapshotRow(storedSnapshot)] : []],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/FROM planning\.work_plan_gate_item/, () => []],
+    [/planning_summary_gate/, () => liveRows],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      const snapshot = JSON.parse(params[9]);
+      storedSnapshot = snapshot.viewSnapshot;
+      header = { plan_id: params[0], plan_group_id: params[1], version_no: params[2], created_by: params[8],
+        saved_at: "2026-11-12 12:00", board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, has_snapshot: true };
+      return [];
+    }],
+  ]);
+  const snapshotReads = () => pool.log.filter(entry => /AS arrival_rows/.test(entry.sql)).length;
+
+  await withApi(pool, async api => {
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } })).status, 200);
+    const firstPlan = header.plan_id;
+    const lockedCopy = JSON.stringify(storedSnapshot.data.arrivalRows);
+    liveRows = [work({ ...base, lot_no: "L001", rem_proc_in_gate: 99, pri: 1 })];
+
+    const first = (await (await api("/load?startdate=2026-11-12&stopdate=2026-11-18")).json()).data;
+    const second = (await (await api("/load?startdate=2026-11-12&stopdate=2026-11-18&refresh=true")).json()).data;
+    assert.equal(snapshotReads(), 1, "the immutable snapshot is fetched once for the same plan_id");
+    assert.deepEqual(second.arrivalRows, first.arrivalRows);
+    assert.equal(first.arrivalRows[0].rem_proc_in_gate, 99, "live WIP still merges into locked rows");
+    assert.equal(JSON.stringify(storedSnapshot.data.arrivalRows), lockedCopy, "cached locked rows are never changed in place");
+    assert.ok(Object.isFrozen(storedSnapshot.data.arrivalRows[0]));
+
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 1, moves: [] } })).status, 200);
+    assert.notEqual(header.plan_id, firstPlan);
+    const afterSave = (await (await api("/load?startdate=2026-11-12&stopdate=2026-11-18")).json()).data;
+    assert.equal(afterSave.plan.version, 2);
+    assert.equal(snapshotReads(), 2, "a new plan_id reads its own snapshot");
+  }, { cacheOptions: { ttlMs: 0 } });
+});
+
+test("a failed locked snapshot read is not cached", async () => {
+  const header = { plan_id: "p1", plan_group_id: "p1", version_no: 1, has_snapshot: true, saved_at: "x" };
+  let fail = true;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
+    [/AS arrival_rows/, () => { if (fail) throw new Error("boom"); return [{ is_v1: true, arrival_rows: [] }]; }],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD ? [header] : []],
+  ]);
+  await withApi(pool, async api => {
+    assert.equal((await api("/load?startdate=2026-11-12&stopdate=2026-11-18")).status, 503);
+    fail = false;
+    assert.equal((await api("/load?startdate=2026-11-12&stopdate=2026-11-18")).status, 200);
+  }, { cacheOptions: { ttlMs: 0 } });
+});
+
 test("locked active plan snapshot freezes board arrivals and priority across WIP changes until Reset to Required", async () => {
   let today = "2026-11-12";
   const initialRows = [
@@ -1112,8 +1175,8 @@ test("locked active plan snapshot freezes board arrivals and priority across WIP
   const pool = fakePool([
     [/CURRENT_DATE::text/, () => [{ today }]],
     [/FROM planning\.capacity_setting/, () => settings],
-    [/SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot/, params => {
-      return header && params[0] === header.plan_id ? [{ view_snapshot: storedSnapshot }] : [];
+    [/AS arrival_rows/, params => {
+      return header && params[0] === header.plan_id ? [snapshotRow(storedSnapshot)] : [];
     }],
     [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
     [/FROM planning\.work_plan_gate_item/, params => movesByPlan.get(params[0]) ?? []],
@@ -1200,7 +1263,7 @@ test("locked plan updates live WIP status on /load and /plans/:id?live=true with
   const pool = fakePool([
     [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
     [/FROM planning\.capacity_setting/, () => [row({ gate_name: "FVAC", resource_count: 2 }), row({ setting_id: "s2", gate_name: "FVAC", shift_code: "night", is_working_day: false })]],
-    [/SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot/, params => header && params[0] === header.plan_id ? [{ view_snapshot: storedSnapshot }] : []],
+    [/AS arrival_rows/, params => header && params[0] === header.plan_id ? [snapshotRow(storedSnapshot)] : []],
     [/FROM planning\.work_plan p/, params => header && params[1] === header.plan_id ? [{
       ...historyRow(header.version_no, header.version_no),
       plan_id: header.plan_id,

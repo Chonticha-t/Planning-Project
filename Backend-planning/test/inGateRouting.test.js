@@ -7,13 +7,13 @@ const item = { key: "card-1", product: "PRODUCT-A", lot: "LOT-A" };
 const route = (extra = {}) => ({ prd_name: "PRODUCT-A", factory_desc: "FACTORY-A", seq: 10,
   proc_id: "P1", proc_disp: "PROCESS-A", gate_name: "GATE-A", step_in_gate: 1, total_proc_in_gate: 2, updated_at: "2026-11-13 08:00", ...extra });
 const wip = (extra = {}) => ({ lot: "LOT-A", prd_name: "PRODUCT-A", factory_desc: "FACTORY-A", seq: 10,
-  proc_disp: "PROCESS-A", updated_at: "2026-11-13 09:00", ...extra });
+  proc_disp: "PROCESS-A", in_date: "2026-11-13 09:00:00", ...extra });
 
 test("unique WIP process and sequence identify the current step without creating scan history", () => {
   const result = resolveRoute(item, [route(), route({ seq: 20, proc_disp: "PROCESS-B" })], [wip()]);
   assert.equal(result.status, "matched");
   assert.equal(result.current.seq, 10);
-  assert.equal(result.current.updatedAt, "2026-11-13 09:00");
+  assert.equal(result.current.enteredAt, "2026-11-13 09:00:00");
   assert.equal(result.steps.length, 2);
   assert.ok(result.steps.every(step => !("done" in step) && !("scanOut" in step)));
 });

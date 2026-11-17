@@ -7,7 +7,7 @@ const canonicalGate = name => ({ "AT-FVAC": "FVAC", "AT-FADL": "FADL", "AT-FIN":
 const ROUTING_SQL = `SELECT prd_name, factory_desc, seq, proc_id, proc_disp, gate_name,
   step_in_gate, total_proc_in_gate, updated_at::text AS updated_at
   FROM planning.prd_routing_master WHERE prd_name = ANY($1::text[]) ORDER BY prd_name, seq LIMIT 10001`;
-const WIP_SQL = `SELECT lot, prd_name, factory_desc, seq, proc_disp, updated_at::text AS updated_at
+const WIP_SQL = `SELECT lot, prd_name, factory_desc, seq, proc_disp, to_char(in_date, 'YYYY-MM-DD HH24:MI:SS') AS in_date
   FROM planning.wip_in_process WHERE lot = ANY($1::text[])`;
 
 function resolveRoute(item, routes, wips) {
@@ -24,7 +24,8 @@ function resolveRoute(item, routes, wips) {
   if (matches.length !== 1) return { ...result, status: "ambiguous" };
   const wip = matches[0];
   if (wip.prd_name !== item.product) return { ...result, status: "product_mismatch" };
-  result.observed = { process: wip.proc_disp, updatedAt: wip.updated_at };
+  const enteredAt = wip.in_date ?? null;
+  result.observed = { process: wip.proc_disp, enteredAt };
   const candidates = routes.filter(row => row.prd_name === item.product
     && row.factory_desc === wip.factory_desc && clean(row.proc_disp) === clean(wip.proc_disp) && clean(wip.proc_disp));
   // WIP seq is derived upstream from the first matching process name; repeated names cannot prove an occurrence.
@@ -33,11 +34,11 @@ function resolveRoute(item, routes, wips) {
   if (!current) return { ...result, status: "process_not_found" };
   if (!Number.isInteger(wip.seq) || current.seq !== wip.seq) return { ...result, status: "inconsistent_position" };
   if (clean(current.gate_name).toUpperCase() === "PRE_FFPC") {
-    return { ...result, status: "outside_displayed_routing", observed: { process: null, updatedAt: wip.updated_at } };
+    return { ...result, status: "outside_displayed_routing", observed: { process: null, enteredAt } };
   }
   return { ...result, status: "matched", current: {
     seq: current.seq, process: wip.proc_disp, gate: canonicalGate(current.gate_name),
-    stepInGate: current.step_in_gate, totalInGate: current.total_proc_in_gate, updatedAt: wip.updated_at,
+    stepInGate: current.step_in_gate, totalInGate: current.total_proc_in_gate, enteredAt,
   } };
 }
 

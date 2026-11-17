@@ -50,9 +50,7 @@ export function LiveRouteDetails({ lot, route, loading, error, retry, onClose }:
           {transition.steps.length > 100 && <p className="mt-2 text-xs text-base-content/55">Showing positions {start + 1}–{Math.min(start + 100, transition.steps.length)} of {transition.steps.length} within this gate.</p>}
             </section>;
           })}
-          <dl className="grid grid-cols-2 gap-2 mt-4 text-xs"><dt>WIP source updated</dt><dd>{(current?.updatedAt || route?.observed?.updatedAt)?.replace(/\.\d+/, "") || "Unavailable"}</dd><dt>Saved planned arrival</dt><dd>{lot.plannedDate}</dd></dl>
-          <p className="mt-3 text-xs text-base-content/50">WIP reflects its source refresh. Routing order does not confirm scan completion; scan times and ETA are unavailable.</p>
-        </>}
+          <dl className="grid grid-cols-2 gap-2 mt-4 text-xs"><dt>Entered current process</dt><dd>{current?.enteredAt || route?.observed?.enteredAt || "Unavailable"}</dd><dt>Saved planned arrival</dt><dd>{lot.plannedDate}</dd></dl>        </>}
     </div>
   </div>, document.body);
 }

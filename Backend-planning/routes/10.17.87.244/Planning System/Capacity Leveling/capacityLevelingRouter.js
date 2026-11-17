@@ -77,6 +77,8 @@ const WORKS_SQL = `
   FROM works w
   ORDER BY w.rn`;
 
+// Find the head by version first so only that one row's large baseline_snapshot is detoasted.
+// Projecting snapshot fields before ORDER BY ... LIMIT would detoast every saved version.
 const LATEST_PLAN_SQL = `
   SELECT plan_id, plan_group_id, version_no, note, created_by,
          baseline_snapshot->'boardCardOrder' AS board_card_order,
@@ -84,25 +86,55 @@ const LATEST_PLAN_SQL = `
          (baseline_snapshot->'viewSnapshot'->>'version' = '1') AS has_snapshot,
          to_char(created_at, 'YYYY-MM-DD HH24:MI') AS saved_at
   FROM planning.work_plan
-  WHERE calculation_method = $1
-  ORDER BY version_no DESC
-  LIMIT 1`;
+  WHERE plan_id = (
+    SELECT head.plan_id FROM planning.work_plan head
+    WHERE head.calculation_method = $1
+    ORDER BY head.version_no DESC
+    LIMIT 1
+  )`;
 
+// Only the locked arrival rows are needed, not the whole saved view (cards, calendar, capacity).
+// The jsonb comparison keeps the exact `version === 1` rule; the inner query detoasts the snapshot once.
 const PLAN_SNAPSHOT_SQL = `
-  SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot
-  FROM planning.work_plan
-  WHERE plan_id = $1`;
+  SELECT (s.view_snapshot->'version' = '1'::jsonb) AS is_v1,
+         s.view_snapshot->'data'->'arrivalRows' AS arrival_rows
+  FROM (
+    SELECT baseline_snapshot->'viewSnapshot' AS view_snapshot
+    FROM planning.work_plan
+    WHERE plan_id = $1
+    OFFSET 0
+  ) s`;
 
-const readLockedSourceRows = async (db, latest) => {
-  if (!latest) return null;
-  const snapshot = latest.view_snapshot !== undefined
-    ? latest.view_snapshot
-    : latest.has_snapshot
-      ? (await db.query(PLAN_SNAPSHOT_SQL, [latest.plan_id])).rows[0]?.view_snapshot
-      : null;
-  return snapshot?.version === 1 && Array.isArray(snapshot?.data?.arrivalRows)
-    ? snapshot.data.arrivalRows
-    : null;
+const lockedRowsFromSnapshot = (snapshot) => (
+  snapshot?.version === 1 && Array.isArray(snapshot?.data?.arrivalRows) ? snapshot.data.arrivalRows : null
+);
+
+// Shared across requests, so the rows must never be changed in place.
+const freezeRows = (rows) => {
+  if (!Array.isArray(rows)) return null;
+  for (const row of rows) Object.freeze(row);
+  return Object.freeze(rows);
+};
+
+// A saved plan version is immutable (only INSERTed; deletion only sets deleted_at), so the head
+// plan's locked rows are read once per plan_id. A new save has a new plan_id and replaces the entry.
+const createLockedRowsReader = () => {
+  let entry = null;
+  return async (db, latest) => {
+    if (!latest) return null;
+    if (latest.view_snapshot !== undefined) return lockedRowsFromSnapshot(latest.view_snapshot);
+    if (!latest.has_snapshot) return null;
+    if (entry?.planId !== latest.plan_id) {
+      const current = { planId: latest.plan_id, promise: null };
+      current.promise = db.query(PLAN_SNAPSHOT_SQL, [latest.plan_id]).then(({ rows }) => (
+        rows[0]?.is_v1 === true ? freezeRows(rows[0].arrival_rows) : null
+      ));
+      // Errors are not cached: the next request retries.
+      current.promise.catch(() => { if (entry === current) entry = null; });
+      entry = current;
+    }
+    return entry.promise;
+  };
 };
 
 const MOVES_SQL = `
@@ -136,6 +168,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
     ...cacheOptions,
   });
   router.use(createPresenceRouter({ pool, verifyPlanner }));
+  const readLockedSourceRows = createLockedRowsReader();
   const capacityRevision = (gates) => createHash("sha256").update(JSON.stringify(gates, (_key, value) =>
     value && typeof value === "object" && !Array.isArray(value)
       ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value)).digest("hex");

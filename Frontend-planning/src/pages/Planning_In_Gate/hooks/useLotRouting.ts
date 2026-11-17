@@ -15,8 +15,8 @@ export interface RoutingStep {
 export interface LotRouting {
   key: string;
   status: string;
-  observed?: { process: string | null; updatedAt: string | null } | null;
-  current: { seq: number; process: string | null; gate: string | null; stepInGate: number | null; totalInGate: number | null; updatedAt: string | null } | null;
+  observed?: { process: string | null; enteredAt: string | null } | null;
+  current: { seq: number; process: string | null; gate: string | null; stepInGate: number | null; totalInGate: number | null; enteredAt: string | null } | null;
   steps: RoutingStep[];
 }
 export const ROUTING_MESSAGES: Record<string, string> = {
@@ -61,9 +61,9 @@ export function useLotRouting(lots: LotItem[]) {
             if (!result || !expected.has(result.key) || received.has(result.key)) return false;
             received.add(result.key);
             return (result.status === "matched" || Object.prototype.hasOwnProperty.call(ROUTING_MESSAGES, result.status))
-              && (result.observed == null || textOrNull(result.observed.process) && textOrNull(result.observed.updatedAt))
+              && (result.observed == null || textOrNull(result.observed.process) && textOrNull(result.observed.enteredAt))
               && (result.current === null || Number.isInteger(result.current.seq) && textOrNull(result.current.process)
-                && textOrNull(result.current.gate) && textOrNull(result.current.updatedAt)
+                && textOrNull(result.current.gate) && textOrNull(result.current.enteredAt)
                 && integerOrNull(result.current.stepInGate) && integerOrNull(result.current.totalInGate))
               && (result.status !== "matched" || result.current !== null)
               && Array.isArray(result.steps) && result.steps.every(step => step && Number.isInteger(step.seq)

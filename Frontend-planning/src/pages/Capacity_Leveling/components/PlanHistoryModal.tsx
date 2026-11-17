@@ -251,10 +251,9 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
                     <td className="whitespace-nowrap"><strong>v{plan.version}</strong>{plan.isActive && <span className="badge badge-primary badge-sm ml-2">Active</span>}</td>
                     <td className="whitespace-nowrap">{plan.savedAt}</td><td>{plan.savedBy}</td><td className="max-w-64 whitespace-pre-wrap break-words">{plan.note || "—"}</td>
                     <td><div className="flex gap-1">
-                      {plan.hasSnapshot && <button type="button" disabled={openingPlan !== null} onClick={() => void openSavedPlan(plan)} className={`${button} btn-primary`}>
+                      {plan.hasSnapshot && <button type="button" disabled={openingPlan !== null} onClick={() => void openSavedPlan(plan)} className={`${button} btn-ghost text-primary`}>
                         {openingPlan === plan.planId ? <span className="loading loading-spinner loading-xs" /> : <Eye size={14} />} View Plan
                       </button>}
-                      <button type="button" onClick={() => setSelected(plan)} className={`${button} btn-ghost`} aria-label={`View Plan v${plan.version}`}><Eye size={14} /> View</button>
                       {!plan.isActive && <button type="button" onClick={() => setConfirm(plan)} className={`${button} btn-ghost text-error`} aria-label={`Delete Plan v${plan.version}`}><Trash2 size={14} /> Delete</button>}
                     </div></td>
                   </tr>)}{!loading && !error && plans.length === 0 && <tr><td colSpan={5} className="py-10 text-center text-base-content/60">No saved plans yet.</td></tr>}</tbody>
