@@ -10,6 +10,7 @@ import type { GridSortDirection, GridSortModel } from "@mui/x-data-grid";
 import {
   SORT_OPTIONS,
   ITEM_UNIT_OPTIONS,
+  sortPriorities,
   type PlanningSummaryFilter,
   type DistinctFilters,
 } from "../types";
@@ -248,6 +249,10 @@ const FilterBar = ({
     return Array.from(new Set([...prds, ...lots]));
   }, [filterOptions.products, filterOptions.lot_nos]);
 
+  const sortedPriorities = useMemo(() => {
+    return sortPriorities(filterOptions.priorities || []);
+  }, [filterOptions.priorities]);
+
   const set = (key: keyof PlanningSummaryFilter, value: string) => {
     const next = { ...filter, [key]: value };
     onChange(next);
@@ -325,7 +330,7 @@ const FilterBar = ({
           onChange={(e) => apply("priority", e.target.value)}
         >
           <option value="">All Priorities</option>
-          {(filterOptions.priorities || []).map((pr) => (
+          {sortedPriorities.map((pr) => (
             <option key={pr} value={pr}>
               {pr}
             </option>

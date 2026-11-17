@@ -97,3 +97,22 @@ export interface ApiResponse<T> {
   data: T;
   message: string;
 }
+
+export const PRIORITY_ORDER_MAP: Record<string, number> = {
+  urgent: 1,
+  high: 2,
+  top: 3,
+  "next week": 4,
+  "next plan": 5,
+  normal: 6,
+};
+
+export const sortPriorities = (priorities: string[]): string[] => {
+  return [...priorities].sort((a, b) => {
+    const orderA = PRIORITY_ORDER_MAP[a.trim().toLowerCase()] ?? 999;
+    const orderB = PRIORITY_ORDER_MAP[b.trim().toLowerCase()] ?? 999;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.localeCompare(b);
+  });
+};
+

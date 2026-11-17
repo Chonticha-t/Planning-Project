@@ -11,12 +11,13 @@ import {
   PLANNING_SUMMARY_ASSIGN_WIP_DUE_API,
   PLANNING_SUMMARY_UNASSIGN_WIP_DUE_API,
 } from "./api";
-import type {
-  ApiResponse,
-  PlanningSummaryFilter,
-  PlanningSummaryRow,
-  PlanningSummaryKPI,
-  DistinctFilters,
+import {
+  sortPriorities,
+  type ApiResponse,
+  type PlanningSummaryFilter,
+  type PlanningSummaryRow,
+  type PlanningSummaryKPI,
+  type DistinctFilters,
 } from "../types";
 import { toDMY } from "../../PO_Balance/utils";
 
@@ -149,6 +150,7 @@ export const usePlanningSummary = () => {
           statuses: (res.data.data.statuses || []).filter(
             (s) => s.toLowerCase() !== "ready"
           ),
+          priorities: sortPriorities(res.data.data.priorities || []),
         };
         const nextFiltersJson = JSON.stringify(nextFilters);
         if (nextFiltersJson !== lastFiltersJsonRef.current) {
