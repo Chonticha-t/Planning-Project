@@ -123,7 +123,7 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
       <button type="button" className="btn btn-sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>
       <button type="button" className="btn btn-sm" disabled={(currentPage + 1) * PAGE_SIZE >= display.length} onClick={() => setPage(currentPage + 1)}>Next</button>
     </div>}
-    {routeLot && <LiveRouteDetails lot={routeLot} route={routing.routes.get(routeLot.id)} loading={routing.loading} error={routing.error} checkedAt={routing.checkedAt} retry={routing.retry} onClose={() => setRouteLot(null)} />}
+    {routeLot && <LiveRouteDetails lot={routeLot} route={routing.routes.get(routeLot.id)} loading={routing.loading} error={routing.error} retry={routing.retry} onClose={() => setRouteLot(null)} />}
   </div>;
 }
 
