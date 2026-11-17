@@ -37,3 +37,18 @@ export interface AggregatedForecastRow {
   weekly: Record<string, number>;
   rowTotal: number;
 }
+
+export interface CustomerMixRow extends AggregatedForecastRow {
+  sharePct: number;
+  barWidthPct: number;
+}
+
+export interface ForecastKpiStats {
+  total: number;
+  avgPerWeek: number;
+  secondaryTotalLabel: string;
+  peakWeekCode: string;
+  peakWeekVal: number;
+  customerCount: number;
+  productCount: number;
+}
