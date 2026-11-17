@@ -111,3 +111,19 @@ test("database failures return unavailable and initialization can recover", asyn
   pool.fail(false);
   assert.equal((await request("/presence", "POST", { tabId: tabA, scopes: [scope] })).status, 200);
 }));
+
+test("presence names fit the shared audit width; long display names are trimmed, usernames are not", async () => {
+  const { NAME_MAX_LENGTH } = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLevelingPresence");
+  const statements = [];
+  const pool = database();
+  const query = pool.query.bind(pool);
+  pool.query = async (sql, params) => { statements.push(sql); return query(sql, params); };
+  const store = createPresenceStore(pool);
+  await store.touch({ ...planner, full_name: "N".repeat(NAME_MAX_LENGTH + 20) }, tabA, [scope]);
+  const ddl = statements.find((sql) => sql.startsWith("CREATE TABLE"));
+  assert.ok(ddl.includes(`username VARCHAR(${NAME_MAX_LENGTH})`));
+  assert.ok(ddl.includes(`full_name VARCHAR(${NAME_MAX_LENGTH})`));
+  const [row] = pool.rows.values();
+  assert.equal(row.full_name.length, NAME_MAX_LENGTH);
+  assert.equal(row.username, planner.username);
+});

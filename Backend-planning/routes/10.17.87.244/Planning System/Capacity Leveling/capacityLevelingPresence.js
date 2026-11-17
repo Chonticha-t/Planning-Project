@@ -2,6 +2,8 @@ const express = require("express");
 const { LEVELING_GATES, isDate } = require("./capacityLeveling");
 
 const PRESENCE_TTL_MS = 45000;
+// Matches created_by elsewhere; planning_in_gate_test widens existing tables to this.
+const NAME_MAX_LENGTH = 150;
 const validTab = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const parseScopes = (value) => {
   if (!Array.isArray(value) || value.length > 256) throw new Error("Invalid editing areas.");
@@ -30,8 +32,8 @@ const createPresenceStore = (pool) => {
   let initialization;
   const ready = () => {
     if (!initialization) initialization = pool.query(`CREATE TABLE IF NOT EXISTS planning.capacity_leveling_presence (
-      username VARCHAR(50) NOT NULL, tab_id UUID NOT NULL,
-      full_name VARCHAR(100) NOT NULL, role VARCHAR(20) NOT NULL,
+      username VARCHAR(${NAME_MAX_LENGTH}) NOT NULL, tab_id UUID NOT NULL,
+      full_name VARCHAR(${NAME_MAX_LENGTH}) NOT NULL, role VARCHAR(20) NOT NULL,
       scopes JSONB NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
       PRIMARY KEY (username, tab_id)
     )`).catch((error) => { initialization = null; throw error; });
@@ -47,7 +49,9 @@ const createPresenceStore = (pool) => {
         VALUES ($1, $2, $3, $4, $5::jsonb, $6)
         ON CONFLICT (username, tab_id) DO UPDATE SET full_name = EXCLUDED.full_name,
           role = EXCLUDED.role, scopes = EXCLUDED.scopes, expires_at = EXCLUDED.expires_at`,
-      [user.username, tabId, user.full_name || user.username, user.role, JSON.stringify(scopes), expiresAt]);
+      // full_name is display-only, so trim it; username is the lease identity and is never cut.
+      [user.username, tabId, String(user.full_name || user.username).slice(0, NAME_MAX_LENGTH), user.role,
+        JSON.stringify(scopes), expiresAt]);
     },
     async remove(username, tabId) {
       await ready();
@@ -125,4 +129,4 @@ const createPresenceRouter = ({ pool, verifyPlanner }) => {
   return router;
 };
 
-module.exports = { createPresenceRouter, createPresenceStore, parseScopes, groupEditors, PRESENCE_TTL_MS };
+module.exports = { createPresenceRouter, createPresenceStore, parseScopes, groupEditors, PRESENCE_TTL_MS, NAME_MAX_LENGTH };
