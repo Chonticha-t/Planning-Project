@@ -82,11 +82,8 @@ function inferFinished(wips, routes, date, resolveRoute) {
   return { rows: [...rows.values()].sort((a, b) => b.scannedAt.localeCompare(a.scannedAt) || a.id.localeCompare(b.id)), unresolved };
 }
 
-function createFinishedHandler({ pool }) {
-  return async (req, res) => {
-    res.set("Cache-Control", "no-store");
-    const date = req.query.date;
-    if (!isDay(date)) return res.status(400).json({ code: "INVALID_DATE", message: "Choose a valid calendar date." });
+function createFinishedHandler({ pool, cache }) {
+  const load = async date => {
     let client;
     try {
       client = await pool.connect();
@@ -108,11 +105,25 @@ function createFinishedHandler({ pool }) {
         sourceUpdatedAt: row.updated_at,
       }));
       await client.query("COMMIT");
-      return res.json({ status: "OK", data: { date, rows, unresolved: 0, coverage: "latest_wip_only", checkedAt: new Date().toISOString() } });
-    } catch {
+      return { date, rows, unresolved: 0, coverage: "latest_wip_only", checkedAt: new Date().toISOString() };
+    } catch (error) {
       if (client) await client.query("ROLLBACK").catch(() => {});
-      return res.status(503).json({ code: "FINISHED_UNAVAILABLE", message: "Unable to read finished evidence from gate output log. Please retry." });
+      throw error;
     } finally { client?.release(); }
+  };
+
+  return async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const date = req.query.date;
+    if (!isDay(date)) return res.status(400).json({ code: "INVALID_DATE", message: "Choose a valid calendar date." });
+    try {
+      if (!cache) return res.json({ status: "OK", data: await load(date) });
+      const result = await cache.read(date, () => load(date), { force: req.query.refresh === "true" });
+      res.set("X-In-Gate-Cache", result.status);
+      return res.json({ status: "OK", data: result.value });
+    } catch {
+      return res.status(503).json({ code: "FINISHED_UNAVAILABLE", message: "Unable to read finished evidence from gate output log. Please retry." });
+    }
   };
 }
 

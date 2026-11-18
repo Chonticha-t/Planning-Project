@@ -82,9 +82,9 @@ export const fetchPlanHistory = async (before?: number, signal?: AbortSignal) =>
   return data.data;
 };
 
-export const fetchPlanHistoryDetail = async (planId: string, signal?: AbortSignal, live = false) => {
+export const fetchPlanHistoryDetail = async (planId: string, signal?: AbortSignal, live = false, refresh = false) => {
   const { data } = await axios.get<{ data: PlanHistoryDetail }>(`${BASE}/plans/${encodeURIComponent(planId)}`, {
-    ...(live ? { params: { live: true } } : {}),
+    ...(live ? { params: { live: true, ...(refresh ? { refresh: true } : {}) } } : {}),
     signal,
   });
   return data.data;

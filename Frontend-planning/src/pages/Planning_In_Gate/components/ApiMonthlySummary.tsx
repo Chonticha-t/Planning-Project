@@ -25,7 +25,7 @@ interface Props {
 
 /** Keep saved arrivals separate from observed output and unknown historical coverage. */
 export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, version, gate, category, output }: Props) {
-  const [selected, setSelected] = useState<{ date: string; product?: string; mode: "actual" | "plan" } | null>(null);
+  const [selected, setSelected] = useState<{ date: string; product?: string; mode: "actual" | "plan"; asOf?: string } | null>(null);
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return rows.filter(row => !query || row.product.toLowerCase().includes(query) || row.label.toLowerCase().includes(query));
@@ -49,9 +49,9 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
       plan: snapshot ? day.plan : null,
     };
   }), [data, actual, workToday, snapshot]);
-  const selection = useMemo(() => selected?.mode === "actual" && output.data ? {
-    month, category, search, gate, date: selected.date, product: selected.product, asOf: output.data.checkedAt,
-  } : null, [selected, output.data, month, category, search, gate]);
+  const selection = useMemo(() => selected?.mode === "actual" && selected.asOf ? {
+    month, category, search, gate, date: selected.date, product: selected.product, asOf: selected.asOf,
+  } : null, [selected, month, category, search, gate]);
   const selectedRows = selected ? filtered.filter(row => row.plannedDate === selected.date && (!selected.product || row.product === selected.product)) : [];
   const kpis = [
     { title: "Observed output (month)", value: show(actual.total, records.length > 0), sub: `${unit} · Next-gate scan evidence` },
@@ -63,7 +63,7 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
   return <div className="p-6 flex flex-col gap-4">
     <h2 className="text-sm font-extrabold uppercase tracking-wider">Monthly summary</h2>
     {output.loading && <p role="status" className="text-sm text-base-content/60">Loading observed output…</p>}
-    {output.error && <div role="alert" className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm">{output.error}<button type="button" className="btn btn-xs ml-2" onClick={output.reload}>Retry output</button></div>}
+    {output.error && <div role="alert" className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm">{output.error}{output.data && " Showing the last checked results."}<button type="button" className="btn btn-xs ml-2" onClick={output.reload}>Retry output</button></div>}
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {kpis.map(kpi => <div key={kpi.title} className="rounded-xl border border-base-300 px-4 py-3">
         <div className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">{kpi.title}</div>
@@ -71,7 +71,7 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
         <div className="text-xs text-base-content/60">{kpi.sub}</div>
       </div>)}
     </div>
-    <MonthlyChart compareOutputToPlan={false} data={chart} onPick={date => setSelected({ date, mode: actual.dates.has(date) ? "actual" : "plan" })} />
+    <MonthlyChart compareOutputToPlan={false} data={chart} onPick={date => setSelected({ date, mode: actual.dates.has(date) ? "actual" : "plan", asOf: output.data?.checkedAt })} />
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-base-content/70">
       <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#f5c542]" />D/S observed</span>
       <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#6d4fd8]" />N/S observed</span>
@@ -108,7 +108,7 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
                     disabled={!output.data}
                     aria-label={`Observed output ${product} ${day.date}`}
                     title={`D/S ${show(cell.ds, cell.hasDs)} · N/S ${show(cell.ns, cell.hasNs)} · Total ${show(cell.total, true)}`}
-                    onClick={() => setSelected({ date: day.date, product, mode: "actual" })}
+                    onClick={() => setSelected({ date: day.date, product, mode: "actual", asOf: output.data?.checkedAt })}
                     className="w-full rounded-md px-1 py-1 flex items-center justify-center gap-1 whitespace-nowrap hover:bg-base-200/70 disabled:opacity-50"
                   >
                     <span className={`min-w-5 rounded px-1 text-center text-[11px] font-semibold leading-5 ${cell.hasDs ? "bg-[#fdecb3] text-[#8a5a00]" : "bg-base-200/60 text-base-content/30"}`}>

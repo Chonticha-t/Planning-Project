@@ -203,12 +203,12 @@ function fakePool(rules) {
   return { log, query, connect: async () => ({ query, release() {} }) };
 }
 
-async function withApi(pool, callback, { admin = true, loadCalendar, cacheOptions, logLoadPerformance = () => {} } = {}) {
+async function withApi(pool, callback, { admin = true, loadCalendar, cacheOptions, inGateCacheOptions, logLoadPerformance = () => {} } = {}) {
   const app = express();
   app.use(express.json());
   app.use(createCapacityLevelingRouter({
     pool,
-    cacheOptions, logLoadPerformance,
+    cacheOptions, inGateCacheOptions, logLoadPerformance,
     verifyPlanner: (req, res, next) => (admin ? (req.user = { username: "planner" }, next()) : res.status(401).json({ status: "ERROR" })),
     loadCalendar: loadCalendar ?? (async () => ({ calendar: { isWorking: (date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 } })),
   }));
@@ -1112,7 +1112,9 @@ test("capacity and plan writes invalidate only after COMMIT and retain uncached 
     ]);
     await withApi(pool, async api => {
       const url = "/load?startdate=2026-11-12&stopdate=2026-11-20";
+      const finished = "/routing/finished?date=2026-11-12";
       await api(url);
+      assert.equal((await api(finished)).headers.get("x-in-gate-cache"), "MISS");
       const before = pool.log.length;
       const saved = await api(`/${target}`, {
         method: target === "capacity" ? "PUT" : "POST",
@@ -1125,8 +1127,52 @@ test("capacity and plan writes invalidate only after COMMIT and retain uncached 
       if (target === "plan") assert.ok(pool.log.slice(before).some(entry => /planning_summary_gate/.test(entry.sql)));
       assert.equal((await api(url)).headers.get("x-capacity-cache"), "MISS");
       assert.equal((await api(url)).headers.get("x-capacity-cache"), "HIT");
+      assert.equal((await api(finished)).headers.get("x-in-gate-cache"), target === "plan" ? "MISS" : "HIT");
     });
   }
+});
+
+test("Planning In Gate shares Finished reads by date and refreshes cached results on expiry", async () => {
+  let clock = 0;
+  const pool = fakePool([[/FROM planning\.gate_output_log/, []]]);
+  await withApi(pool, async api => {
+    const url = "/routing/finished?date=2026-11-12";
+    const calls = () => pool.log.filter(entry => /FROM planning\.gate_output_log/.test(entry.sql)).length;
+    const replies = await Promise.all(Array.from({ length: 5 }, () => api(url)));
+    const payloads = await Promise.all(replies.map(response => response.json()));
+    assert.equal(calls(), 1);
+    assert.ok(payloads.every(payload => payload.data.checkedAt === payloads[0].data.checkedAt));
+    assert.equal((await api(url)).headers.get("x-in-gate-cache"), "HIT");
+    assert.equal((await api("/routing/finished?date=2026-11-13")).headers.get("x-in-gate-cache"), "MISS");
+    clock = 60000;
+    assert.equal((await api(url)).headers.get("x-in-gate-cache"), "MISS");
+    assert.equal((await api(url + "&refresh=true")).headers.get("x-in-gate-cache"), "REFRESH");
+    assert.equal(calls(), 4);
+  }, { inGateCacheOptions: { now: () => clock } });
+});
+
+test("Planning In Gate caches monthly summaries by scope and keeps detail pinned to the summary cutoff", async () => {
+  const pool = fakePool([
+    [/JSONB_AGG/i, [{ first_recorded_at: null, last_recorded_at: null, rules: [] }]],
+    [/FROM planning\.gate_output_log/, []],
+  ]);
+  await withApi(pool, async api => {
+    const url = "/routing/output/month?month=2026-11&category=ALL";
+    const initial = await api(url);
+    assert.equal(initial.headers.get("x-in-gate-cache"), "MISS");
+    const original = await initial.json();
+    const hit = await api(url);
+    assert.equal(hit.headers.get("x-in-gate-cache"), "HIT");
+    assert.deepEqual(await hit.json(), original);
+    assert.equal((await api(url + "&search=example")).headers.get("x-in-gate-cache"), "MISS");
+    assert.equal((await api(url.replace("category=ALL", "category=SMT"))).headers.get("x-in-gate-cache"), "MISS");
+    assert.equal((await api(url + "&refresh=true")).headers.get("x-in-gate-cache"), "REFRESH");
+    const query = new URLSearchParams({ month: "2026-11", gate: "FVAC", date: "2026-11-12", asOf: original.data.checkedAt });
+    const detail = await api("/routing/output/lots?" + query);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.headers.get("x-in-gate-cache"), null);
+    assert.equal((await detail.json()).data.checkedAt, original.data.checkedAt);
+  });
 });
 
 test("failed transactions do not discard a valid cached view", async () => {
@@ -1406,7 +1452,10 @@ test("locked plan updates live WIP status on /load and /plans/:id?live=true with
     assert.equal(historical.snapshot.arrivalRows.find(r => r.lot_no === "LOT-C-1").gate_state, "coming");
     assert.equal(historical.snapshot.arrivalRows.find(r => r.lot_no === "LOT-IG-2").is_hold, false);
 
-    const livePlan = (await (await api(`/plans/${header.plan_id}?live=true`)).json()).data;
+    const liveUrl = `/plans/${header.plan_id}?live=true`;
+    const firstLive = await api(liveUrl);
+    assert.equal(firstLive.headers.get("x-in-gate-cache"), "MISS");
+    const livePlan = (await firstLive.json()).data;
     assert.deepEqual(livePlan.snapshot.arrivalRows.map(r => r.lot_no), ["LOT-IG-1", "LOT-IG-2", "LOT-C-1", "LOT-C-2", "LOT-C-3"]);
     assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-1").passedGate, true);
     assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-1").currentGate, "FIN");
@@ -1414,6 +1463,13 @@ test("locked plan updates live WIP status on /load and /plans/:id?live=true with
     assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-C-1").gateState, "in_gate");
     assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-C-1").savedGateState, "coming");
     assert.equal(livePlan.snapshot.cards.find(c => c.lotNo === "LOT-IG-2").isHold, true);
+    const beforeHit = pool.log.length;
+    const hit = await api(liveUrl);
+    assert.equal(hit.headers.get("x-in-gate-cache"), "HIT");
+    assert.deepEqual((await hit.json()).data, livePlan);
+    assert.ok(pool.log.slice(beforeHit).some(entry => /FROM planning\.work_plan p/.test(entry.sql)));
+    assert.ok(!pool.log.slice(beforeHit).some(entry => /planning_summary_gate/.test(entry.sql)));
+    assert.equal((await api(liveUrl + "&refresh=true")).headers.get("x-in-gate-cache"), "REFRESH");
 
     const promotedOrder = [
       orderId(initialRows[0]), orderId(initialRows[1]),

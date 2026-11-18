@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
@@ -20,6 +20,7 @@ import { HistoryPanel } from "./HistoryPanel";
 const CATEGORIES: InGateCategory[] = ["ALL", "EFPC_GEN", "EFPC_AUTO", "SMT"];
 const DEFAULT_FPC_GATES = ["FVAC", "FADL", "FIN"];
 const DEFAULT_SMT_GATES = ["MMOT", "MBLK", "MFIN"];
+const TV_REFRESH_MS = 60000;
 
 export default function SavedPlanPage() {
   const [params, setParams] = useSearchParams();
@@ -36,9 +37,40 @@ export default function SavedPlanPage() {
   const [search, setSearch] = useState("");
   const [tvMode, setTvMode] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const { saved, loading, error, reload } = useSavedPlan();
+  const { saved, loading, error, reload, revalidate: revalidatePlan } = useSavedPlan();
   const finished = useFinishedToday(date, view === "day");
   const monthly = useMonthlyOutput(month, category, search, view === "month");
+  const { loading: observedLoading, revalidate: revalidateObserved } = view === "day" ? finished : monthly;
+
+  useEffect(() => {
+    if (!tvMode || loading || observedLoading) return;
+    let dueAt = performance.now() + TV_REFRESH_MS;
+    let timer: number | undefined;
+    function schedule() {
+      window.clearTimeout(timer);
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+
+      const now = performance.now();
+      if (now >= dueAt) {
+        dueAt = now + TV_REFRESH_MS;
+        revalidatePlan();
+        revalidateObserved();
+      }
+      timer = window.setTimeout(schedule, dueAt - now);
+    }
+
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("online", schedule);
+    window.addEventListener("offline", schedule);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("online", schedule);
+      window.removeEventListener("offline", schedule);
+    };
+  }, [tvMode, loading, observedLoading, revalidatePlan, revalidateObserved]);
+
   const savedPlanLots = useMemo(() => saved ? savedPlanRows(saved.snapshot, "ALL") : [], [saved]);
   const rows = useMemo(() => saved ? savedPlanRows(saved.snapshot, category) : [], [saved, category]);
   const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows, { excludePassed: true }) : new Map(), [saved, rows]);
@@ -122,24 +154,31 @@ export default function SavedPlanPage() {
   };
 
   return <div className={`planning-summary-gate flex flex-col gap-4 w-full ${tvMode ? "fixed inset-0 z-[100] overflow-y-auto bg-base-200 p-4 sm:p-6" : ""}`}>
-    <InGateHeader snapshotOnly busy={loading || exporting || monthly.loading} exportDisabled={!saved || Boolean(error) || !visible.length}
-      monthStatus={monthly.loading ? "Loading observed output…" : monthly.error ? "Observed output unavailable" : "Saved arrivals · Observed gate output"}
+    <InGateHeader snapshotOnly busy={loading || exporting || finished.loading || monthly.loading} exportDisabled={!saved || Boolean(error) || !visible.length}
+      monthStatus={monthly.loading ? "Loading observed output…" : monthly.error ? (monthly.data ? "Showing last checked output" : "Observed output unavailable") : "Saved arrivals · Observed gate output"}
       view={view} onViewChange={changeView} month={month} thisMonth={today.slice(0, 7)} onMonthChange={setMonth}
       unit={unit} onUnitChange={setUnit} category={category} onCategoryChange={changeCategory}
       date={date} todayStr={today} onDateChange={setDate} orderBy="plan" onOrderByChange={() => {}}
-      search={search} onSearchChange={setSearch} onExcel={() => void exportPlan()} onRefresh={() => { void reload(); finished.reload(); monthly.reload(); }}
+      search={search} onSearchChange={setSearch} onExcel={() => void exportPlan()} onRefresh={() => {
+        reload();
+        if (view === "day") finished.reload();
+        else monthly.reload();
+      }}
       workMode={workMode} onWorkModeChange={setWorkMode} tvMode={tvMode} onTvModeChange={setTvMode} />
-    {loading && view === "day" ? <div role="status" className="p-8 text-center">Loading saved plan…</div>
-      : error && view === "day" ? <div role="alert" className="rounded-xl border border-error/30 bg-error/10 p-5">
-        <p>{error}</p><button type="button" className="btn btn-sm mt-3" onClick={() => void reload()}>Retry</button>
+    {saved && error && <div role="alert" className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm">
+      {error} Showing the last loaded plan. <button type="button" className="btn btn-xs ml-2" onClick={reload}>Retry plan</button>
+    </div>}
+    {!saved && loading && view === "day" ? <div role="status" className="p-8 text-center">Loading saved plan…</div>
+      : !saved && error && view === "day" ? <div role="alert" className="rounded-xl border border-error/30 bg-error/10 p-5">
+        <p>{error}</p><button type="button" className="btn btn-sm mt-3" onClick={reload}>Retry</button>
       </div>
       : !saved && view === "day" ? <div role="status" className="rounded-xl bg-base-100 border border-base-300 p-8 text-center">
         No saved plan yet. Save a plan in Capacity Leveling, then refresh this page.
       </div>
       : <>
-        {view === "month" && (loading || error || !saved) && <div role={error ? "alert" : "status"} className="rounded-xl border border-base-300 bg-base-100 p-3 text-sm">
+        {view === "month" && !saved && <div role={error ? "alert" : "status"} className="rounded-xl border border-base-300 bg-base-100 p-3 text-sm">
           {loading ? "Loading saved arrivals…" : error ? "Saved arrivals are unavailable. Observed output can still be viewed." : "No saved plan available. Showing observed output only."}
-          {error && <button type="button" className="btn btn-xs ml-2" onClick={() => void reload()}>Retry plan</button>}
+          {error && <button type="button" className="btn btn-xs ml-2" onClick={reload}>Retry plan</button>}
         </div>}
         <div className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-visible">
           <div role="group" aria-label="Gate" className="flex overflow-x-auto gap-1 px-4 pt-3 rounded-t-2xl bg-[#316be8]">
@@ -153,7 +192,7 @@ export default function SavedPlanPage() {
             <div className="p-6 flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-sm font-extrabold uppercase tracking-wider mr-1">Queue</h2>
-                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">Finished {finished.loading || finished.error ? "—" : finishedRows.length} lots observed · {countText(gate)} planned</span>
+                <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold text-base-content/75">Finished {finished.checkedAt ? finishedRows.length : "—"} lots observed · {countText(gate)} planned</span>
                 {queue.some(({ lot }) => lot.isHold) && <span className="rounded-full border border-base-300 bg-base-200/60 px-3 py-1 text-xs font-semibold">{queue.filter(({ lot }) => lot.isHold).length} HOLD at save</span>}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   {workMode === "edit" && <button type="button" disabled title="Save order is not connected yet" className="btn btn-xs h-8 rounded-lg border border-base-300 bg-base-100 px-3 text-xs font-bold flex items-center gap-1.5"><Plus size={13} className="rotate-45 text-[#316be8]" />+ Auto-arrange</button>}

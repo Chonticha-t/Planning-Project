@@ -51,7 +51,7 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
   const routing = useLotRouting(visible.flatMap(row => row.lot ? [row.lot] : []));
   const pendingCount = work.queue.filter(row => row.lot?.kind === "lot").length;
   const allLotCount = work.all.filter(row => !row.lot || row.lot.kind === "lot").length;
-  const countAvailable = !finished.loading && !finished.error;
+  const countAvailable = Boolean(finished.checkedAt);
   const finishedCount = countAvailable ? finished.rows.length : "—";
 
   return <div className="flex flex-col gap-3">
@@ -71,7 +71,7 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
     {filter === "all" && <p className="text-xs text-base-content/60">Finished quantities, plan minutes and shift allocation are from the saved plan. They are not actual passed quantity or runtime. Unplanned or ambiguous matches have no plan values.</p>}
     <div className="text-xs text-base-content/60" role={finished.error ? "alert" : "status"}>
       {finished.loading ? "Loading next-gate SCAN IN evidence…"
-        : finished.error ? <>{finished.error} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
+        : finished.error ? <>{finished.error}{finished.checkedAt && " Showing the last checked results."} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
         : <>Finished = SCAN IN at the next gate, using its in_date calendar day. Latest WIP evidence only; not a complete scan history.
           {finished.unresolved > 0 && <span> Some scans have unresolved routing or category and are excluded from the corresponding totals.</span>}
           <button type="button" className="link ml-2" onClick={finished.reload}>Refresh finished</button></>}

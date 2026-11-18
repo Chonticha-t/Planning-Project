@@ -54,11 +54,11 @@ function parseItems(body) {
   });
 }
 
-function createInGateRoutingRouter({ pool }) {
+function createInGateRoutingRouter({ pool, finishedCache, monthlyCache }) {
   const router = express.Router();
-  router.use("/output", createMonthlyOutputRouter({ pool }));
+  router.use("/output", createMonthlyOutputRouter({ pool, cache: monthlyCache }));
   // Finished evidence is read-only and available in Viewer mode.
-  router.get("/finished", createFinishedHandler({ pool, resolveRoute }));
+  router.get("/finished", createFinishedHandler({ pool, cache: finishedCache }));
   // Routing lookup is read-only and available in Viewer mode.
   router.post("/lookup", async (req, res) => {
     res.set("Cache-Control", "no-store");

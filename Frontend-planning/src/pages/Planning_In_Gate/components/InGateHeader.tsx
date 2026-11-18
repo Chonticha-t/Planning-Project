@@ -274,38 +274,34 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
             {monthStatus ?? (snapshotOnly ? "Saved plan · Actual unavailable" : `Actual = scan out · updated ${dayjs().format("DD/MM HH:mm")}`)}
           </span>
         ) : (
-          <>
-            {/* Planning · edit | Production · view */}
-            <div role="group" aria-label="Work mode" className={PILL_GROUP}>
-              {MODE_OPTIONS.map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={workMode === value}
-                  onClick={() => onWorkModeChange(value)}
-                  className={pill(workMode === value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* TV mode button */}
-            <button
-              type="button"
-              aria-pressed={tvMode}
-              onClick={() => onTvModeChange(!tvMode)}
-              className={`btn btn-xs h-8 px-3 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
-                tvMode
-                  ? "btn-primary shadow-xs"
-                  : "border border-base-300 bg-base-100 text-base-content/80 hover:bg-base-200"
-              }`}
-            >
-              {tvMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-              <span>TV mode</span>
-            </button>
-          </>
+          <div role="group" aria-label="Work mode" className={PILL_GROUP}>
+            {MODE_OPTIONS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={workMode === value}
+                onClick={() => onWorkModeChange(value)}
+                className={pill(workMode === value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         )}
+
+        <button
+          type="button"
+          aria-pressed={tvMode}
+          onClick={() => onTvModeChange(!tvMode)}
+          className={`btn btn-xs h-8 px-3 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+            tvMode
+              ? "btn-primary shadow-xs"
+              : "border border-base-300 bg-base-100 text-base-content/80 hover:bg-base-200"
+          }`}
+        >
+          {tvMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          <span>TV mode</span>
+        </button>
 
         <button
           type="button"

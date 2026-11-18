@@ -177,9 +177,13 @@ const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
 const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id, hasSnapshot: Boolean(row.has_snapshot) });
 const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cacheOptions = {}, logLoadPerformance }) => {
+const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cacheOptions = {}, inGateCacheOptions = {}, logLoadPerformance }) => {
   const router = express.Router();
-  router.use("/routing", createInGateRoutingRouter({ pool, verifyPlanner }));
+  const observationCacheOptions = { maxBytes: 16 * 1024 * 1024, ...inGateCacheOptions };
+  const finishedCache = createGateTableCache(observationCacheOptions);
+  const monthlyCache = createGateTableCache(observationCacheOptions);
+  const livePlanCache = createGateTableCache({ maxEntries: 2, ...inGateCacheOptions });
+  router.use("/routing", createInGateRoutingRouter({ pool, finishedCache, monthlyCache }));
   const configuredTtl = Number(process.env.PLANNING_CAPACITY_CACHE_TTL_MS ?? 60000);
   const configuredMb = Number(process.env.PLANNING_CAPACITY_CACHE_MAX_MB ?? 128);
   const loadCache = createGateTableCache({
@@ -272,11 +276,15 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         ? { ...rows[0].view_snapshot.data, plan: planInfo(rows[0]) } : null;
       // The live view (Planning In Gate) also drops saved cards at gates the product never visits;
       // otherwise they would read as passed once the live rows skip those gates.
-      const snapshot = baseSnapshot && req.query.live === "true"
-        ? enrichSnapshotWithLiveStatus(
+      let snapshot = baseSnapshot;
+      if (baseSnapshot && req.query.live === "true") {
+        const cached = await livePlanCache.read(rows[0].plan_id, async () => enrichSnapshotWithLiveStatus(
           dropUnroutedFromSnapshot(baseSnapshot, await readRouteRows(pool, (baseSnapshot.arrivalRows ?? []).map((row) => row.prd_name))),
-          (await pool.query(WORKS_SQL, [LEVELING_GATES])).rows)
-        : baseSnapshot;
+          (await pool.query(WORKS_SQL, [LEVELING_GATES])).rows
+        ), { force: req.query.refresh === "true" });
+        snapshot = { ...cached.value, plan: baseSnapshot.plan };
+        res.set("X-In-Gate-Cache", cached.status);
+      }
       return res.json({ status: "OK", data: {
         plan: historyInfo(rows[0]),
         moves: moves.map((move) => ({ workKey: move.work_key, gate: move.gate_name,
@@ -546,6 +554,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
           message: `${outcome.missing} moved card(s) are no longer in Summary Gate. Reload the page before saving again.` });
       }
       loadCache.invalidate();
+      finishedCache.invalidate();
       return res.json({ status: "OK", data: { plan: outcome.plan, movedCount: moves.length,
         orderedGroupCount: outcome.orderedGroupCount }, message: "Plan saved." });
     } catch (error) {

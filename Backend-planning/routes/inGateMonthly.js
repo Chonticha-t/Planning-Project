@@ -62,8 +62,37 @@ function workDate(now, rule) {
   return previous.toISOString().slice(0, 10);
 }
 
-function createMonthlyOutputRouter({ pool }) {
+function createMonthlyOutputRouter({ pool, cache }) {
   const router = express.Router();
+  const load = async (details, scope, params, checkedAt, now) => {
+    let client;
+    try {
+      client = await pool.connect();
+      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await client.query("SET LOCAL statement_timeout = '8s'");
+      await client.query("SET LOCAL lock_timeout = '2s'");
+      let data;
+      if (details) {
+        const records = (await client.query(LOTS_SQL, params)).rows;
+        const rows = records.slice(0, PAGE_SIZE).map(row => ({ ...row, pcs: quantity(row.pcs), sheets: quantity(row.sheets) }));
+        data = { ...scope, checkedAt, rows, nextCursor: records.length > PAGE_SIZE ? rows.at(-1).id : null };
+      } else {
+        const records = (await client.query(SUMMARY_SQL, params)).rows;
+        if (records.length > MAX_GROUPS) throw new Error("OUTPUT_LIMIT");
+        const meta = (await client.query(META_SQL, params)).rows[0];
+        const dates = new Set(meta.rules.map(rule => workDate(now, rule)));
+        const rows = records.map(row => ({ ...row, pcs: quantity(row.pcs), sheets: quantity(row.sheets) }));
+        data = { ...scope, checkedAt, coverage: "observed_only", rows,
+          workToday: dates.size === 1 ? [...dates][0] : null,
+          firstRecordedAt: meta.first_recorded_at, lastRecordedAt: meta.last_recorded_at, shiftRules: meta.rules };
+      }
+      await client.query("COMMIT");
+      return data;
+    } catch (error) {
+      if (client) await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally { client?.release(); }
+  };
   // Follow the existing read-only Viewer access policy used by routing and saved plans.
   const handler = details => async (req, res) => {
     res.set("Cache-Control", "no-store");
@@ -91,33 +120,16 @@ function createMonthlyOutputRouter({ pool }) {
     } catch {
       return res.status(400).json({ code: "INVALID_QUERY", message: "Choose a valid month, category and output selection." });
     }
-    let client;
     try {
-      client = await pool.connect();
-      await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      await client.query("SET LOCAL statement_timeout = '8s'");
-      await client.query("SET LOCAL lock_timeout = '2s'");
-      let data;
-      if (details) {
-        const records = (await client.query(LOTS_SQL, params)).rows;
-        const rows = records.slice(0, PAGE_SIZE).map(row => ({ ...row, pcs: quantity(row.pcs), sheets: quantity(row.sheets) }));
-        data = { ...scope, checkedAt, rows, nextCursor: records.length > PAGE_SIZE ? rows.at(-1).id : null };
-      } else {
-        const records = (await client.query(SUMMARY_SQL, params)).rows;
-        if (records.length > MAX_GROUPS) throw new Error("OUTPUT_LIMIT");
-        const meta = (await client.query(META_SQL, params)).rows[0];
-        const dates = new Set(meta.rules.map(rule => workDate(now, rule)));
-        const rows = records.map(row => ({ ...row, pcs: quantity(row.pcs), sheets: quantity(row.sheets) }));
-        data = { ...scope, checkedAt, coverage: "observed_only", rows,
-          workToday: dates.size === 1 ? [...dates][0] : null,
-          firstRecordedAt: meta.first_recorded_at, lastRecordedAt: meta.last_recorded_at, shiftRules: meta.rules };
-      }
-      await client.query("COMMIT");
-      return res.json({ status: "OK", data });
+      const read = () => load(details, scope, params, checkedAt, now);
+      if (details || !cache) return res.json({ status: "OK", data: await read() });
+      const key = JSON.stringify([scope.month, scope.category, scope.search]);
+      const result = await cache.read(key, read, { force: req.query.refresh === "true" });
+      res.set("X-In-Gate-Cache", result.status);
+      return res.json({ status: "OK", data: result.value });
     } catch {
-      if (client) await client.query("ROLLBACK").catch(() => {});
       return res.status(503).json({ code: "OUTPUT_UNAVAILABLE", message: "Observed output is unavailable. Please retry or narrow your search." });
-    } finally { client?.release(); }
+    }
   };
   router.get("/month", handler(false));
   router.get("/lots", handler(true));
