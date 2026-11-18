@@ -8,6 +8,8 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  ChevronsDown,
+  ChevronsUp,
   Calendar,
   Clock3,
   GripVertical,
@@ -207,12 +209,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   const toggleDayCollapse = (date: string) => {
     setCollapsedDays((prev) => ({ ...prev, [date]: !prev[date] }));
   };
-  const expandAllDays = () => setCollapsedDays({});
-  const collapseAllDays = () => {
-    const all: Record<string, boolean> = {};
-    for (const d of boardDays) all[d.date] = true;
-    setCollapsedDays(all);
-  };
   const [reorderTarget, setReorderTarget] = useState<{
     lotId: string;
     position: "before" | "after";
@@ -257,6 +253,23 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       (col) => !col.gates[boardGate]?.off || filteredLots.some((l) => l.plannedDate === col.date)
     );
   }, [visibleDays, hideOffDays, boardGate, filteredLots]);
+
+  const expandAllDays = () => setCollapsedDays({});
+  const collapseAllDays = () => {
+    const all: Record<string, boolean> = {};
+    for (const d of boardDays) all[d.date] = true;
+    setCollapsedDays(all);
+  };
+  const areAllDaysCollapsed =
+    boardDays.length > 0 &&
+    boardDays.every((d) => Boolean(collapsedDays[d.date]));
+  const toggleAllDays = () => {
+    if (areAllDaysCollapsed) {
+      expandAllDays();
+    } else {
+      collapseAllDays();
+    }
+  };
 
   // Calendar weeks (Monday start) across the visible range, for the Weeks view.
   const weekGroups = useMemo<WeekGroup[]>(() => {
@@ -587,25 +600,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </div>
           )}
 
-          {activeViewMode === "list" && granularity === "days" && (
-            <div className="inline-flex items-center gap-1 text-[11px] text-base-content/60 shrink-0">
-              <button
-                type="button"
-                onClick={expandAllDays}
-                className="hover:text-primary underline cursor-pointer"
-              >
-                Expand all
-              </button>
-              <span>/</span>
-              <button
-                type="button"
-                onClick={collapseAllDays}
-                className="hover:text-primary underline cursor-pointer"
-              >
-                Collapse all
-              </button>
-            </div>
-          )}
+
 
           {granularity === "days" && (
             <button
@@ -996,7 +991,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         <div className="overflow-x-auto rounded-xl border border-base-300">
           <table className="table table-sm table-fixed w-full min-w-[980px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:nth-child(2)]:text-left [&_th:nth-child(2)]:text-left [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
             <colgroup>
-              <col style={{ width: "38px" }} />
+              <col style={{ width: "42px" }} />
               <col style={{ width: "160px" }} />
               <col style={{ width: "120px" }} />
               <col style={{ width: "105px" }} />
@@ -1009,7 +1004,25 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </colgroup>
             <thead>
               <tr className="bg-base-200/80 border-b border-base-300 text-[11.5px] font-bold tracking-[0.03em] text-base-content">
-                <th className="text-center">{isEditMode ? "SEL" : ""}</th>
+                <th className="text-center px-1 py-1">
+                  {granularity === "days" ? (
+                    <button
+                      type="button"
+                      onClick={toggleAllDays}
+                      className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-base-300/80 text-base-content/65 hover:text-primary transition-colors cursor-pointer"
+                      title={areAllDaysCollapsed ? "Expand all days (กางทุกวัน)" : "Collapse all days (ยุบทุกวัน)"}
+                      aria-label={areAllDaysCollapsed ? "Expand all days" : "Collapse all days"}
+                    >
+                      {areAllDaysCollapsed ? (
+                        <ChevronsDown size={15} className="text-primary" />
+                      ) : (
+                        <ChevronsUp size={15} />
+                      )}
+                    </button>
+                  ) : isEditMode ? (
+                    "SEL"
+                  ) : null}
+                </th>
                 <th>PRODUCT NAME</th>
                 <th>LOT</th>
                 <th>PCS</th>
