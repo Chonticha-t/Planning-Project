@@ -42,6 +42,7 @@ async function withGate(callback, env = {}) {
       };
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name === "./gateTableCache") return require(path.join(routeDirectory, "gateTableCache"));
+      if (name === "./routedGates") return require(path.join(routeDirectory, "routedGates"));
       throw new Error(`Unexpected dependency: ${name}`);
     },
   };

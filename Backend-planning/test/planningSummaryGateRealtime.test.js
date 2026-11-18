@@ -32,6 +32,7 @@ function monitorHarness(router = null) {
       if (name.endsWith("/workingCalendar")) return {};
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
+      if (name.endsWith("/routedGates")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/routedGates");
       if (name.endsWith("/gateTablePerformance")) return {
         createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
@@ -833,6 +834,7 @@ test("calendar endpoint shares cached ranges, supports forced reads and rejects 
       if (name.endsWith("/config")) return {};
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
+      if (name.endsWith("/routedGates")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/routedGates");
       if (name.endsWith("/gateTablePerformance")) return {
         createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
@@ -1154,6 +1156,7 @@ test("table API returns the stored process group including null values", async (
       if (name.endsWith("/workingCalendar")) return {};
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
       if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
+      if (name.endsWith("/routedGates")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/routedGates");
       if (name.endsWith("/gateTablePerformance")) return {
         createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
       };
@@ -1164,6 +1167,10 @@ test("table API returns the stored process group including null values", async (
   const res = { set() {}, json(body) { this.body = body; } };
   await routes.get("/table")({ query: {} }, res);
   assert.match(queryText, /proc_disp,\s+process_group,\s+seq,/);
+  // Gates outside the product routing (e.g. FVAC for an FFPC -> FIN product) are left out.
+  assert.match(queryText, /FROM \(\s+SELECT g\.\*\s+FROM planning\.planning_summary_gate g\s+LEFT JOIN \(/);
+  assert.match(queryText, /WHERE rt\.prd_name IS NULL OR g\.gate_name = ANY\(rt\.gates\)\) planning_summary_gate/);
+  assert.match(queryText, /WHEN 'AT-FVAC' THEN 'FVAC'/);
   assert.equal(res.body.status, "OK");
   assert.deepEqual(res.body.data, expectedRows);
 });

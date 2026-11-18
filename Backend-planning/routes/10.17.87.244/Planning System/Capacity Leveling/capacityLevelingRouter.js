@@ -12,12 +12,9 @@ const {
   isDate, dayCapacity, buildCapacityConfig, parseSettingsPayload, sameShift,
   arrivalWorkKey, buildArrivalCards, arrivalEndDate, parsePlanPayload, resolveBoardCardOrder,
   mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
-  ROUTE_GATE_ALIASES, attachRouteLeads, dropUnroutedFromSnapshot,
+  attachRouteLeads, dropUnroutedFromSnapshot,
 } = require("./capacityLeveling");
-
-// Routing gate names mapped to Summary Gate names (constants only, no user input).
-const ROUTED_GATE_SQL = `CASE r.gate_name ${Object.entries(ROUTE_GATE_ALIASES)
-  .map(([from, to]) => `WHEN '${from}' THEN '${to}'`).join(" ")} ELSE r.gate_name END`;
+const { ROUTED_SUMMARY_GATE_SQL } = require("../Planning Summary Gate/routedGates");
 
 // Arrival dates must never reuse plans saved as release dates.
 const PLAN_METHOD = "gate_arrival_max_target_v1";
@@ -52,16 +49,10 @@ const settingParams = (gate, code, kind, from, to, shift, actor) => [
 
 // Summary Gate already resolves the routing-specific lead time from the gate master.
 // Keep every allocation for the arrival grid; board cards group the same physical lot and source arrival date.
-// Summary Gate applies one route per category, so rows at gates a product's routing never visits (an
-// FFPC -> FIN product has no FVAC or FADL) are skipped before previous/next gates are linked.
-// Products without any routing keep every gate.
+// Gates outside the product routing are skipped (see routedGates.js) before previous/next gates are
+// linked, so an FFPC -> FIN product links FIN to FFPC rather than to FVAC or FADL.
 const WORKS_SQL = `
-  WITH routed AS (
-    SELECT r.prd_name, array_agg(DISTINCT ${ROUTED_GATE_SQL}) AS gates
-    FROM planning.prd_routing_master r
-    WHERE r.prd_name IN (SELECT DISTINCT prd_name FROM planning.planning_summary_gate)
-    GROUP BY r.prd_name
-  ), base AS (
+  WITH base AS (
     SELECT g.*,
            LAG(g.gate_name) OVER w AS prev_gate,
            LAG(g.must_out) OVER w AS prev_must_out,
@@ -69,9 +60,7 @@ const WORKS_SQL = `
            LEAD(g.arrive_by) OVER w AS next_arrive_by,
            LEAD(g.must_out) OVER w AS next_must_out,
            LEAD(g.gate_name) OVER w AS routed_next_gate
-    FROM planning.planning_summary_gate g
-    LEFT JOIN routed rt ON rt.prd_name = g.prd_name
-    WHERE rt.prd_name IS NULL OR g.gate_name = ANY(rt.gates)
+    FROM (${ROUTED_SUMMARY_GATE_SQL}) g
     WINDOW w AS (PARTITION BY g.prd_name, g.lot_no, g.due_date, g.status, g.pri ORDER BY g.gate_order)
   ), works AS (
     SELECT ROW_NUMBER() OVER (ORDER BY gate_order, pri) AS rn, *

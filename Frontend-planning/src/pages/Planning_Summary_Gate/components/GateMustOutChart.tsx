@@ -89,7 +89,8 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
       {/* Chart Canvas */}
       <div className="w-full mt-1 overflow-x-auto" data-arrival-scroll>
       <div className="h-48 w-full outline-none select-none [&_*]:outline-none [&_*]:focus:outline-none [&_.recharts-wrapper]:outline-none [&_.recharts-surface]:outline-none" style={{ minWidth: getArrivalMinWidth(chartData.length) }}>
-        <ResponsiveContainer width="100%" height="100%">
+        {/* initialDimension avoids recharts' width(-1)/height(-1) warning before ResizeObserver measures (h-48 = 192px). */}
+        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 1, height: 192 }}>
           <BarChart
             data={plotData}
             onClick={handleBarClick}

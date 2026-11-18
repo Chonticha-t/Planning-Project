@@ -400,7 +400,7 @@ test("load reads routing for the shown products, drops never-visited gates and l
   assert.deepEqual(route.params, [["PRD-A", "PRD-B"]]);
   // Summary Gate neighbours skip gates outside the product routing, and the next gate follows them too.
   const works = pool.log.find((entry) => /planning_summary_gate/.test(entry.sql));
-  assert.match(works.sql, /LEFT JOIN routed rt ON rt\.prd_name = g\.prd_name WHERE rt\.prd_name IS NULL OR g\.gate_name = ANY\(rt\.gates\)/);
+  assert.match(works.sql, /rt ON rt\.prd_name = g\.prd_name WHERE rt\.prd_name IS NULL OR g\.gate_name = ANY\(rt\.gates\)/);
   assert.match(works.sql, /WHEN 'AT-FIN' THEN 'FIN'/);
   assert.match(works.sql, /COALESCE\(w\.routed_next_gate, w\.next_gate\) AS next_gate/);
 });

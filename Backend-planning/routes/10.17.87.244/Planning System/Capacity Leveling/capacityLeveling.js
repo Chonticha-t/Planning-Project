@@ -48,7 +48,7 @@ const calculateLotLoadMin = (leadDays, totalProcInGate, normalMin) => {
 };
 
 // The routing master names some gates differently from Summary Gate.
-const ROUTE_GATE_ALIASES = Object.freeze({ "AT-FVAC": "FVAC", "AT-FADL": "FADL", "AT-FIN": "FIN", MMOT1: "MMOT", MBLK1: "MBLK" });
+const { ROUTE_GATE_ALIASES } = require("../Planning Summary Gate/routedGates");
 
 // Product routing gates under Summary Gate names. Routing rows are the gate groups a product really visits.
 const buildRouteIndex = (routeRows) => {

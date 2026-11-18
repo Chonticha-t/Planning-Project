@@ -7,6 +7,7 @@ const loadGateCalendar = createGateCalendarCache(loadCalendar);
 const { createGateTableProfiler } = require("./gateTablePerformance");
 const profileGateTable = createGateTableProfiler(pool_smart);
 const { createGateTableCache } = require("./gateTableCache");
+const { ROUTED_SUMMARY_GATE_SQL } = require("./routedGates");
 const configuredCacheTtl = Number(process.env.PLANNING_GATE_CACHE_TTL_MS ?? 60000);
 const configuredCacheMaxMb = Number(process.env.PLANNING_GATE_CACHE_MAX_MB ?? 64);
 const gateTableCache = createGateTableCache({
@@ -150,6 +151,7 @@ router.get("/calendar", async (req, res) => {
 });
 
 // 1. GET /table: Planning Summary Gate Table Data
+// Rows at gates outside the product routing are left out (see routedGates.js), as in Capacity Leveling.
 router.get("/table", async (req, res) => {
   setNoCache(res);
   const profile = profileGateTable(res);
@@ -239,7 +241,7 @@ router.get("/table", async (req, res) => {
         on_time,
         today_action,
         to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-      FROM planning.planning_summary_gate
+      FROM (${ROUTED_SUMMARY_GATE_SQL}) planning_summary_gate
       ${whereClause}
       ORDER BY gate_order ASC, pri ASC
     `;
@@ -295,7 +297,7 @@ router.get("/summary", async (req, res) => {
         COUNT(*) FILTER (WHERE ${mustOutColumn} = CURRENT_DATE)::int AS must_out_today_count,
         COUNT(*) FILTER (WHERE is_hold = TRUE)::int AS hold_count,
         COUNT(*) FILTER (WHERE is_late = TRUE)::int AS late_count
-      FROM planning.planning_summary_gate
+      FROM (${ROUTED_SUMMARY_GATE_SQL}) planning_summary_gate
       ${where}
       GROUP BY gate_name
       ORDER BY MIN(gate_order) ASC
