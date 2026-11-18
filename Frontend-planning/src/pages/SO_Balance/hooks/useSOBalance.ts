@@ -3,9 +3,9 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 import {
-  PO_BALANCE_DISTINCT_PRODUCT_API,
-  PO_BALANCE_STREAM_API,
-  PO_BALANCE_TABLE_API,
+  SO_BALANCE_DISTINCT_PRODUCT_API,
+  SO_BALANCE_STREAM_API,
+  SO_BALANCE_TABLE_API,
 } from "./api";
 import type { ApiResponse, PlanningFilter, PlanningRow, PlanningStatus, PlanningSummaryRow } from "../types";
 
@@ -71,8 +71,8 @@ export const computeSummaryFromRows = (rows: PlanningRow[]): PlanningSummaryRow[
   }));
 };
 
-// ดึงข้อมูลตาราง + summary ของหน้า PO Balance ด้วย SSE (Server-Sent Events) แบบ Real-time โดยไม่ยิง API รัวๆ
-const usePOBalance = () => {
+// ดึงข้อมูลตาราง + summary ของหน้า SO Balance ด้วย SSE (Server-Sent Events) แบบ Real-time โดยไม่ยิง API รัวๆ
+const useSOBalance = () => {
   const [rows, setRows] = useState<PlanningRow[]>([]);
   const [summary, setSummary] = useState<PlanningSummaryRow[]>([]);
   const [products, setProducts] = useState<string[]>([]);
@@ -93,7 +93,7 @@ const usePOBalance = () => {
     productsAbortRef.current = controller;
 
     try {
-      const res = await axios.get<ApiResponse<{ prd_name: string }[]>>(PO_BALANCE_DISTINCT_PRODUCT_API, {
+      const res = await axios.get<ApiResponse<{ prd_name: string }[]>>(SO_BALANCE_DISTINCT_PRODUCT_API, {
         params: { ...(item_prefix ? { item_prefix } : {}), _t: Date.now() },
         timeout: AJAX_TIMEOUT_MS,
         signal: controller.signal,
@@ -139,7 +139,7 @@ const usePOBalance = () => {
         const filterParams = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ""));
         const params = { ...filterParams, _t: Date.now() };
 
-        const table = await axios.get<ApiResponse<PlanningRow[]>>(PO_BALANCE_TABLE_API, {
+        const table = await axios.get<ApiResponse<PlanningRow[]>>(SO_BALANCE_TABLE_API, {
           params,
           timeout: AJAX_TIMEOUT_MS,
           signal: controller.signal,
@@ -203,7 +203,7 @@ const usePOBalance = () => {
 
     const connectSSE = () => {
       try {
-        eventSource = new EventSource(PO_BALANCE_STREAM_API);
+        eventSource = new EventSource(SO_BALANCE_STREAM_API);
 
         eventSource.onmessage = (event) => {
           if (!isSubscribed) return;
@@ -251,4 +251,4 @@ const usePOBalance = () => {
   return { rows, summary, products, lastUpdatedAt, loading, fetchData, dbVersion };
 };
 
-export default usePOBalance;
+export default useSOBalance;

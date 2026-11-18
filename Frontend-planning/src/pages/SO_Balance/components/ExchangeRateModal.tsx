@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AnimatePresence, motion } from "motion/react";
-import { PO_BALANCE_EXCHANGE_RATE_API } from "../hooks/api";
+import { SO_BALANCE_EXCHANGE_RATE_API } from "../hooks/api";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 
@@ -250,7 +250,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
     const requestPromise = (async () => {
       try {
-        const response = await axios.get(PO_BALANCE_EXCHANGE_RATE_API, {
+        const response = await axios.get(SO_BALANCE_EXCHANGE_RATE_API, {
           params: { year, month },
           timeout: 8000,
         });
@@ -440,7 +440,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
         },
       };
 
-      const res = await axios.post(PO_BALANCE_EXCHANGE_RATE_API, payload, {
+      const res = await axios.post(SO_BALANCE_EXCHANGE_RATE_API, payload, {
         timeout: 10000,
       });
 
@@ -513,7 +513,7 @@ export const ExchangeRateModal: React.FC<ExchangeRateModalProps> = ({
 
     setDeleting(true);
     try {
-      const res = await axios.delete(PO_BALANCE_EXCHANGE_RATE_API, {
+      const res = await axios.delete(SO_BALANCE_EXCHANGE_RATE_API, {
         params: {
           year: parseInt(selectedYear, 10),
           month: selectedMonth,

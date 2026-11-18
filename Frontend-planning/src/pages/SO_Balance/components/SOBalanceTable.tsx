@@ -11,7 +11,7 @@ import { toDMY } from "../utils";
 
 export { SORT_OPTIONS };
 
-interface POBalanceTableProps {
+interface SOBalanceTableProps {
   rows: PlanningRow[];
   loading?: boolean;
   sortModel: GridSortModel;
@@ -226,7 +226,7 @@ const border = "color-mix(in oklab, var(--color-base-content) 11%, transparent)"
 const invBgGroup =
   "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
 
-const POBalanceTable = ({
+const SOBalanceTable = ({
   rows,
   loading: _loading,
   sortModel,
@@ -234,7 +234,7 @@ const POBalanceTable = ({
   onViewHistory,
   onExport,
   onOpenExchangeRate,
-}: POBalanceTableProps) => {
+}: SOBalanceTableProps) => {
   const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
     <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
@@ -457,4 +457,4 @@ const POBalanceTable = ({
   );
 };
 
-export default memo(POBalanceTable);
+export default memo(SOBalanceTable);

@@ -3,22 +3,22 @@ import { getApiBaseUrl } from "@/utils/apiConfig";
 export const API_BASE_URL = getApiBaseUrl();
 
 // 📋 ตารางแผนผลิต (รับ filter: status, prd_name, startdate, stopdate)
-export const PO_BALANCE_TABLE_API = `${API_BASE_URL}/table`;
+export const SO_BALANCE_TABLE_API = `${API_BASE_URL}/table`;
 
 // 📊 สรุปจำนวนแถว / ยอดที่ต้องผลิต แยกตาม status
-export const PO_BALANCE_SUMMARY_API = `${API_BASE_URL}/summary`;
+export const SO_BALANCE_SUMMARY_API = `${API_BASE_URL}/summary`;
 
 // 🔽 รายชื่อ product สำหรับ dropdown
-export const PO_BALANCE_DISTINCT_PRODUCT_API = `${API_BASE_URL}/distinct_product`;
+export const SO_BALANCE_DISTINCT_PRODUCT_API = `${API_BASE_URL}/distinct_product`;
 
 // 🕒 เช็คเวลาอัปเดตล่าสุดของตาราง so_balance สำหรับ Auto Refresh
-export const PO_BALANCE_LAST_UPDATED_API = `${API_BASE_URL}/last_updated`;
+export const SO_BALANCE_LAST_UPDATED_API = `${API_BASE_URL}/last_updated`;
 
 // 💱 อัตราแลกเปลี่ยนรายเดือน (GET ดึงข้อมูล, POST บันทึกเข้า DB)
-export const PO_BALANCE_EXCHANGE_RATE_API = `${API_BASE_URL}/exchange_rate`;
+export const SO_BALANCE_EXCHANGE_RATE_API = `${API_BASE_URL}/exchange_rate`;
 
 // 📜 ประวัติรอบการคำนวณ SO Balance (History)
-export const PO_BALANCE_HISTORY_API = `${API_BASE_URL}/history`;
+export const SO_BALANCE_HISTORY_API = `${API_BASE_URL}/history`;
 
 // ⚡ Server-Sent Events (SSE) Stream สำหรับรับสัญญาณ Real-time เมื่อ Database อัปเดต
-export const PO_BALANCE_STREAM_API = `${API_BASE_URL}/stream`;
+export const SO_BALANCE_STREAM_API = `${API_BASE_URL}/stream`;

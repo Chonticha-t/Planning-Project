@@ -12,7 +12,7 @@ import {
   Layers,
 } from "lucide-react";
 import type { PlanningSummaryRow } from "../types";
-import { toDMY } from "../../PO_Balance/utils";
+import { toDMY } from "../../SO_Balance/utils";
 
 interface WipAssignModalProps {
   isOpen: boolean;

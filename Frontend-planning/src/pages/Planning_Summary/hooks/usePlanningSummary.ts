@@ -19,7 +19,7 @@ import {
   type PlanningSummaryKPI,
   type DistinctFilters,
 } from "../types";
-import { toDMY } from "../../PO_Balance/utils";
+import { toDMY } from "../../SO_Balance/utils";
 
 export const EMPTY_FILTER: PlanningSummaryFilter = {
   prd_name: "",

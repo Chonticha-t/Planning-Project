@@ -8,11 +8,11 @@ const express = require("express");
 const routesRoot = path.resolve(__dirname, "../routes");
 const routePaths = fs.readdirSync(routesRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
-  .map((entry) => path.join(routesRoot, entry.name, "Planning System/PO Balance/PO Balance.js"))
+  .map((entry) => path.join(routesRoot, entry.name, "Planning System/SO Balance/SO Balance.js"))
   .filter((candidate) => fs.existsSync(candidate));
-assert.equal(routePaths.length, 1, "Expected one PO Balance route");
+assert.equal(routePaths.length, 1, "Expected one SO Balance route");
 
-async function withPOBalanceApi({ rows = [], fail = false } = {}, callback) {
+async function withSOBalanceApi({ rows = [], fail = false } = {}, callback) {
   const queries = [];
   const errors = [];
   const pool = {
@@ -38,7 +38,7 @@ async function withPOBalanceApi({ rows = [], fail = false } = {}, callback) {
       if (name === "../Auth/Auth") {
         return { verifyPlanner: (_req, _res, next) => next() };
       }
-      throw new Error("Unexpected PO Balance dependency");
+      throw new Error("Unexpected SO Balance dependency");
     },
   };
   vm.runInNewContext(fs.readFileSync(routePaths[0], "utf8"), context);
@@ -67,7 +67,7 @@ async function withPOBalanceApi({ rows = [], fail = false } = {}, callback) {
 }
 
 test("history rejects missing product or due date before querying", async () => {
-  await withPOBalanceApi({}, async (get, queries) => {
+  await withSOBalanceApi({}, async (get, queries) => {
     for (const url of ["/history", "/history?prd_name=TEST-PRODUCT", "/history?due_date=2026-11-23"]) {
       const res = await get(url);
       assert.equal(res.status, 400);
@@ -78,7 +78,7 @@ test("history rejects missing product or due date before querying", async () => 
 });
 
 test("history rejects invalid dates and overlong products before querying", async () => {
-  await withPOBalanceApi({}, async (get, queries) => {
+  await withSOBalanceApi({}, async (get, queries) => {
     for (const due of ["2026-02-30", "2026-02-29", "2026-13-01", "invalid", "0000-01-01"]) {
       const res = await get("/history?prd_name=TEST-PRODUCT&due_date=" + due);
       assert.equal(res.status, 400);
@@ -94,7 +94,7 @@ test("history returns compact revision rows including revision zero and NULL val
     { prd_name: "TEST-PRODUCT", due_date: "2026-11-23", source_rev: 0, po_bal: null, source_update_at: null },
     { prd_name: "TEST-PRODUCT", due_date: "2026-11-23", source_rev: 1, po_bal: 0, source_update_at: "2026-11-17 08:30:00" },
   ];
-  await withPOBalanceApi({ rows }, async (get, queries) => {
+  await withSOBalanceApi({ rows }, async (get, queries) => {
     const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
     assert.equal(res.status, 200);
     assert.deepEqual(res.body.data, rows);
@@ -112,7 +112,7 @@ test("history returns compact revision rows including revision zero and NULL val
 });
 
 test("history accepts a valid leap date", async () => {
-  await withPOBalanceApi({}, async (get, queries) => {
+  await withSOBalanceApi({}, async (get, queries) => {
     const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2028-02-29");
     assert.equal(res.status, 200);
     assert.equal(queries[0].params[1], "2028-02-29");
@@ -121,7 +121,7 @@ test("history accepts a valid leap date", async () => {
 
 test("history binds a product containing SQL syntax as a parameter", async () => {
   const product = "TEST-' OR 1=1 --";
-  await withPOBalanceApi({}, async (get, queries) => {
+  await withSOBalanceApi({}, async (get, queries) => {
     const res = await get("/history?prd_name=" + encodeURIComponent(product) + "&due_date=2026-11-23");
     assert.equal(res.status, 200);
     assert.equal(queries[0].params[0], product);
@@ -130,7 +130,7 @@ test("history binds a product containing SQL syntax as a parameter", async () =>
 });
 
 test("history returns an empty successful result when no revisions were saved", async () => {
-  await withPOBalanceApi({}, async (get) => {
+  await withSOBalanceApi({}, async (get) => {
     const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
     assert.equal(res.status, 200);
     assert.equal(res.body.status, "OK");
@@ -139,7 +139,7 @@ test("history returns an empty successful result when no revisions were saved", 
 });
 
 test("history hides database details in both the response and log", async () => {
-  await withPOBalanceApi({ fail: true }, async (get, _queries, errors) => {
+  await withSOBalanceApi({ fail: true }, async (get, _queries, errors) => {
     const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
     assert.equal(res.status, 500);
     assert.deepEqual(res.body, { status: "ERROR", data: [], message: "Internal Server Error" });

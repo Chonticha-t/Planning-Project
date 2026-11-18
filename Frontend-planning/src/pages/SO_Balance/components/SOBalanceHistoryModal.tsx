@@ -13,11 +13,11 @@ import {
   Package,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { PO_BALANCE_HISTORY_API } from "../hooks/api";
-import type { PlanningRow, POBalanceHistoryRow, ApiResponse } from "../types";
+import { SO_BALANCE_HISTORY_API } from "../hooks/api";
+import type { PlanningRow, SOBalanceHistoryRow, ApiResponse } from "../types";
 import { toDMY } from "../utils";
 
-interface POBalanceHistoryModalProps {
+interface SOBalanceHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   row: PlanningRow | null;
@@ -39,12 +39,12 @@ const splitDateTime = (value?: string | null) => {
 
 const TH = "px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-base-content/60 whitespace-nowrap";
 
-const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
+const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
   isOpen,
   onClose,
   row,
 }) => {
-  const [history, setHistory] = useState<POBalanceHistoryRow[]>([]);
+  const [history, setHistory] = useState<SOBalanceHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,8 +61,8 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
       setLoading(true);
       setError(null);
       try {
-        const res = await axios.get<ApiResponse<POBalanceHistoryRow[]>>(
-          PO_BALANCE_HISTORY_API,
+        const res = await axios.get<ApiResponse<SOBalanceHistoryRow[]>>(
+          SO_BALANCE_HISTORY_API,
           {
             params: {
               prd_name: row.prd_name,
@@ -320,4 +320,4 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
   );
 };
 
-export default POBalanceHistoryModal;
+export default SOBalanceHistoryModal;
