@@ -15,7 +15,7 @@ interface SavePlanModalProps {
 
 const QUICK_REASONS = [
   "Open OT on weekend",
-  "Customer priority / Expedited PO",
+  "Customer priority / Expedited SO",
   "Material readiness aligned",
 ];
 

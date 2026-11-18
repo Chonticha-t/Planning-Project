@@ -122,19 +122,29 @@ const priorityForDayLeft = (days) => {
   return "Next Plan";
 };
 
-const refreshPoCalendarFields = async (client, poList, loader = loadCalendar) => {
-  if (!poList.length) return;
+const refreshSoCalendarFields = async (client, soList, loader = loadCalendar) => {
+  if (!soList.length) return;
   const { rows } = await client.query("SELECT CURRENT_DATE::text AS today");
   const today = rows[0]?.today;
   dayNumber(today);
-  const dates = [today, ...poList.map(po => po.ship_to_p1)];
+  const dates = [today, ...soList.map(so => so.ship_to_p1)];
   dates.forEach(dayNumber);
   dates.sort();
   const calendar = await loader(dates[0], dates[dates.length - 1]);
-  for (const po of poList) {
-    po.base_day_left = calendar.dayLeft(today, po.ship_to_p1);
-    po.base_priority = priorityForDayLeft(po.base_day_left);
+  for (const so of soList) {
+    so.base_day_left = calendar.dayLeft(today, so.ship_to_p1);
+    so.base_priority = priorityForDayLeft(so.base_day_left);
   }
 };
 
-module.exports = { CalendarError, calendarConfig, createCalendarIndex, loadCalendar, priorityForDayLeft, refreshPoCalendarFields };
+const refreshPoCalendarFields = refreshSoCalendarFields;
+
+module.exports = {
+  CalendarError,
+  calendarConfig,
+  createCalendarIndex,
+  loadCalendar,
+  priorityForDayLeft,
+  refreshPoCalendarFields,
+  refreshSoCalendarFields,
+};

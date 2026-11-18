@@ -19,19 +19,19 @@ export interface PlanningRow {
   net_required_pcs: number;
   rem_unmovement: number;
   rem_fg: number;
-  // ยอดเงิน (THB) จาก view v_po_amount — null ถ้าสินค้าไม่มีราคาใน po_price
+  // ยอดเงิน (THB) จาก view v_so_amount — null ถ้าสินค้าไม่มีราคาใน so_price
   wh_fg_amount: number | null;
   output_amount: number | null;
   status: PlanningStatus;
   updated_at: string;
-  // revision ล่าสุดของ PO (null ถ้าไม่มีประวัติ)
+  // revision ล่าสุดของ SO (null ถ้าไม่มีประวัติ)
   source_rev?: number | null;
 }
 
 export const SORT_OPTIONS: { field: keyof PlanningRow; label: string }[] = [
   { field: "prd_name", label: "Product" },
   { field: "due_date", label: "Due Date" },
-  { field: "po_bal", label: "PO Bal" },
+  { field: "po_bal", label: "SO Bal" },
   { field: "unmovement", label: "Unmovement" },
   { field: "rem_unmovement", label: "Rem Unmove" },
   { field: "f_g", label: "F/G" },

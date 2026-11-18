@@ -209,7 +209,7 @@ const usePOBalance = () => {
           if (!isSubscribed) return;
           try {
             const data = JSON.parse(event.data);
-            if (data.type === "PO_BALANCE_UPDATED") {
+            if (data.type === "PO_BALANCE_UPDATED" || data.type === "SO_BALANCE_UPDATED") {
               // ดึงข้อมูลใหม่แบบเงียบๆ ทันทีที่ Backend ส่งสัญญาณ พร้อมอัปเดตเวอร์ชันให้เคลียร์แคช
               setDbVersion((v) => v + 1);
               fetchData(activeFilterRef.current, { silent: true });

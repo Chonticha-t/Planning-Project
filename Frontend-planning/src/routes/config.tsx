@@ -65,10 +65,10 @@ export const routes_capacity: AppRoute[] = [
 // =========================================
 export const routes_planning: AppRoute[] = [
   {
-    path: `${BASE}/po_balance`,
+    path: `${BASE}/so_balance`,
     element: <PO_Balance />,
-    label: "PO BALANCE",
-    Title: "PO BALANCE",
+    label: "SO BALANCE",
+    Title: "SO BALANCE",
     isDefault: true,
     icon: ClipboardList,
   },
@@ -97,6 +97,13 @@ export const routes_planning: AppRoute[] = [
 
 // Sub-routes not shown in the left Drawer menu (accessed from inside pages)
 export const routes_hidden: AppRoute[] = [
+  {
+    path: `${BASE}/po_balance`,
+    element: <PO_Balance />,
+    label: "SO BALANCE",
+    Title: "SO BALANCE",
+    icon: ClipboardList,
+  },
   {
     path: `${BASE}/capacity/forecast`,
     element: <Forecast />,

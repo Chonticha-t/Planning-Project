@@ -84,7 +84,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
         }
       } catch {
         if (controller.signal.aborted) return;
-        console.error("Failed to fetch PO balance history.");
+        console.error("Failed to fetch SO balance history.");
         setError("Unable to connect to the server to load history.");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -130,7 +130,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="PO Balance History"
+            aria-label="SO Balance History"
             initial={{ scale: 0.95, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 6 }}
@@ -146,7 +146,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                 </span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-base-content">PO Balance History</h2>
+                    <h2 className="text-base font-bold text-base-content">SO Balance History</h2>
                     <span className="inline-flex h-5 items-center rounded-md bg-base-200 border border-base-300 px-2 text-[11px] font-bold text-base-content/70 tabular-nums">
                       {history.length} {history.length === 1 ? "revision" : "revisions"}
                     </span>
@@ -186,7 +186,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
               {loading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-16 text-base-content/60">
                   <Loader2 size={28} className="animate-spin text-primary" />
-                  <span className="text-sm">Loading PO Balance history...</span>
+                  <span className="text-sm">Loading SO Balance history...</span>
                 </div>
               ) : error ? (
                 <div className="flex items-center gap-3 rounded-xl border border-error/20 bg-error/10 p-4 text-sm text-error">
@@ -200,10 +200,10 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                   </div>
                   <h3 className="mb-1 text-base font-bold text-base-content">No history available</h3>
                   <p className="mb-4 max-w-sm text-xs text-base-content/60">
-                    No PO revision history has been recorded for this product and due date.
+                    No SO revision history has been recorded for this product and due date.
                   </p>
                   <div className="inline-flex items-center gap-2 rounded-xl border border-base-300 bg-base-200/70 p-3 text-xs">
-                    <span className="text-base-content/60">Current PO balance in the main table:</span>
+                    <span className="text-base-content/60">Current SO balance in the main table:</span>
                     <strong className="text-sm font-bold tabular-nums text-primary">{num(row.po_bal)} pcs</strong>
                   </div>
                 </div>
@@ -216,7 +216,7 @@ const POBalanceHistoryModal: React.FC<POBalanceHistoryModalProps> = ({
                         <tr className="border-b border-base-300">
                           <th className={`${TH} text-left`}>Revision</th>
                           <th className={`${TH} text-left`}>Updated At</th>
-                          <th className={`${TH} text-right`}>PO Bal</th>
+                          <th className={`${TH} text-right`}>SO Bal</th>
                           <th className={`${TH} text-right`}>Change</th>
                         </tr>
                       </thead>

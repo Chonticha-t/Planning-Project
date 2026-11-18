@@ -44,9 +44,9 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <BlueStatCard icon={Package} title="Total PO" value={fmt(totalRows)} unit="PO lines">
+      <BlueStatCard icon={Package} title="Total SO" value={fmt(totalRows)} unit="SO lines">
         <div className="grid grid-cols-2 gap-2">
-          <CardStat label="PO Balance" value={`${fmt(totalPo)} pcs`} />
+          <CardStat label="SO Balance" value={`${fmt(totalPo)} pcs`} />
           <CardStat label="Products" value={fmt(totalProducts)} align="right" />
         </div>
       </BlueStatCard>
@@ -56,9 +56,9 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
         tone="green"
         filled
         title="Ready"
-        badge={<StatusBadge tone="green" inverted title="Share of PO lines that are Ready">{readyPct}%</StatusBadge>}
+        badge={<StatusBadge tone="green" inverted title="Share of SO lines that are Ready">{readyPct}%</StatusBadge>}
         value={fmt(readyRows)}
-        unit="PO lines"
+        unit="SO lines"
       >
         <div className="grid grid-cols-2 gap-2">
           <CardStat label="Ready" value={`${fmt(ready?.po_bal ?? 0)} pcs`} />
@@ -71,9 +71,9 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
         tone="red"
         filled
         title="Production Plan"
-        badge={<StatusBadge tone="red" inverted title="Share of PO lines that need production">{planPct}%</StatusBadge>}
+        badge={<StatusBadge tone="red" inverted title="Share of SO lines that need production">{planPct}%</StatusBadge>}
         value={fmt(planRows)}
-        unit="PO lines"
+        unit="SO lines"
       >
         <div className="grid grid-cols-2 gap-2">
           <CardStat label="Net Req" value={`${fmt(plan?.net_required_pcs ?? 0)} pcs`} />

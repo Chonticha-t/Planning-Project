@@ -101,7 +101,7 @@ test("history returns compact revision rows including revision zero and NULL val
     assert.match(res.cacheControl, /no-store/);
     assert.equal(queries.length, 1);
     const { sql, params } = queries[0];
-    assert.match(sql, /FROM planning\.po_balance_history h/);
+    assert.match(sql, /FROM planning\.so_balance_history h/);
     assert.match(sql, /h\.rev::int AS source_rev/);
     assert.match(sql, /to_char\(h\.updated_at,[^\n]+AS source_update_at/);
     assert.match(sql, /WHERE h\.prd_name = \$1 AND h\.due_date = CAST\(\$2 AS date\)/);

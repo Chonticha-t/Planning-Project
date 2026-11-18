@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
 /**
- * Summary card shared by PO Balance and Planning Summary.
+ * Summary card shared by SO Balance and Planning Summary.
  * Solid blue (same as the selected gate card); status meaning (green / red / amber)
  * is shown by a solid coloured badge and icon chip with a white ring.
  * Colours are inline / fixed so page theme overrides never recolor them.
