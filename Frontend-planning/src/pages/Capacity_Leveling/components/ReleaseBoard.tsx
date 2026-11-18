@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData, BoardGateStateFilter } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
+import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
 import { DatePickerPopover } from "./DatePickerPopover";
 
@@ -962,9 +962,15 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         <span className="text-[11.5px] font-semibold text-amber-700" title="Check gate lead time and normal shift minutes">
                           Check plan
                         </span>
+                      ) : zeroLoadReason(lot) ? (
+                        <span className="text-[12px] font-medium text-base-content/60" title={ZERO_LOAD_TEXT[zeroLoadReason(lot)!].detail}>
+                          0 min · {ZERO_LOAD_TEXT[zeroLoadReason(lot)!].short}
+                        </span>
                       ) : (
                         <span className="font-medium text-[13px] text-base-content/80"
-                          title={`${lot.leadDays} planning day(s), arrival ${occupancyWindow(data, lot)?.startDate ?? "unknown"}; normal minutes exclude OT`}>
+                          title={`${lot.loadReason === "routing" && lot.routeLeadDays
+                            ? `Routing lead ${lot.routeLeadDays}d into ${lot.gate} ÷ ${lot.routeTotalProc ?? 1} proc`
+                            : `${lot.leadDays} planning day(s)`}, arrival ${occupancyWindow(data, lot)?.startDate ?? "unknown"}; normal minutes exclude OT`}>
                           {Math.round(lot.loadMin).toLocaleString()} min/arrival lot
                         </span>
                       )}

@@ -47,6 +47,72 @@ const calculateLotLoadMin = (leadDays, totalProcInGate, normalMin) => {
   return round2(lotDays * normalMin);
 };
 
+// The routing master names some gates differently from Summary Gate.
+const ROUTE_GATE_ALIASES = Object.freeze({ "AT-FVAC": "FVAC", "AT-FADL": "FADL", "AT-FIN": "FIN", MMOT1: "MMOT", MBLK1: "MBLK" });
+
+// Product routing gates under Summary Gate names. Routing rows are the gate groups a product really visits.
+const buildRouteIndex = (routeRows) => {
+  const products = new Set();
+  const gates = new Map();
+  for (const route of routeRows) {
+    if (typeof route.prd_name !== "string" || typeof route.gate_name !== "string") continue;
+    products.add(route.prd_name);
+    const key = JSON.stringify([route.prd_name, ROUTE_GATE_ALIASES[route.gate_name] ?? route.gate_name]);
+    const lead = Number(route.gate_lead_days);
+    const valid = route.gate_lead_days != null && Number.isFinite(lead) && lead >= 0;
+    const total = positiveInt(route.total_proc_in_gate);
+    const existing = gates.get(key);
+    gates.set(key, {
+      lead: valid ? Math.max(existing?.lead ?? 0, lead) : existing?.lead ?? null,
+      total: Math.max(existing?.total ?? 0, total ?? 0) || null,
+    });
+  }
+  return { products, gates };
+};
+
+// Summary Gate applies one route per category, so a product routed FFPC -> FIN still gets FVAC and
+// FADL rows. A gate absent from a routed product's routing is never visited: it has no card.
+const isUnroutedGate = (index, prdName, gate) =>
+  index.products.has(prdName) && !index.gates.has(JSON.stringify([prdName, gate]));
+
+// Routing gate_lead_days is the lead time of the arrow INTO a gate, so it pairs with that gate's
+// processes; the first gate of a route has 0. Products without any routing keep every row with null.
+const attachRouteLeads = (rows, routeRows) => {
+  const index = buildRouteIndex(routeRows);
+  return rows.filter((row) => !isUnroutedGate(index, row.prd_name, row.gate_name)).map((row) => {
+    const route = index.gates.get(JSON.stringify([row.prd_name, row.gate_name]));
+    return { ...row, route_lead_days: route ? route.lead : null, route_total_proc: route ? route.total : null };
+  });
+};
+
+// The same rule for a saved plan opened with live status: never-visited gates leave the view.
+const dropUnroutedFromSnapshot = (snapshotData, routeRows) => {
+  if (!snapshotData || !Array.isArray(snapshotData.arrivalRows) || !Array.isArray(snapshotData.cards)) return snapshotData;
+  const index = buildRouteIndex(routeRows);
+  return {
+    ...snapshotData,
+    arrivalRows: snapshotData.arrivalRows.filter((row) => !isUnroutedGate(index, row.prd_name, row.gate_name)),
+    cards: snapshotData.cards.filter((card) => !isUnroutedGate(index, card.prdName, card.gate)),
+  };
+};
+
+// Rows saved before routing lead times were attached have no route_lead_days and keep the old rule.
+const routeLoadBasis = (rows) => {
+  if (!rows.length || !rows.every((row) => Object.hasOwn(row, "route_lead_days"))) return null;
+  let best = null;
+  let firstGate = false;
+  for (const row of rows) {
+    const lead = row.route_lead_days;
+    if (lead === null || lead === undefined) continue;
+    if (lead === 0) { firstGate = true; continue; }
+    const total = positiveInt(row.route_total_proc);
+    const lotDays = total !== null ? lead / total : 1;
+    if (!best || lotDays > best.lotDays) best = { lotDays, routeLeadDays: lead, routeTotalProc: total };
+  }
+  if (best) return { ...best, reason: "routing" };
+  return { lotDays: 0, routeLeadDays: firstGate ? 0 : null, routeTotalProc: null, reason: firstGate ? "first_gate" : "not_in_routing" };
+};
+
 // Minutes one machine can run in the shift: regular - enabled breaks (+ OT when open).
 const shiftMinutesPerMachine = (shift, otOn = shift.otEnabled) => {
   const breaks = (shift.break1 ? shift.break1Min : 0) + (shift.break2 ? shift.break2Min : 0) +
@@ -342,7 +408,10 @@ const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([]))
     const procCounts = allocations.map((item) => positiveInt(item.total_proc_in_gate)).filter((v) => v !== null);
     const totalProcInGate = procCounts.length > 0 ? Math.max(...procCounts) : null;
     const normal = standardShiftMin.day + standardShiftMin.night;
-    const loadMin = kind === "lot" ? calculateLotLoadMin(leadDays, totalProcInGate, normal) : 0;
+    const route = kind === "lot" ? routeLoadBasis(allocations) : null;
+    const loadMin = kind !== "lot" ? 0
+      : route ? (normal > 0 ? round2(route.lotDays * normal) : null)
+      : calculateLotLoadMin(leadDays, totalProcInGate, normal);
     const deadlines = allocations.map((item) => item.must_out).filter(isDate).sort();
     const dueDates = allocations.map((item) => item.due_date).filter(isDate).sort();
     const activeRow = allocations.find((item) => item.gate_state === "in_gate") || row;
@@ -360,6 +429,7 @@ const buildArrivalCards = (rows, moves, today, config = buildCapacityConfig([]))
       sourceChanged: Boolean(move) && move.original_date !== row.arrive_by, overdue: row.arrive_by < today,
       prevGate: row.prev_gate, prevDate: row.prev_must_out, nextGate: row.next_gate, nextDate: row.next_arrive_by,
       leadDays, totalProcInGate, standardShiftMin, loadMin,
+      loadReason: route?.reason ?? null, routeLeadDays: route?.routeLeadDays ?? null, routeTotalProc: route?.routeTotalProc ?? null,
       kind, allocations, sourceIds: [id],
     };
   });
@@ -558,4 +628,5 @@ module.exports = {
   loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
   workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate, resolveBoardCardOrder,
   mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
+  ROUTE_GATE_ALIASES, attachRouteLeads, routeLoadBasis, dropUnroutedFromSnapshot,
 };

@@ -10,7 +10,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { CapacityDay, LotItem, DayGateLoad, MoveHistoryEntry, LevelingData, ProcessCategory } from "../types";
-import { adjacentGateDates, expandBoardLots, occupancyWindow, buildGrid, cellPct, formatMinutes, lotKind, moveWarning, plannedArrivalDate, pctPillClass, WARNING_TEXT } from "../utils/levelingCalculations";
+import { adjacentGateDates, expandBoardLots, occupancyWindow, buildGrid, cellPct, formatMinutes, lotKind, moveWarning, plannedArrivalDate, pctPillClass, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
 import { mergeMoveHistory } from "../utils/moveHistory";
 
@@ -92,6 +92,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
   const standard = data.gates.find((gate) => gate.gate === activeLot.gate)?.standardShiftMin;
   const normalMinutes = standard ? standard.day + standard.night : null;
   const lotMinutes = activeLot.loadMin ?? normalMinutes;
+  const noLoad = zeroLoadReason(activeLot);
   const isLate = warning === "late" || warning === "order";
   const projectedEnd = occupancyWindow(data, activeLot)?.endDate;
   const diffDays = projectedEnd && activeLot.mustOut ? dayjs(activeLot.mustOut).diff(dayjs(projectedEnd), "day") : null;
@@ -297,12 +298,17 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-base-content/60">Normal minutes / actual arrival lot</span>
                   <span className="font-semibold text-base-content">
-                    {isNeed ? "0 min (Need WIP)" : lotMinutes === null || lotMinutes <= 0
+                    {isNeed ? "0 min (Need WIP)" : noLoad ? `0 min (${ZERO_LOAD_TEXT[noLoad].short})` : lotMinutes === null || lotMinutes <= 0
                       ? "Check normal shift minutes"
                       : (
                         <>
                           {`${Math.round(lotMinutes).toLocaleString()} min`}
-                          {activeLot.leadDays && activeLot.totalProcInGate ? (
+                          {activeLot.loadReason === "routing" && activeLot.routeLeadDays ? (
+                            <span className="ml-1 text-[10.5px] font-normal text-base-content/55"
+                              title={`Routing lead time into ${activeLot.gate}, split across its processes`}>
+                              ({activeLot.routeLeadDays}d / {activeLot.routeTotalProc ?? 1} proc)
+                            </span>
+                          ) : !activeLot.loadReason && activeLot.leadDays && activeLot.totalProcInGate ? (
                             <span className="ml-1 text-[10.5px] font-normal text-base-content/55">
                               ({activeLot.leadDays}d / {activeLot.totalProcInGate} proc)
                             </span>

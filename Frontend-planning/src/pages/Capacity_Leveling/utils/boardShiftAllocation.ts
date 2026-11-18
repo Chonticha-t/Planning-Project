@@ -1,5 +1,5 @@
 import type { BoardShiftAllocation, LevelingData, LotItem } from "../types";
-import { lotKind } from "./levelingCalculations.ts";
+import { lotKind, ZERO_LOAD_TEXT, zeroLoadReason } from "./levelingCalculations.ts";
 
 // Use hundredths of a minute so exact capacity boundaries do not leave rounding overflow.
 const minuteUnits = (value: number | null | undefined): number | null => {
@@ -81,7 +81,12 @@ export const allocateBoardShifts = (
 
     const demand = minuteUnits(lot.loadMin);
     let allocation: BoardShiftAllocation;
-    if (budget.blocked || demand === null || demand === 0) {
+    if (demand === 0) {
+      // Zero workload is known, not missing: it takes no shift time and must not block later lots.
+      const noLoad = zeroLoadReason(lot);
+      allocation = { status: "no_load", dayMin: 0, nightMin: 0, overflowMin: 0,
+        reason: noLoad ? ZERO_LOAD_TEXT[noLoad].detail : "No workload is counted for this lot." };
+    } else if (budget.blocked || demand === null) {
       const reason = budget.blocked ?? "Lot workload is unavailable; check normal shift minutes.";
       allocation = { status: "unassigned", dayMin: 0, nightMin: 0, overflowMin: 0, reason };
       // An unknown workload must not leave apparently free capacity for lower-priority work.

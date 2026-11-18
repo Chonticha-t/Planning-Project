@@ -10,9 +10,10 @@ import {
   Moon,
   AlertTriangle,
   Clock3,
+  CircleSlash,
 } from "lucide-react";
 import type { BoardShiftAllocation, DayGateLoad, LotItem, MoveWarning } from "../types";
-import { formatMinutes, isMoved as cardIsMoved, WARNING_TEXT } from "../utils/levelingCalculations";
+import { formatMinutes, isMoved as cardIsMoved, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
 
 const SHIFT_THEMES = {
@@ -20,6 +21,7 @@ const SHIFT_THEMES = {
   night: { label: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: "color-mix(in oklab, #4f46e5 7%, var(--color-base-100))" },
   over: { label: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: "color-mix(in oklab, #f43f5e 6%, var(--color-base-100))" },
   unassigned: { label: "Shift pending", Icon: Clock3, badge: "bg-base-200 text-base-content/70 border-base-300", background: undefined },
+  no_load: { label: "No load", Icon: CircleSlash, badge: "bg-base-100 text-base-content/60 border-base-300 border-dashed", background: undefined },
   none: { label: "No shift", Icon: Clock3, badge: "", background: undefined },
 } as const;
 
@@ -114,7 +116,8 @@ export const LotCard: React.FC<LotCardProps> = ({
   const isMoved = cardIsMoved(lot);
   const isLate = warning === "late" || warning === "order";
   const isEarly = warning === "early";
-  const hasNote = isMoved || warning !== "none" || lot.sourceChanged || lot.loadMin === null || !lot.leadDays;
+  const noLoad = zeroLoadReason(lot);
+  const hasNote = isMoved || warning !== "none" || lot.sourceChanged || lot.loadMin === null || !lot.leadDays || noLoad !== null;
 
   const releaseDisplay = dayjs(lot.plannedDate).format("DD/MM/YYYY");
   const wasDisplay = dayjs(lot.baseDate).format("DD/MM/YYYY");
@@ -298,6 +301,8 @@ export const LotCard: React.FC<LotCardProps> = ({
                 ? `Moved from ${wasDisplay}`
                 : lot.sourceChanged
                 ? "Must-out changed after this move was saved"
+                : noLoad && lot.loadMin !== null && lot.leadDays
+                ? `${ZERO_LOAD_TEXT[noLoad].short}: no load counted`
                 : "Check gate lead time and normal shift minutes"
             }
             className={`inline-flex items-center justify-center w-[21px] h-[21px] rounded-md border transition-colors cursor-pointer shrink-0 ${
@@ -394,6 +399,11 @@ export const LotCard: React.FC<LotCardProps> = ({
                 </div>
               )}
               {!lot.leadDays && <div className="text-[11px] text-amber-800">Gate lead time is missing; this arrival cannot be moved until it is configured.</div>}
+              {noLoad && (
+                <div data-zero-load={noLoad} className="text-[11px] leading-snug text-base-content/70">
+                  {ZERO_LOAD_TEXT[noLoad].detail}
+                </div>
+              )}
             </div>,
             document.body
           )}

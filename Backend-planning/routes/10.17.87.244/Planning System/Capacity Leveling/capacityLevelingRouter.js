@@ -12,7 +12,12 @@ const {
   isDate, dayCapacity, buildCapacityConfig, parseSettingsPayload, sameShift,
   arrivalWorkKey, buildArrivalCards, arrivalEndDate, parsePlanPayload, resolveBoardCardOrder,
   mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
+  ROUTE_GATE_ALIASES, attachRouteLeads, dropUnroutedFromSnapshot,
 } = require("./capacityLeveling");
+
+// Routing gate names mapped to Summary Gate names (constants only, no user input).
+const ROUTED_GATE_SQL = `CASE r.gate_name ${Object.entries(ROUTE_GATE_ALIASES)
+  .map(([from, to]) => `WHEN '${from}' THEN '${to}'`).join(" ")} ELSE r.gate_name END`;
 
 // Arrival dates must never reuse plans saved as release dates.
 const PLAN_METHOD = "gate_arrival_max_target_v1";
@@ -47,15 +52,26 @@ const settingParams = (gate, code, kind, from, to, shift, actor) => [
 
 // Summary Gate already resolves the routing-specific lead time from the gate master.
 // Keep every allocation for the arrival grid; board cards group the same physical lot and source arrival date.
+// Summary Gate applies one route per category, so rows at gates a product's routing never visits (an
+// FFPC -> FIN product has no FVAC or FADL) are skipped before previous/next gates are linked.
+// Products without any routing keep every gate.
 const WORKS_SQL = `
-  WITH base AS (
+  WITH routed AS (
+    SELECT r.prd_name, array_agg(DISTINCT ${ROUTED_GATE_SQL}) AS gates
+    FROM planning.prd_routing_master r
+    WHERE r.prd_name IN (SELECT DISTINCT prd_name FROM planning.planning_summary_gate)
+    GROUP BY r.prd_name
+  ), base AS (
     SELECT g.*,
            LAG(g.gate_name) OVER w AS prev_gate,
            LAG(g.must_out) OVER w AS prev_must_out,
            LAG(g.arrive_by) OVER w AS prev_arrive_by,
            LEAD(g.arrive_by) OVER w AS next_arrive_by,
-           LEAD(g.must_out) OVER w AS next_must_out
+           LEAD(g.must_out) OVER w AS next_must_out,
+           LEAD(g.gate_name) OVER w AS routed_next_gate
     FROM planning.planning_summary_gate g
+    LEFT JOIN routed rt ON rt.prd_name = g.prd_name
+    WHERE rt.prd_name IS NULL OR g.gate_name = ANY(rt.gates)
     WINDOW w AS (PARTITION BY g.prd_name, g.lot_no, g.due_date, g.status, g.pri ORDER BY g.gate_order)
   ), works AS (
     SELECT ROW_NUMBER() OVER (ORDER BY gate_order, pri) AS rn, *
@@ -72,10 +88,25 @@ const WORKS_SQL = `
          to_char(w.prev_arrive_by, 'YYYY-MM-DD') AS prev_arrive_by,
          to_char(w.next_arrive_by, 'YYYY-MM-DD') AS next_arrive_by,
          w.prev_gate, to_char(w.prev_must_out, 'YYYY-MM-DD') AS prev_must_out,
-         w.next_gate, to_char(w.next_must_out, 'YYYY-MM-DD') AS next_must_out,
+         COALESCE(w.routed_next_gate, w.next_gate) AS next_gate, to_char(w.next_must_out, 'YYYY-MM-DD') AS next_must_out,
          w.lead_days
   FROM works w
   ORDER BY w.rn`;
+
+// Gate load uses the routing lead time of the arrow into each gate, divided by that gate's processes.
+// Every gate group is read so a gate missing from a routed product is known to be never visited.
+const ROUTE_LEAD_SQL = `
+  SELECT prd_name, gate_name, MAX(gate_lead_days)::int AS gate_lead_days, MAX(total_proc_in_gate)::int AS total_proc_in_gate
+  FROM planning.prd_routing_master
+  WHERE prd_name = ANY($1::text[])
+  GROUP BY prd_name, gate_name`;
+
+const readRouteRows = async (db, prdNames) => {
+  const products = [...new Set(prdNames.filter((name) => typeof name === "string" && name))];
+  return products.length ? (await db.query(ROUTE_LEAD_SQL, [products])).rows : [];
+};
+
+const withRouteLeads = async (db, rows) => attachRouteLeads(rows, await readRouteRows(db, rows.map((row) => row.prd_name)));
 
 // Find the head by version first so only that one row's large baseline_snapshot is detoasted.
 // Projecting snapshot fields before ORDER BY ... LIMIT would detoast every saved version.
@@ -250,8 +281,12 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       const moves = (await pool.query(MOVES_SQL, [req.params.planId])).rows;
       const baseSnapshot = rows[0].view_snapshot?.version === 1 && rows[0].view_snapshot?.data
         ? { ...rows[0].view_snapshot.data, plan: planInfo(rows[0]) } : null;
+      // The live view (Planning In Gate) also drops saved cards at gates the product never visits;
+      // otherwise they would read as passed once the live rows skip those gates.
       const snapshot = baseSnapshot && req.query.live === "true"
-        ? enrichSnapshotWithLiveStatus(baseSnapshot, (await pool.query(WORKS_SQL, [LEVELING_GATES])).rows)
+        ? enrichSnapshotWithLiveStatus(
+          dropUnroutedFromSnapshot(baseSnapshot, await readRouteRows(pool, (baseSnapshot.arrivalRows ?? []).map((row) => row.prd_name))),
+          (await pool.query(WORKS_SQL, [LEVELING_GATES])).rows)
         : baseSnapshot;
       return res.json({ status: "OK", data: {
         plan: historyInfo(rows[0]),
@@ -385,7 +420,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
           latest ? false : Promise.all(LEGACY_PLAN_METHODS.map(method => db.query(LATEST_PLAN_SQL, [method])))
             .then(results => results.some(result => result.rows.length > 0)),
         ]);
-        const sourceRows = lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, works.rows) : works.rows;
+        const sourceRows = await withRouteLeads(db, lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, works.rows) : works.rows);
         return buildLevelingView({ sourceRows, moves, config, today, start, end,
           loadCalendar: force ? (from, to) => loadCalendar(from, to, { force: true }) : loadCalendar,
           history: latest?.move_history, order: latest?.board_card_order,
@@ -414,7 +449,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         if ((latest?.version_no ?? 0) !== baseVersion) return { conflict: "PLAN_VERSION_CONFLICT" };
         const lockedRows = resetToRequired ? null : await readLockedSourceRows(client, latest);
         const liveRows = (await client.query(WORKS_SQL, [LEVELING_GATES])).rows;
-        const sourceRows = lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, liveRows) : liveRows;
+        const sourceRows = await withRouteLeads(client, lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, liveRows) : liveRows);
         const config = await readConfig(client);
         const { cards } = buildArrivalCards(sourceRows, [], today, config);
         const source = new Map(cards.map((card) => [`${card.workKey}|${card.gate}`, card]));

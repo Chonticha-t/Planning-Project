@@ -23,7 +23,36 @@ import {
   shiftCapacityMin,
   toLotItem,
   requiredLots,
+  zeroLoadReason,
 } from "./levelingCalculations.ts";
+
+test("gate load uses the routing lead into the gate ÷ its processes; first gate and gates outside routing add none", () => {
+  const source = data([
+    card({ id: "routed", workKey: "routed", lotNo: "L1" }),
+    card({ id: "first", workKey: "first", lotNo: "L2", loadMin: 0, loadReason: "first_gate" }),
+    card({ id: "absent", workKey: "absent", lotNo: "L3", loadMin: 0, loadReason: "not_in_routing" }),
+    card({ id: "need", workKey: "need", lotNo: "NEED WIP", gateState: "need_wip", loadMin: 0 }),
+  ]);
+  // Summary Gate lead_days (2 days out of FADL) must no longer drive load once routing leads are attached.
+  const routes: Record<string, Partial<GateArrivalRow>> = {
+    routed: { route_lead_days: 5, route_total_proc: 6, total_proc_in_gate: 6 },
+    first: { route_lead_days: 0, route_total_proc: 1 },
+    absent: { route_lead_days: null, route_total_proc: null },
+    need: { route_lead_days: 5, route_total_proc: 6 },
+  };
+  source.arrivalRows = source.arrivalRows.map((row) => ({ ...row, ...routes[row.workKey] }));
+  const cell = cellOf(buildGrid(source, source.cards.map(toLotItem)), "2026-11-16", "FADL");
+  assert.equal(cell.lotCount, 3);
+  assert.equal(cell.loadMin, Math.round(5 / 6 * 950 * 100) / 100);
+
+  // Rows saved before routing leads keep the earlier lead_days ÷ total_proc_in_gate rule.
+  const legacy = data([card({ id: "legacy", workKey: "legacy", lotNo: "L9" })]);
+  legacy.arrivalRows = legacy.arrivalRows.map((row) => ({ ...row, total_proc_in_gate: 4 }));
+  assert.equal(cellOf(buildGrid(legacy, legacy.cards.map(toLotItem)), "2026-11-16", "FADL").loadMin, 2 / 4 * 950);
+
+  const lots = source.cards.map(toLotItem);
+  assert.deepEqual(lots.map(zeroLoadReason), [null, "first_gate", "not_in_routing", null]);
+});
 
 test("reset to Required reconciles every gate's grid with source arrivals and clears saved order on save", () => {
   const original = data([
@@ -285,6 +314,22 @@ test("missing or invalid open-shift capacity never invents a shift assignment", 
   }
   delete source.capacity.FADL["2026-11-16"];
   assert.equal(allocateBoardShifts(source, board).get(board[0].id)?.status, "unassigned");
+});
+
+test("a zero-workload lot is No load and never blocks the lots after it", () => {
+  const source = data([
+    card({ id: "first", workKey: "first", lotNo: "FIRST", loadMin: 600 }),
+    card({ id: "zero", workKey: "zero", lotNo: "ZERO", loadMin: 0, loadReason: "first_gate" }),
+    card({ id: "third", workKey: "third", lotNo: "THIRD", loadMin: 300 }),
+    card({ id: "fourth", workKey: "fourth", lotNo: "FOURTH", loadMin: 500 }),
+  ]);
+  source.capacity.FADL["2026-11-16"] = shiftDay(950, 950);
+  const board = buildBoardLots(source, source.cards.map(toLotItem));
+  const allocations = allocateBoardShifts(source, board);
+  assert.deepEqual(["first", "zero", "third", "fourth"].map(id => allocations.get(id)?.status), ["day", "no_load", "day", "night"]);
+  const zero = allocations.get("zero")!;
+  assert.deepEqual([zero.dayMin, zero.nightMin, zero.overflowMin], [0, 0, 0]);
+  assert.match(zero.reason!, /First gate/);
 });
 
 test("unknown workload blocks lower priorities in that gate and date only", () => {

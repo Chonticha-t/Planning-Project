@@ -10,7 +10,8 @@ export type Shift = "day" | "night";
 export type SpecialDay = "ot" | "work" | "off";
 export type LoadStatus = "green" | "yellow" | "red";
 export interface BoardShiftAllocation {
-  status: "day" | "night" | "over" | "unassigned" | "none";
+  /** no_load = an actual lot with zero workload: it needs no shift time and never blocks later lots. */
+  status: "day" | "night" | "over" | "unassigned" | "no_load" | "none";
   dayMin: number;
   nightMin: number;
   overflowMin: number;
@@ -31,6 +32,12 @@ export interface MoveHistoryEntry {
   changedBy: string;
   note?: string;
 }
+
+/**
+ * How an actual lot's load was derived. routing = routing lead into the gate ÷ its processes;
+ * first_gate / not_in_routing = no load counted. null = plan saved before routing lead times.
+ */
+export type LoadReason = "routing" | "first_gate" | "not_in_routing";
 
 /** One card on the board: a work item at ONE gate. */
 export interface LotItem {
@@ -77,6 +84,10 @@ export interface LotItem {
   loadMin: number | null;
   leadDays: number | null;
   totalProcInGate?: number | null;
+  loadReason?: LoadReason | null;
+  /** Routing lead time of the arrow into this gate and the processes it is split across. */
+  routeLeadDays?: number | null;
+  routeTotalProc?: number | null;
   standardShiftMin: Record<Shift, number>;
   moveHistory?: MoveHistoryEntry[];
 }
@@ -116,6 +127,9 @@ export interface GateArrivalRow extends PlanningSummaryGateRow {
   next_arrive_by?: string | null;
   next_must_out?: string | null;
   passed_gate?: boolean;
+  /** Absent on plans saved before routing lead times; null = gate not in the product routing. */
+  route_lead_days?: number | null;
+  route_total_proc?: number | null;
 }
 
 export interface PlanInfo {

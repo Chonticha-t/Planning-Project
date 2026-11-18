@@ -20,6 +20,7 @@ const shiftName = (allocation?: BoardShiftAllocation, lot?: LotItem | null) => {
     case "day": return "DAY SHIFT · Planned allocation";
     case "night": return "NIGHT SHIFT · Planned allocation";
     case "over": return "OVER CAPACITY · Review plan";
+    case "no_load": return "NO LOAD · Not counted in shift capacity";
     case "none": return "REQUIREMENTS · No production lot";
     default: return "SHIFT UNASSIGNED · Capacity unavailable";
   }
@@ -144,7 +145,8 @@ function OutsidePlanFinishedRow({ record, sequence, ambiguous, compactFinished }
 
 function PlannedAllocation({ allocation }: { allocation?: BoardShiftAllocation }) {
   return <div title={allocation?.reason ?? "Saved plan allocation; not actual utilization"}>
-    {allocation && !["none", "unassigned"].includes(allocation.status) ? <div className="py-1.5 text-[11px] font-semibold tabular-nums leading-5">
+    {allocation?.status === "no_load" ? <span className="text-[11px] font-semibold text-base-content/55">No load</span>
+      : allocation && !["none", "unassigned"].includes(allocation.status) ? <div className="py-1.5 text-[11px] font-semibold tabular-nums leading-5">
       <div className="text-[#8a5a00]">D/S {allocation.dayMin.toLocaleString()}m</div>
       <div className="text-[#5a3fc0]">N/S {allocation.nightMin.toLocaleString()}m</div>
       {allocation.overflowMin > 0 && <div className="text-rose-600">Over {allocation.overflowMin.toLocaleString()}m</div>}

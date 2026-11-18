@@ -4,6 +4,7 @@ const express = require("express");
 const {
   LEVELING_GATES, DEFAULT_SHIFT, ValidationError, shiftMinutesPerMachine, effectiveShift, dayCapacity,
   loadStatus, buildCapacityConfig, parseSettingsPayload, buildCards, occupancyCalendarRange, parsePlanPayload, isDate, arrivalWorkKey, buildArrivalCards, arrivalEndDate,
+  attachRouteLeads, routeLoadBasis,
 } = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLeveling");
 const { createCapacityLevelingRouter, PLAN_METHOD } = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLevelingRouter");
 const { buildSavedMoveHistory, HISTORY_LIMIT } = require("../routes/10.17.87.244/Planning System/Capacity Leveling/capacityLevelingHistory");
@@ -103,6 +104,43 @@ test("cards sit on must_out, a saved move changes that gate only, overdue work l
   assert.equal(cards[0].loadMin, 950);
   assert.deepEqual(cards[0].standardShiftMin, { day: 475, night: 475 });
   assert.equal(orphanMoves.length, 0);
+});
+
+test("routing lead into the gate ÷ its processes drives load; first gate and gates outside routing add none", () => {
+  const routeRows = [
+    // CAD-170S-1A style route: FFPC -5d-> FADL(6 procs) -2d-> FIN(8 procs); routing names FIN as AT-FIN.
+    { prd_name: "PRD-A", gate_name: "FFPC", gate_lead_days: 0, total_proc_in_gate: 1 },
+    { prd_name: "PRD-A", gate_name: "FADL", gate_lead_days: 5, total_proc_in_gate: 6 },
+    { prd_name: "PRD-A", gate_name: "AT-FIN", gate_lead_days: 2, total_proc_in_gate: 8 },
+    { prd_name: "PRD-S", gate_name: "MMOT1", gate_lead_days: 0, total_proc_in_gate: 2 },
+  ];
+  const rows = attachRouteLeads([
+    work(),
+    work({ lot_no: "L002", gate_name: "FIN" }),
+    // PRD-A is routed but never visits FVAC: Summary Gate's category route row has no card, lot or Need WIP.
+    work({ lot_no: "L003", gate_name: "FVAC" }),
+    work({ lot_no: null, status: "need wip", gate_state: "need_wip", gate_name: "FVAC" }),
+    work({ lot_no: "L004", prd_name: "PRD-S", gate_name: "MMOT" }),
+    work({ lot_no: null, status: "need wip", gate_state: "need_wip" }),
+    // A product without any routing keeps its rows; nothing proves the gate is skipped.
+    work({ lot_no: "L005", prd_name: "PRD-X", gate_name: "FVAC" }),
+  ], routeRows);
+  assert.deepEqual(rows.map((row) => [row.prd_name, row.gate_name, row.route_lead_days, row.route_total_proc]), [
+    ["PRD-A", "FADL", 5, 6], ["PRD-A", "FIN", 2, 8], ["PRD-S", "MMOT", 0, 2], ["PRD-A", "FADL", 5, 6], ["PRD-X", "FVAC", null, null],
+  ]);
+  const { cards } = buildArrivalCards(rows, [], "2026-11-12");
+  // Summary Gate lead_days is still 2 (the arrow out of FADL) and only sets the occupancy window.
+  assert.deepEqual(cards.map((card) => [card.gate, card.leadDays, card.loadMin, card.loadReason]), [
+    ["FADL", 2, 791.67, "routing"],
+    ["FIN", 2, 237.5, "routing"],
+    ["MMOT", 2, 0, "first_gate"],
+    ["FADL", 2, 0, null],
+    ["FVAC", 2, 0, "not_in_routing"],
+  ]);
+  assert.deepEqual([cards[0].routeLeadDays, cards[0].routeTotalProc], [5, 6]);
+  // Rows saved before routing leads were attached keep the earlier rule.
+  assert.equal(routeLoadBasis([work()]), null);
+  assert.equal(buildArrivalCards([work({ total_proc_in_gate: 4 })], [], "2026-11-12").cards[0].loadMin, 475);
 });
 
 test("work without a lot keeps a stable key; missing or invalid lead time is explicit", () => {
@@ -344,6 +382,46 @@ test("load endpoint returns capacity per gate and day with cards from the latest
   assert.match(works.sql, /w\.rem_proc_in_gate/);
   assert.match(works.sql, /w\.total_proc_in_gate/);
   assert.doesNotMatch(works.sql, /smart_pcap_std_time|SUM\(60|uph/i);
+});
+
+test("load reads routing for the shown products, drops never-visited gates and links real neighbours", async () => {
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/planning_summary_gate/, [work(), work({ lot_no: "L002", prd_name: "PRD-B" }), work({ lot_no: "L003", gate_name: "FVAC" })]],
+    [/prd_routing_master/, [{ prd_name: "PRD-A", gate_name: "FADL", gate_lead_days: 5, total_proc_in_gate: 6 }]],
+  ]);
+  await withApi(pool, async (api) => {
+    const { data } = await (await api("/load?startdate=2026-11-12&stopdate=2026-11-20")).json();
+    assert.deepEqual(data.cards.map((card) => [card.prdName, card.gate, card.loadMin, card.loadReason]),
+      [["PRD-A", "FADL", 791.67, "routing"], ["PRD-B", "FADL", 0, "not_in_routing"]]);
+    assert.deepEqual(data.arrivalRows.map((row) => row.route_lead_days), [5, null]);
+  });
+  const route = pool.log.find((entry) => /prd_routing_master/.test(entry.sql) && !/planning_summary_gate/.test(entry.sql));
+  assert.deepEqual(route.params, [["PRD-A", "PRD-B"]]);
+  // Summary Gate neighbours skip gates outside the product routing, and the next gate follows them too.
+  const works = pool.log.find((entry) => /planning_summary_gate/.test(entry.sql));
+  assert.match(works.sql, /LEFT JOIN routed rt ON rt\.prd_name = g\.prd_name WHERE rt\.prd_name IS NULL OR g\.gate_name = ANY\(rt\.gates\)/);
+  assert.match(works.sql, /WHEN 'AT-FIN' THEN 'FIN'/);
+  assert.match(works.sql, /COALESCE\(w\.routed_next_gate, w\.next_gate\) AS next_gate/);
+});
+
+test("a saved plan opened live drops cards at gates the product never visits", async () => {
+  const saved = buildArrivalCards([work(), work({ lot_no: "L003", gate_name: "FVAC" })], [], "2026-11-12");
+  const snapshot = { version: 1, data: { cards: saved.cards, arrivalRows: [work(), work({ lot_no: "L003", gate_name: "FVAC" })] } };
+  const pool = fakePool([
+    [/FROM planning\.work_plan p/, [{ plan_id: "11111111-1111-4111-8111-111111111111", version_no: 1, view_snapshot: snapshot,
+      board_card_order: [], current_plan_id: "11111111-1111-4111-8111-111111111111" }]],
+    [/planning_summary_gate/, [work()]],
+    [/prd_routing_master/, [{ prd_name: "PRD-A", gate_name: "FADL", gate_lead_days: 5, total_proc_in_gate: 6 }]],
+  ]);
+  await withApi(pool, async (api) => {
+    const live = await (await api("/plans/11111111-1111-4111-8111-111111111111?live=true")).json();
+    assert.deepEqual(live.data.snapshot.cards.map((card) => card.gate), ["FADL"]);
+    assert.deepEqual(live.data.snapshot.arrivalRows.map((row) => row.gate_name), ["FADL"]);
+    // Without live status the history view still shows the plan exactly as saved.
+    const asSaved = await (await api("/plans/11111111-1111-4111-8111-111111111111")).json();
+    assert.deepEqual(asSaved.data.snapshot.cards.map((card) => card.gate), ["FADL", "FVAC"]);
+  });
 });
 
 test("arrival rows retain all allocations and valid arrivals without release dates", async () => {

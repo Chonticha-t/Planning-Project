@@ -110,8 +110,24 @@ const positiveInt = (value: unknown, max = 10000): number | null => {
 
 const isPassedRow = (row: GateArrivalRow) => row.gate_state === "passed" || row.passed_gate === true;
 
+/**
+ * Same rule as the server: the routing lead time of the arrow INTO the gate ÷ that gate's processes.
+ * 0 for the first gate of a route or a gate absent from the product routing.
+ * undefined for rows saved before routing lead times, which keep the earlier lead_days rule.
+ */
+const routeLotDays = (row: GateArrivalRow): number | undefined => {
+  if (!Object.prototype.hasOwnProperty.call(row, "route_lead_days")) return undefined;
+  const lead = row.route_lead_days;
+  if (typeof lead !== "number" || !Number.isFinite(lead) || lead <= 0) return 0;
+  const total = positiveInt(row.route_total_proc);
+  return total !== null ? lead / total : 1;
+};
+
 const totalBucketLotDays = (rows: GateArrivalRow[], cards: Map<string, LotItem>): number => {
-  const lots = new Map<string, { leadDays: number | null; hasInvalidLead: boolean; totalProcInGate: number | null }>();
+  const lots = new Map<string, {
+    leadDays: number | null; hasInvalidLead: boolean; totalProcInGate: number | null;
+    routeDays: number; hasLegacyRow: boolean;
+  }>();
   for (const row of rows) {
     if (isPassedRow(row) || isGateNeedWip(row)) continue;
     const lotNo = row.lot_no?.trim() ?? "";
@@ -119,21 +135,42 @@ const totalBucketLotDays = (rows: GateArrivalRow[], cards: Map<string, LotItem>)
     const card = cards.get(siblingKey(row.workKey, row.gate_name));
     const leadDays = positiveInt(row.lead_days, 366) ?? positiveInt(card?.leadDays, 366);
     const totalProcInGate = positiveInt(row.total_proc_in_gate) ?? positiveInt(card?.totalProcInGate);
-    const entry = lots.get(lotNo) ?? { leadDays: null, hasInvalidLead: false, totalProcInGate: null };
+    const entry = lots.get(lotNo) ?? { leadDays: null, hasInvalidLead: false, totalProcInGate: null, routeDays: 0, hasLegacyRow: false };
     if (leadDays === null) entry.hasInvalidLead = true;
     else entry.leadDays = entry.leadDays === null ? leadDays : Math.max(entry.leadDays, leadDays);
     if (totalProcInGate !== null) {
       entry.totalProcInGate = entry.totalProcInGate === null ? totalProcInGate : Math.max(entry.totalProcInGate, totalProcInGate);
     }
+    const routeDays = routeLotDays(row);
+    if (routeDays === undefined) entry.hasLegacyRow = true;
+    else entry.routeDays = Math.max(entry.routeDays, routeDays);
     lots.set(lotNo, entry);
   }
   let total = 0;
   for (const entry of lots.values()) {
-    total += !entry.hasInvalidLead && entry.leadDays !== null && entry.totalProcInGate !== null
+    if (!entry.hasLegacyRow) total += entry.routeDays;
+    else total += !entry.hasInvalidLead && entry.leadDays !== null && entry.totalProcInGate !== null
       ? entry.leadDays / entry.totalProcInGate
       : 1;
   }
   return total;
+};
+
+/** Why an actual lot adds no load, or null when its load is counted normally. */
+export const zeroLoadReason = (lot: Pick<LotItem, "kind" | "label" | "gateState" | "loadReason">) =>
+  lotKind(lot as LotItem) === "lot" && (lot.loadReason === "first_gate" || lot.loadReason === "not_in_routing")
+    ? lot.loadReason
+    : null;
+
+export const ZERO_LOAD_TEXT: Record<"first_gate" | "not_in_routing", { short: string; detail: string }> = {
+  first_gate: {
+    short: "First gate of route",
+    detail: "First gate of this product's route: no lead time leads into it, so no load is counted. The card can still be moved.",
+  },
+  not_in_routing: {
+    short: "Not in product routing",
+    detail: "This gate has no processes in the product routing, so no load is counted. The card can still be moved.",
+  },
 };
 
 const emptyCell = (capacity: LevelingData["capacity"][string][string] | undefined): GateCell => ({
