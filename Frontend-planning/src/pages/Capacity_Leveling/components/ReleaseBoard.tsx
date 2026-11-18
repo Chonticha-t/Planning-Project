@@ -558,7 +558,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   ? "bg-primary text-primary-content shadow-xs"
                   : "text-base-content/70 hover:text-base-content hover:bg-base-100"
               }`}
-              title="Board View (คอลัมน์การ์ดตามวัน)"
+              title="Board View (Card columns by day)"
             >
               <LayoutGrid size={13} />
               <span>Board</span>
@@ -572,7 +572,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   ? "bg-primary text-primary-content shadow-xs"
                   : "text-base-content/70 hover:text-base-content hover:bg-base-100"
               }`}
-              title="Table View (ตารางจัดกลุ่มตามวัน)"
+              title="Table View (Grouped by day)"
             >
               <Table size={13} />
               <span>Table</span>
@@ -612,7 +612,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
                   : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
               }`}
-              title={hideOffDays ? "ซ่อนวันหยุดอยู่ (คลิกเพื่อแสดงทุกวัน)" : "แสดงทุกวัน (คลิกเพื่อซ่อนวันหยุด)"}
+              title={hideOffDays ? "Hiding holidays (click to show all days)" : "Showing all days (click to hide holidays)"}
             >
               <CalendarOff size={13} />
               <span>{hideOffDays ? "Hide Holidays" : "Show All Days"}</span>
@@ -705,6 +705,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           {boardDays.map((col) => {
             const colLots = filteredLots.filter((l) => l.plannedDate === col.date);
             const colPct = cellPct(col.gates[boardGate]);
+            const colCap = data.capacity?.[boardGate]?.[col.date];
+            const colHasOt = Boolean(colCap?.hasOt);
             const isDayExpanded = Boolean(expandedDayCols[col.date]);
             const visibleLots = isDayExpanded
               ? colLots
@@ -742,8 +744,18 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 <div className="px-0.5 pb-2 border-b border-base-300/60 mb-2 shrink-0">
                   <div className="flex items-start justify-between">
                     <div className="leading-tight">
-                      <div className="text-[10.5px] font-semibold uppercase text-base-content/50">
-                        {col.dayLabel}
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10.5px] font-semibold uppercase text-base-content/50">
+                          {col.dayLabel}
+                        </span>
+                        {colHasOt && (
+                          <span
+                            title="Overtime active"
+                            className="px-1 py-0.5 rounded border border-base-300 bg-base-200/90 text-[9.5px] font-bold text-base-content/75 leading-none"
+                          >
+                            OT
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs font-bold text-base-content tabular-nums mt-0.5 flex flex-col items-start gap-1">
                         <span>{col.displayDate}</span>
@@ -1010,7 +1022,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       type="button"
                       onClick={toggleAllDays}
                       className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-base-300/80 text-base-content/65 hover:text-primary transition-colors cursor-pointer"
-                      title={areAllDaysCollapsed ? "Expand all days (กางทุกวัน)" : "Collapse all days (ยุบทุกวัน)"}
+                      title={areAllDaysCollapsed ? "Expand all days" : "Collapse all days"}
                       aria-label={areAllDaysCollapsed ? "Expand all days" : "Collapse all days"}
                     >
                       {areAllDaysCollapsed ? (
@@ -1068,6 +1080,23 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       : colLots.reduce((sum, lot) => sum + (lot.qty ?? 0), 0);
                     const isCollapsed = Boolean(collapsedDays[col.date]);
 
+                    const colCap = data.capacity?.[boardGate]?.[col.date];
+                    const colReqCap = data.requiredCapacity?.[boardGate]?.[col.date];
+                    const hasOt = Boolean(colCap?.hasOt);
+                    const totalOtMin = hasOt && colCap && colReqCap
+                      ? Math.max(0, (colCap.capacityMin ?? 0) - (colReqCap.capacityMin ?? 0))
+                      : 0;
+
+                    const dayShiftHasOt = Boolean(colCap?.shifts?.day?.otOn);
+                    const dayShiftOtMin = dayShiftHasOt && colCap && colReqCap
+                      ? Math.max(0, (colCap.shifts?.day?.capacityMin ?? 0) - (colReqCap.shifts?.day?.capacityMin ?? 0))
+                      : 0;
+
+                    const nightShiftHasOt = Boolean(colCap?.shifts?.night?.otOn);
+                    const nightShiftOtMin = nightShiftHasOt && colCap && colReqCap
+                      ? Math.max(0, (colCap.shifts?.night?.capacityMin ?? 0) - (colReqCap.shifts?.night?.capacityMin ?? 0))
+                      : 0;
+
                     const headerItem = {
                       type: "day-header" as const,
                       col,
@@ -1075,6 +1104,12 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       colPct,
                       totalPcs,
                       isCollapsed,
+                      hasOt,
+                      totalOtMin,
+                      dayShiftHasOt,
+                      dayShiftOtMin,
+                      nightShiftHasOt,
+                      nightShiftOtMin,
                     };
 
                     if (isCollapsed) {
@@ -1125,6 +1160,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                           theme: (typeof SHIFT_THEMES)[keyof typeof SHIFT_THEMES];
                           lotsCount: number;
                           totalPcs: number | null;
+                          shiftHasOt: boolean;
+                          shiftOtMin: number;
                         }
                       | {
                           type: "row";
@@ -1143,6 +1180,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         theme: SHIFT_THEMES.day,
                         lotsCount: dayLots.length,
                         totalPcs: dayPcs,
+                        shiftHasOt: dayShiftHasOt,
+                        shiftOtMin: dayShiftOtMin,
                       });
                       for (const item of dayLots) {
                         rows.push({
@@ -1163,6 +1202,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         theme: SHIFT_THEMES.night,
                         lotsCount: nightLots.length,
                         totalPcs: nightPcs,
+                        shiftHasOt: nightShiftHasOt,
+                        shiftOtMin: nightShiftOtMin,
                       });
                       for (const item of nightLots) {
                         rows.push({
@@ -1184,6 +1225,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         theme: isOver ? SHIFT_THEMES.over : SHIFT_THEMES.unassigned,
                         lotsCount: otherLots.length,
                         totalPcs: otherPcs,
+                        shiftHasOt: false,
+                        shiftOtMin: 0,
                       });
                       for (const item of otherLots) {
                         rows.push({
@@ -1281,6 +1324,14 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                             {item.col.isToday && (
                               <span className="badge badge-xs badge-primary font-semibold">Today</span>
                             )}
+                            {item.hasOt && (
+                              <span
+                                className="px-1.5 py-0.5 rounded border border-base-300 bg-base-200/90 text-[10.5px] font-bold text-base-content/75 leading-none"
+                                title="Overtime active"
+                              >
+                                OT
+                              </span>
+                            )}
                             <span className="text-xs font-semibold text-base-content/75 tabular-nums">
                               {item.colLots.length > 0 ? boardCountLabel(item.colLots) : "0 lots"}
                             </span>
@@ -1349,6 +1400,14 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                               <ShiftIcon size={12} className="shrink-0" />
                               <span>{item.theme.label}</span>
                             </span>
+                            {item.shiftHasOt && (
+                              <span
+                                className="px-1.5 py-0.5 rounded border border-base-300 bg-base-200/90 text-[10px] font-bold text-base-content/70 leading-none"
+                                title="Overtime active for this shift"
+                              >
+                                OT
+                              </span>
+                            )}
                             <span className="text-xs font-semibold text-base-content/75 tabular-nums">
                               {item.lotsCount} {item.lotsCount === 1 ? "lot" : "lots"}
                             </span>
@@ -1397,6 +1456,11 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 const isReorderTargetBefore = reorderTarget?.lotId === lot.id && reorderTarget.position === "before";
                 const isReorderTargetAfter = reorderTarget?.lotId === lot.id && reorderTarget.position === "after";
 
+                const moved = isMoved(lot);
+                const originalDateDisplay = lot.baseDate ? dayjs(lot.baseDate).format("DD/MM/YYYY") : null;
+                const originalDateShort = lot.baseDate ? dayjs(lot.baseDate).format("DD/MM") : null;
+                const moveDiffDays = lot.baseDate ? dayjs(lot.plannedDate).diff(dayjs(lot.baseDate), "day") : 0;
+
                 return (
                   <tr
                     key={lot.id}
@@ -1413,7 +1477,17 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     } ${isReorderTargetAfter ? "!border-b-2 !border-b-primary" : ""}`}
                   >
                     {/* Drag Grip + Selection Checkbox */}
-                    <td className="px-2" onClick={(e) => e.stopPropagation()}>
+                    <td
+                      className={`px-2 relative transition-all ${
+                        moved ? "border-l-[3.5px] !border-l-indigo-600 bg-indigo-50/20" : ""
+                      }`}
+                      title={
+                        moved
+                          ? `Moved from ${originalDateDisplay} (${moveDiffDays > 0 ? `+${moveDiffDays}d` : `${moveDiffDays}d`})`
+                          : undefined
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex items-center justify-center gap-1.5">
                         {!readOnly && (
                           <GripVertical
@@ -1494,34 +1568,50 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
                     {/* DATE AT THIS GATE (opens the date picker) */}
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        disabled={readOnly}
-                        onClick={(e) => {
-                          if (readOnly) return;
-                          if (isPickerOpen) {
-                            setListDatePicker(null);
-                          } else {
-                            setListDatePicker({
-                              lot,
-                              anchorEl: e.currentTarget,
-                            });
-                          }
-                        }}
-                        className={`inline-flex items-center justify-between gap-1.5 h-7 px-2 rounded-lg border text-xs font-semibold tabular-nums transition-colors cursor-pointer ${
-                          isPickerOpen
-                            ? "border-[#4f46e5] bg-[#eef2ff] text-[#4f46e5]"
-                            : "border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40 text-base-content"
-                        }`}
-                      >
-                        <span>
-                          {dayjs(lot.plannedDate).format("DD/MM/YYYY")}
-                        </span>
-                        <Calendar
-                          size={12}
-                          className="text-base-content/45 shrink-0"
-                        />
-                      </button>
+                      <div className="flex flex-col items-center justify-center">
+                        <button
+                          type="button"
+                          disabled={readOnly}
+                          onClick={(e) => {
+                            if (readOnly) return;
+                            if (isPickerOpen) {
+                              setListDatePicker(null);
+                            } else {
+                              setListDatePicker({
+                                lot,
+                                anchorEl: e.currentTarget,
+                              });
+                            }
+                          }}
+                          className={`inline-flex items-center justify-between gap-1.5 h-7 px-2 rounded-lg border text-xs font-semibold tabular-nums transition-colors cursor-pointer ${
+                            isPickerOpen
+                              ? "border-[#4f46e5] bg-[#eef2ff] text-[#4f46e5]"
+                              : moved
+                              ? "border-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/60 text-indigo-950 shadow-2xs"
+                              : "border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40 text-base-content"
+                          }`}
+                        >
+                          <span>
+                            {dayjs(lot.plannedDate).format("DD/MM/YYYY")}
+                          </span>
+                          <Calendar
+                            size={12}
+                            className="text-base-content/45 shrink-0"
+                          />
+                        </button>
+                        {moved && (
+                          <span
+                            className="mt-0.5 text-[10.5px] font-semibold text-indigo-700/90 tabular-nums leading-tight cursor-default"
+                            title={`Moved from ${originalDateDisplay} (${moveDiffDays > 0 ? `+${moveDiffDays}d` : `${moveDiffDays}d`})`}
+                          >
+                            <span className="text-base-content/40 font-normal">Orig </span>
+                            <span>{originalDateShort}</span>
+                            <span className="font-bold text-indigo-600 ml-0.5">
+                              ({moveDiffDays > 0 ? `+${moveDiffDays}d` : `${moveDiffDays}d`})
+                            </span>
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* SO DUE */}
