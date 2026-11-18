@@ -3,13 +3,12 @@
 `GET /api_p1/planning/planning_summary_gate/table` uses a process-local cache by default.
 The existing start script runs one Node process. No additional dependency or service is needed.
 Only this read endpoint is cached; authentication, plan writes and transaction validation still read
-their original sources. There is no writer to `planning_summary_gate` in the backend routes:
-external database changes are detected by the existing SSE monitor.
+their original sources. Planning Summary Gate reads external database changes when the table cache
+expires or when the user selects Refresh.
 
 ## Configuration and bounds
 
 - `PLANNING_GATE_CACHE_TTL_MS=60000` is the default. Set `0` and restart to disable caching.
-  Remove or update an existing `5000` override to use the longer TTL when navigating between pages.
 - At most 16 entries are retained, including tracked pending queries.
 - `PLANNING_GATE_CACHE_MAX_MB=64` sets the serialized payload and key budget in MiB per process.
   The default accommodates the observed 39.5 MB table response; the former 32 MiB budget discarded it.
@@ -26,22 +25,18 @@ Identical concurrent reads share one query. The TTL starts after the database re
 Errors are never cached. `?refresh=true` bypasses a completed entry or an older ordinary pending read;
 concurrent forced reads can share a fresh pending read. The frontend Refresh button sends this flag.
 
-The monitor invalidates the cache **before** sending a change event. It also invalidates at its first
-successful check, on failure, and on recovery. After a normal monitoring gap, retained results are
-revalidated by comparing the next successful fingerprint with the previous one.
-On normal navigation the last successful fingerprint is retained. Reconnecting compares the current
-database content to it: unchanged content keeps the cache; changed content invalidates and notifies.
-Invalidated, evicted or replaced pending reads can complete for their original callers but cannot
-repopulate the cache. An already running HTTP response is not retroactively replaced; existing
-frontend notification handling schedules a trailing refresh when a change arrives during a request.
+The table response includes `cache_ttl_ms`, the remaining cache lifetime, or `null` when the
+result is not retained. The page loads immediately and schedules its next ordinary read using
+that lifetime, with a default interval of one minute. Hidden or offline tabs resume overdue
+reads when visible and online. If a refresh fails, the page keeps the last successful rows and
+their Updated time and retries while visible and online.
 
-Browser/proxy caching remains disabled. While monitoring is healthy, external updates become visible
-after the existing 2.5-second poll plus query/network time. Without monitoring, subsequent reads
-reload when the 60-second TTL expires; TTL does not itself push updates to an idle browser.
+Browser/proxy caching remains disabled. Evicted or replaced pending reads can complete for their
+original callers. Only the current entry may populate the cache.
 Manual refresh always requests a database read rather than intentionally serving an expired result.
 
-Each Node process has its own cache and monitor. In a cluster, a refresh affects the receiving process;
-the other processes rely on their own polling/TTL. Use a shared cache and distributed invalidation
+Each Node process has its own cache. In a cluster, a refresh affects the receiving process;
+the other processes rely on their own TTL. Use a shared cache and distributed invalidation
 (for example Redis) if cluster-wide invalidation is required. Confirm the actual deployment topology
 before increasing the TTL. Future backend writes to the source must invalidate after commit.
 
@@ -65,8 +60,8 @@ to disable the profiler; cache response headers remain available.
 1. Run with TTL `0`, collect representative repeated and concurrent reads and keep perf logs.
 2. Restart with TTL `60000`, repeat the same requests/data, and compare query counts, cache hit ratio,
    total p50/p95, response bytes and Node heap usage. Separate HIT/MISS/SHARED when comparing timings.
-3. Confirm source changes, deletions and Refresh return new results. Check monitor query time
-   separately: table caching does not reduce the existing full-table fingerprint query.
+3. Confirm source changes and deletions become visible after the cache lifetime, and that Refresh
+   returns fresh results before expiry.
 4. If JSON size, transfer or frontend rendering dominates, reduce payload or rendering work next.
 
 The automated tests use synthetic database results and local HTTP. They establish query reuse and

@@ -10,17 +10,11 @@ const routeDirectory = path.join(__dirname, "../routes/10.17.87.244/Planning Sys
 
 async function withGate(callback, env = {}) {
   const router = express.Router();
-  const handlers = new Map();
-  const timers = new Map();
   const records = [];
-  let timerId = 0, queries = 0, fingerprint = "1", fail = false;
+  let clock = 0, queries = 0, fail = false;
   let source = [{ lot_no: "SYNTHETIC_PRIVATE_LOT", process_group: "SMT" }];
-  let beforeWrite = () => {};
   const query = async (sql, params) => {
-    if (typeof sql === "object") {
-      if (fail) throw new Error("Synthetic monitor outage");
-      return { rows: [{ row_count: "1", content_hash: fingerprint }] };
-    }
+    assert.equal(typeof sql, "string");
     queries++;
     if (fail) throw new Error("Synthetic query outage");
     return { rows: source.map(row => ({ ...row, filter: params.join("|") })) };
@@ -28,20 +22,18 @@ async function withGate(callback, env = {}) {
   const pool = { query, connect: async () => ({ query, release() {} }) };
   const context = {
     module: { exports: {} }, process: { env },
-    setInterval(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; },
-    clearInterval(id) { timers.delete(id); },
     require(name) {
-      if (name === "express") return { Router: () => ({ get(url, handler) {
-        handlers.set(url, handler);
-        router.get(url, handler);
-      } }) };
+      if (name === "express") return { Router: () => router };
       if (name.endsWith("/config")) return { pool_smart: pool };
       if (name.endsWith("/workingCalendar")) return {};
       if (name === "./gateTablePerformance") return {
         createGateTableProfiler: pool => createGateTableProfiler(pool, { enabled: true, log: record => records.push(record) }),
       };
       if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
-      if (name === "./gateTableCache") return require(path.join(routeDirectory, "gateTableCache"));
+      if (name === "./gateTableCache") {
+        const { createGateTableCache } = require(path.join(routeDirectory, "gateTableCache"));
+        return { createGateTableCache: options => createGateTableCache({ ...options, now: () => clock }) };
+      }
       if (name === "./routedGates") return require(path.join(routeDirectory, "routedGates"));
       throw new Error(`Unexpected dependency: ${name}`);
     },
@@ -51,21 +43,6 @@ async function withGate(callback, env = {}) {
   app.use(require("compression")());
   app.use(router);
   const server = app.listen(0, "127.0.0.1");
-  const { EventEmitter } = require("node:events");
-  const streams = [];
-  const monitor = () => {
-    const req = new EventEmitter(), res = new EventEmitter();
-    res.writeHead = () => {};
-    res.write = message => { beforeWrite(message); return true; };
-    res.destroy = () => {};
-    handlers.get("/stream")(req, res);
-    streams.push(req);
-    return () => req.emit("close");
-  };
-  const tick = async () => {
-    for (const timer of timers.values()) if (timer.delay === 2500) timer.callback();
-    await new Promise(resolve => setImmediate(resolve));
-  };
   try {
     await new Promise((resolve, reject) => {
       server.once("listening", resolve);
@@ -77,13 +54,12 @@ async function withGate(callback, env = {}) {
         const response = await fetch(`${base}/table${query}`);
         return { response, body: await response.json() };
       },
-      queries: () => queries, records, monitor, tick,
-      setSource(value) { source = value; fingerprint = String(Number(fingerprint) + 1); },
+      queries: () => queries, records,
+      advanceTime(milliseconds) { clock += milliseconds; },
+      setSource(value) { source = value; },
       setFail(value) { fail = value; },
-      onWrite(callback) { beforeWrite = callback; },
     });
   } finally {
-    for (const req of streams) req.emit("close");
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
   }
@@ -116,56 +92,44 @@ test("actual table route caches responses, isolates filters, supports Refresh an
   assert.doesNotMatch(JSON.stringify(h.records), /SYNTHETIC_PRIVATE_LOT|SELECT|prd_category/);
 }));
 
-test("monitor invalidates before notifying viewers, and initial/recovered monitoring drops retained reads", async () => withGate(async h => {
-  await h.get();
-  h.monitor();
-  await h.tick();
-  assert.equal((await h.get()).response.headers.get("x-gate-cache"), "MISS");
+test("table responses report the remaining cache lifetime and load changes after expiry", async () => withGate(async h => {
+  const initial = await h.get();
+  assert.equal(initial.body.cache_ttl_ms, 60000);
   h.setSource([{ lot_no: "NEW" }]);
-  let notifiedRead;
-  h.onWrite(message => {
-    if (message.includes("PLANNING_SUMMARY_GATE_UPDATED")) notifiedRead = h.get();
-  });
-  await h.tick();
-  const updated = await notifiedRead;
+  h.advanceTime(45000);
+  const hit = await h.get();
+  assert.equal(hit.response.headers.get("x-gate-cache"), "HIT");
+  assert.deepEqual(hit.body.data, initial.body.data);
+  assert.equal(hit.body.cache_ttl_ms, 15000);
+  assert.equal(h.queries(), 1);
+  h.advanceTime(15000);
+  const updated = await h.get();
   assert.equal(updated.response.headers.get("x-gate-cache"), "MISS");
+  assert.equal(updated.response.headers.get("x-gate-cache-reason"), "EXPIRED");
   assert.equal(updated.body.data[0].lot_no, "NEW");
-  h.setFail(true);
-  await h.tick();
-  const failed = await h.get();
-  assert.equal(failed.response.status, 503);
-  assert.equal(failed.body.status, "ERROR");
-  h.setFail(false);
-  await h.get(); // A read while the monitor is recovering must also be discarded on recovery.
-  await h.tick();
-  assert.equal((await h.get()).response.headers.get("x-gate-cache"), "MISS");
+  assert.equal(updated.body.cache_ttl_ms, 60000);
+  assert.equal(h.queries(), 2);
 }));
 
 test("TTL zero disables table caching for a production baseline", async () => withGate(async h => {
   const responses = await Promise.all([h.get(), h.get(), h.get()]);
   assert.ok(responses.every(({ response }) => response.headers.get("x-gate-cache") === "BYPASS"));
+  assert.ok(responses.every(({ body }) => body.cache_ttl_ms === null));
   assert.equal(h.queries(), 3);
 }, { PLANNING_GATE_CACHE_TTL_MS: "0" }));
 
-test("navigation keeps cached rows when unchanged and detects changes while nobody was viewing", async () => withGate(async h => {
-  const close = h.monitor();
-  await h.tick();
+test("failed table reads after expiry return an error and can be retried", async () => withGate(async h => {
   await h.get();
-  close();
-  const closeAgain = h.monitor();
-  await h.tick();
-  const back = await h.get();
-  assert.equal(back.response.headers.get("x-gate-cache"), "HIT");
-  assert.equal(back.response.headers.get("x-gate-cache-reason"), "FRESH");
-  assert.equal(h.queries(), 1);
-  closeAgain();
-  h.setSource([{ lot_no: "CHANGED_WHILE_AWAY" }]);
-  h.monitor();
-  await h.tick();
-  const changed = await h.get();
-  assert.equal(changed.response.headers.get("x-gate-cache"), "MISS");
-  assert.equal(changed.body.data[0].lot_no, "CHANGED_WHILE_AWAY");
-  assert.equal(h.queries(), 2);
+  h.advanceTime(60000);
+  h.setFail(true);
+  const failed = await h.get();
+  assert.equal(failed.response.status, 503);
+  assert.equal(failed.body.status, "ERROR");
+  h.setFail(false);
+  const recovered = await h.get();
+  assert.equal(recovered.response.headers.get("x-gate-cache"), "MISS");
+  assert.equal(recovered.body.cache_ttl_ms, 60000);
+  assert.equal(h.queries(), 3);
 }));
 
 test("route honors the configured byte budget and makes oversized responses visible", async () => withGate(async h => {
@@ -173,6 +137,7 @@ test("route honors the configured byte budget and makes oversized responses visi
   const first = await h.get();
   const second = await h.get();
   assert.equal(first.response.headers.get("x-gate-cache"), "OVERSIZE");
+  assert.equal(first.body.cache_ttl_ms, null);
   assert.equal(second.response.headers.get("x-gate-cache"), "OVERSIZE");
   assert.equal(h.queries(), 2);
   await new Promise(resolve => setImmediate(resolve));

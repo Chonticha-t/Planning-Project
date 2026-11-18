@@ -7,7 +7,6 @@ import { summarizeGateQuantities } from "../gateUnits";
 import {
   PLANNING_SUMMARY_GATE_TABLE_API,
   PLANNING_SUMMARY_GATE_CALENDAR_API,
-  PLANNING_SUMMARY_GATE_STREAM_API,
 } from "./api";
 import type {
   PlanningSummaryGateRow,
@@ -28,6 +27,8 @@ const DEFAULT_GATES_FPC = ["FFPC", "FVAC", "FADL", "FIN", "W/H"];
 const DEFAULT_GATES_SMT = ["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"];
 
 const CALENDAR_TTL_MS = 60000;
+const TABLE_REFRESH_MS = 60000;
+const TABLE_RETRY_MS = 5000;
 
 // Calendar validity and retries are independent of gate-row refreshes.
 const useGateCalendar = (today: string) => {
@@ -135,6 +136,7 @@ const getCurrentProcess = (row: PlanningSummaryGateRow): string => {
 
 export const usePlanningSummaryGate = () => {
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [sourceRows, setRows] = useState<PlanningSummaryGateRow[]>([]);
   const todayStr = useGateToday();
   const calendar = useGateCalendar(todayStr);
@@ -142,7 +144,6 @@ export const usePlanningSummaryGate = () => {
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
-  const [streamDisconnected, setStreamDisconnected] = useState(false);
   const [statusFilter, setStatusFilter] = useState<GateStatusFilter>("all");
   const [lotStatusFilter, setLotStatusFilter] = useState<LotStatusFilter>("ALL");
   const [currentProcessFilter, setCurrentProcessFilter] = useState("");
@@ -160,45 +161,41 @@ export const usePlanningSummaryGate = () => {
     actionTab: "all",
   });
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const pendingRefreshRef = useRef(false);
+  const requestRef = useRef<{ controller: AbortController; forced: boolean } | null>(null);
   const hasLoadedRef = useRef(false);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextRefreshAtRef = useRef(0);
 
   // Fetch data (fetch all categories and all stage dates for complete lot stage timelines)
-  const fetchData = useCallback(async function loadData(options: { silent?: boolean; force?: boolean } = {}) {
-    const silent = options.silent === true;
-    // Coalesce notifications during a request into one trailing refresh.
-    if (silent && abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
-      pendingRefreshRef.current = true;
-      return;
-    }
-    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-    retryTimerRef.current = null;
-    abortControllerRef.current?.abort();
-    pendingRefreshRef.current = false;
+  const fetchData = useCallback(async function loadData(force = false) {
+    const pending = requestRef.current;
+    if (pending && (!force || pending.forced)) return;
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+    pending?.controller.abort();
     const controller = new AbortController();
-    abortControllerRef.current = controller;
-    if (!silent) {
-      hasLoadedRef.current = false;
+    requestRef.current = { controller, forced: force };
+    setRefreshing(force);
+    if (!hasLoadedRef.current) {
       setLoading(true);
-      setError(null);
-      setRefreshWarning(null);
-      setRows([]);
-      setLastUpdated("");
     }
 
+    let nextDelay = TABLE_RETRY_MS;
     try {
-      const tableRes = await axios.get<{ status: string; data: PlanningSummaryGateRow[] }>(
+      const tableRes = await axios.get<{
+        status: string;
+        data: PlanningSummaryGateRow[];
+        cache_ttl_ms?: number | null;
+      }>(
         PLANNING_SUMMARY_GATE_TABLE_API,
         {
-          params: { skip_holidays: filters.skipHolidays, refresh: options.force === true },
+          params: { skip_holidays: filters.skipHolidays, refresh: force },
           signal: controller.signal,
           timeout: 10000,
         }
       );
 
-      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
+      if (controller.signal.aborted || requestRef.current?.controller !== controller) return;
       if (
         tableRes.data?.status !== "OK" || !Array.isArray(tableRes.data.data)
       ) {
@@ -209,107 +206,53 @@ export const usePlanningSummaryGate = () => {
       setError(null);
       setRefreshWarning(null);
       setLastUpdated(dayjs().format("DD/MM/YYYY HH:mm:ss"));
+      const remaining = tableRes.data.cache_ttl_ms;
+      nextDelay = typeof remaining === "number" && Number.isFinite(remaining) && remaining >= 0
+        ? Math.max(1000, Math.min(TABLE_REFRESH_MS, remaining)) : TABLE_REFRESH_MS;
     } catch {
-      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
-      controller.abort();
+      if (controller.signal.aborted || requestRef.current?.controller !== controller) return;
       if (hasLoadedRef.current) {
-        setRefreshWarning("Live refresh failed. Displayed data may be out of date. Retrying automatically.");
+        setRefreshWarning("Planning data refresh failed. Displayed data may be out of date. Retrying automatically.");
       } else {
         setError("Unable to load planning gate data. Retrying automatically, or select Refresh to try again.");
       }
-      retryTimerRef.current = setTimeout(() => {
-        retryTimerRef.current = null;
-        if (document.visibilityState === "visible" && navigator.onLine) void loadData({ silent: true });
-      }, 5000);
     } finally {
-      if (abortControllerRef.current === controller) {
-        abortControllerRef.current = null;
+      if (requestRef.current?.controller === controller) {
+        requestRef.current = null;
         setLoading(false);
-        if (pendingRefreshRef.current) {
-          pendingRefreshRef.current = false;
-          void loadData({ silent: true });
-        }
+        setRefreshing(false);
+        nextRefreshAtRef.current = Date.now() + nextDelay;
+        refreshTimerRef.current = setTimeout(() => {
+          refreshTimerRef.current = null;
+          if (document.visibilityState === "visible" && navigator.onLine) void loadData();
+        }, nextDelay);
       }
     }
   }, [filters.skipHolidays]);
 
   useEffect(() => {
-    let active = true;
-    let monitorUnavailable = false;
-    let initialFetchStarted = false;
-    let stream: EventSource | null = null;
-    // Subscribe before reading rows so the first connection needs only one read.
-    // A slow or unavailable stream must never block the page indefinitely.
-    const startInitialFetch = () => {
-      if (!active || initialFetchStarted) return;
-      initialFetchStarted = true;
-      void fetchData();
-    };
-    const initialTimer = setTimeout(startInitialFetch, 1000);
+    nextRefreshAtRef.current = 0;
+    if (document.visibilityState === "visible") void fetchData();
     const refresh = () => {
-      if (active && document.visibilityState === "visible" && navigator.onLine) {
-        if (!initialFetchStarted) startInitialFetch();
-        else void fetchData({ silent: true });
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        if (Date.now() >= nextRefreshAtRef.current) void fetchData();
         void refreshCalendar();
       }
     };
-    try {
-      stream = new EventSource(PLANNING_SUMMARY_GATE_STREAM_API);
-      stream.onopen = () => {
-        if (!active) return;
-        setStreamDisconnected(false);
-        clearTimeout(initialTimer);
-        if (!initialFetchStarted) startInitialFetch();
-        // A reconnect or late first connection may have missed change events.
-        else refresh();
-      };
-      stream.onmessage = (event) => {
-        if (!active) return;
-        try {
-          const type = JSON.parse(event.data)?.type;
-          if (type === "GATE_MONITOR_UNAVAILABLE") {
-            monitorUnavailable = true;
-            setStreamDisconnected(true);
-          } else if (type === "GATE_MONITOR_OK" || type === "PLANNING_SUMMARY_GATE_UPDATED") {
-            const recovered = monitorUnavailable;
-            monitorUnavailable = false;
-            setStreamDisconnected(false);
-            if (recovered || type === "PLANNING_SUMMARY_GATE_UPDATED") refresh();
-          }
-        } catch {
-          // Ignore malformed or unrelated events; never discard displayed data.
-        }
-      };
-      stream.onerror = () => {
-        if (active) {
-          setStreamDisconnected(true);
-          clearTimeout(initialTimer);
-          startInitialFetch();
-        }
-        // EventSource reconnects automatically using the server retry interval.
-      };
-    } catch {
-      setStreamDisconnected(true);
-      clearTimeout(initialTimer);
-      startInitialFetch();
-    }
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", refresh);
     return () => {
-      active = false;
-      clearTimeout(initialTimer);
-      stream?.close();
-      pendingRefreshRef.current = false;
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      requestRef.current?.controller.abort();
+      requestRef.current = null;
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("online", refresh);
     };
   }, [fetchData, refreshCalendar, todayStr]);
 
   const refreshData = useCallback(() => {
-    void fetchData({ force: true });
+    void fetchData(true);
     void refreshCalendar(true);
   }, [fetchData, refreshCalendar]);
 
@@ -587,10 +530,9 @@ export const usePlanningSummaryGate = () => {
 
   return {
     loading: loading || calendar.loading,
+    refreshing,
     error: error || calendar.error,
-    refreshWarning: refreshWarning || calendar.warning || (streamDisconnected
-      ? "Live connection interrupted. Displayed data may be out of date. Reconnecting automatically."
-      : null),
+    refreshWarning: refreshWarning || calendar.warning,
     rows: baseRows,
     lastUpdated,
     filters,

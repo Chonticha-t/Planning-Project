@@ -11,6 +11,7 @@ import "../gateTheme.css";
 const Planning_Summary_Gate: React.FC = () => {
   const {
     loading,
+    refreshing,
     error,
     refreshWarning,
     rows,
@@ -76,7 +77,7 @@ const Planning_Summary_Gate: React.FC = () => {
         search={filters.search}
         onSearchChange={setSearch}
         lastUpdated={lastUpdated}
-        loading={loading}
+        loading={loading || refreshing}
         onRefresh={refreshData}
       />
 

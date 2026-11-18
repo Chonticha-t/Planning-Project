@@ -3,180 +3,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const { EventEmitter } = require("node:events");
 
 const routesRoot = path.join(__dirname, "../routes");
 const routePath = fs.readdirSync(routesRoot, { recursive: true })
   .find(name => path.basename(name) === "Planning Summary Gate.js");
 
-function monitorHarness(router = null) {
-  const routes = new Map();
-  const timers = new Map();
-  let timerId = 0;
-  let queries = 0;
-  let query = async () => ({ rows: [{ row_count: "2", content_hash: "100" }] });
-  const context = {
-    module: { exports: {} },
-    process: { env: {} },
-    require(name) {
-      if (name === "express") return { Router: () => ({ get: (url, handler) => {
-        routes.set(url, handler);
-        router?.get(url, handler);
-      } }) };
-      if (name.endsWith("/config")) return { pool_smart: { query: async config => {
-        queries++;
-        assert.equal(config.query_timeout, 5000);
-        assert.match(config.text, /^SELECT/);
-        return query();
-      } } };
-      if (name.endsWith("/workingCalendar")) return {};
-      if (name.endsWith("/gateCalendarCache")) return require("../routes/10.17.87.244/Planning System/WorkingDayCalendar/gateCalendarCache");
-      if (name.endsWith("/gateTableCache")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTableCache");
-      if (name.endsWith("/routedGates")) return require("../routes/10.17.87.244/Planning System/Planning Summary Gate/routedGates");
-      if (name.endsWith("/gateTablePerformance")) return {
-        createGateTableProfiler: pool => require("../routes/10.17.87.244/Planning System/Planning Summary Gate/gateTablePerformance").createGateTableProfiler(pool, { enabled: false }),
-      };
-      throw new Error("Unexpected dependency");
-    },
-    setInterval(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; },
-    clearInterval(id) { timers.delete(id); },
-  };
-  vm.runInNewContext(fs.readFileSync(path.join(routesRoot, routePath), "utf8"), context);
-  const connect = () => {
-    const req = new EventEmitter();
-    const res = new EventEmitter();
-    res.messages = [];
-    res.writeHead = (status, headers) => { res.status = status; res.headers = headers; };
-    res.write = message => { res.messages.push(message); return !res.slow; };
-    res.destroy = () => { res.destroyed = true; };
-    routes.get("/stream")(req, res);
-    return { req, res };
-  };
-  return {
-    connect, timers,
-    setQuery: value => { query = value; },
-    queries: () => queries,
-    tick: async () => {
-      for (const timer of [...timers.values()]) if (timer.delay === 2500) await timer.callback();
-      await new Promise(resolve => setImmediate(resolve));
-    },
-  };
-}
-
-test("gate viewers share one monitor; unchanged rows do not trigger reloads", async () => {
-  const h = monitorHarness();
-  const first = h.connect();
-  const second = h.connect();
-  await h.tick();
-  assert.equal(h.queries(), 1);
-  assert.equal([...h.timers.values()].filter(timer => timer.delay === 2500).length, 1);
-  assert.equal(first.res.headers["Content-Type"], "text/event-stream");
-  assert.ok(first.res.messages.some(message => message.includes("GATE_MONITOR_OK")));
-  assert.ok(!second.res.messages.some(message => message.includes("GATE_UPDATED")));
-  await h.tick();
-  assert.ok(!first.res.messages.some(message => message.includes("PLANNING_SUMMARY_GATE_UPDATED")));
-  first.req.emit("close");
-  second.req.emit("close");
-  assert.equal(h.timers.size, 0);
-});
-
-test("gate changes and deletes notify every viewer; monitor errors can recover", async () => {
-  const h = monitorHarness();
-  const { req, res } = h.connect();
-  await h.tick();
-  h.setQuery(async () => ({ rows: [{ row_count: "2", content_hash: "101" }] }));
-  await h.tick();
-  h.setQuery(async () => ({ rows: [{ row_count: "0", content_hash: "0" }] }));
-  await h.tick();
-  assert.equal(res.messages.filter(message => message.includes("PLANNING_SUMMARY_GATE_UPDATED")).length, 2);
-  h.setQuery(async () => { throw new Error("Synthetic database outage"); });
-  await h.tick();
-  assert.ok(res.messages.at(-1).includes("GATE_MONITOR_UNAVAILABLE"));
-  h.setQuery(async () => ({ rows: [{ row_count: "0", content_hash: "0" }] }));
-  await h.tick();
-  assert.ok(res.messages.at(-1).includes("GATE_MONITOR_OK"));
-  req.emit("close");
-});
-
-test("slow queries never overlap and a disconnected generation cannot notify a new viewer", async () => {
-  const h = monitorHarness();
-  let finish;
-  h.setQuery(() => new Promise(resolve => { finish = resolve; }));
-  const first = h.connect();
-  await h.tick();
-  assert.equal(h.queries(), 1);
-  first.req.emit("close");
-  const second = h.connect();
-  finish({ rows: [{ row_count: "1", content_hash: "1" }] });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(second.res.messages.length, 1);
-  h.setQuery(async () => ({ rows: [{ row_count: "2", content_hash: "2" }] }));
-  await h.tick();
-  assert.ok(second.res.messages.at(-1).includes("GATE_MONITOR_OK"));
-  second.req.emit("close");
-});
-
-test("response errors and backpressure release all stream timers", async () => {
-  const h = monitorHarness();
-  const first = h.connect();
-  await h.tick();
-  first.res.emit("error", new Error("Synthetic socket error"));
-  assert.equal(h.timers.size, 0);
-  const second = h.connect();
-  second.res.slow = true;
-  await h.tick();
-  assert.equal(second.res.destroyed, true);
-  assert.equal(h.timers.size, 0);
-});
-
-test("SSE headers and change events flush through Express compression over local HTTP", { timeout: 5000 }, async () => {
-  const express = require("express");
-  const app = express();
-  const router = express.Router();
-  const h = monitorHarness(router);
-  let resolveResponseClosed;
-  const responseClosed = new Promise(resolve => { resolveResponseClosed = resolve; });
-  app.use((req, res, next) => {
-    res.once("close", resolveResponseClosed);
-    next();
-  });
-  app.use(require("compression")());
-  app.use(router);
-  const server = app.listen(0, "127.0.0.1");
-  const controller = new AbortController();
-  try {
-    await new Promise((resolve, reject) => {
-      server.once("listening", resolve);
-      server.once("error", reject);
-    });
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/stream`, {
-      signal: controller.signal,
-    });
-    assert.equal(response.status, 200);
-    assert.match(response.headers.get("content-type"), /text\/event-stream/);
-    assert.equal(response.headers.get("x-accel-buffering"), "no");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let messages = decoder.decode((await reader.read()).value);
-    assert.match(messages, /CONNECTED/);
-    h.setQuery(async () => ({ rows: [{ row_count: "2", content_hash: "102" }] }));
-    await h.tick();
-    while (!messages.includes("PLANNING_SUMMARY_GATE_UPDATED")) {
-      const chunk = await reader.read();
-      assert.equal(chunk.done, false);
-      messages += decoder.decode(chunk.value);
-    }
-    await reader.cancel();
-  } finally {
-    controller.abort();
-    server.closeAllConnections();
-    await new Promise(resolve => server.close(resolve));
-    await responseClosed;
-  }
-  assert.equal(h.timers.size, 0);
-});
-
-// Exercise the actual frontend hook with synthetic HTTP, React lifecycle and SSE.
+// Exercise the actual frontend hook with synthetic HTTP and React lifecycle.
 const frontendRoot = path.join(__dirname, "../../Frontend-planning");
 const { createRequire } = require("node:module");
 const frontendRequire = createRequire(path.join(frontendRoot, "package.json"));
@@ -188,12 +20,11 @@ const unitModule = ts.transpileModule(fs.readFileSync(path.join(frontendRoot, "s
 });
 vm.runInNewContext(unitModule.outputText, { exports: gateUnits });
 
-function hookHarness(today = "2026-01-01", { autoOpen = true } = {}) {
+function hookHarness(today = "2026-01-01") {
   const slots = [];
   const effects = [];
   const pendingEffects = [];
   const requests = [];
-  const streams = [];
   const timers = new Map();
   const listeners = new Map();
   const timerDelays = new Map();
@@ -244,8 +75,7 @@ function hookHarness(today = "2026-01-01", { autoOpen = true } = {}) {
     setTimeout(callback, delay) { timers.set(++timerId, callback); timerDelays.set(timerId, delay); return timerId; },
     clearTimeout(id) { timers.delete(id); timerDelays.delete(id); },
     EventSource: class {
-      constructor() { streams.push(this); }
-      close() { this.closed = true; }
+      constructor() { assert.fail("Gate polling must not open an event stream"); }
     },
     require(name) {
       if (name === "react") return react;
@@ -261,7 +91,7 @@ function hookHarness(today = "2026-01-01", { autoOpen = true } = {}) {
       };
       if (name === "./api") return {
         PLANNING_SUMMARY_GATE_TABLE_API: "table", PLANNING_SUMMARY_GATE_SUMMARY_API: "summary",
-        PLANNING_SUMMARY_GATE_CALENDAR_API: "calendar", PLANNING_SUMMARY_GATE_STREAM_API: "stream",
+        PLANNING_SUMMARY_GATE_CALENDAR_API: "calendar",
       };
       throw new Error("Unexpected hook dependency");
     },
@@ -275,25 +105,22 @@ function hookHarness(today = "2026-01-01", { autoOpen = true } = {}) {
     cursor = 0;
     const value = context.exports.usePlanningSummaryGate();
     while (pendingEffects.length) pendingEffects.shift()();
-    if (autoOpen) for (const stream of streams) {
-      if (!stream.opened && !stream.closed) { stream.opened = true; stream.onopen(); }
-    }
     return value;
   };
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  const succeed = async (batch, tableRows = []) => {
+  const succeed = async (batch, tableRows = [], remainingTtl = {}) => {
     for (const request of batch) {
       let data = [];
       if (request.url === "table") data = tableRows;
       if (request.url === "calendar") data = Array.from({ length: 29 }, (_, i) => ({
         date: dayjs(today).add(i, "day").format("YYYY-MM-DD"), is_working: true,
       }));
-      request.resolve({ data: { status: "OK", data } });
+      request.resolve({ data: { status: "OK", data, cache_ttl_ms: remainingTtl[request.url] } });
     }
     await flush();
   };
   return {
-    render, requests, streams, timers, timerDelays, listeners, succeed, flush, context,
+    render, requests, timers, timerDelays, listeners, succeed, flush, context,
     setToday: value => { today = value; },
     advanceTime: milliseconds => { clock += milliseconds; },
     runTimer: delay => {
@@ -302,7 +129,6 @@ function hookHarness(today = "2026-01-01", { autoOpen = true } = {}) {
       const [id, callback] = found;
       timers.delete(id); timerDelays.delete(id); callback();
     },
-    event: type => streams.at(-1).onmessage({ data: JSON.stringify({ type }) }),
     unmount: () => effects.forEach(effect => effect.cleanup?.()),
   };
 }
@@ -541,112 +367,106 @@ test("in-gate lots survive past plan dates until passed and remain discoverable"
   h.unmount();
 });
 
-test("bursts coalesce into one trailing refresh and background failures retain data", async () => {
+test("table loads immediately and schedules a refresh at the remaining cache lifetime", async () => {
   const h = hookHarness();
-  h.render();
-  const rows = [{ prd_name: "SAMPLE", gate_name: "FFPC", gate_state: "in_gate" }];
-  await h.succeed(h.requests.slice(), rows);
-  assert.equal(h.render().rows.length, 1);
-  h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  assert.equal(h.requests.length, 3);
-  assert.equal(h.render().loading, false);
-  assert.equal(h.render().rows.length, 1);
-  await h.succeed(h.requests.slice(2), rows);
-  assert.equal(h.requests.length, 4);
-  h.requests[3].reject(new Error("Synthetic network outage"));
-  await h.flush();
-  assert.equal(h.render().rows.length, 1);
-  assert.match(h.render().refreshWarning, /out of date/);
-  assert.equal(h.timers.size, 2);
-  h.unmount();
-  assert.equal(h.timers.size, 0);
-  assert.equal(h.streams[0].closed, true);
-  assert.equal(h.listeners.size, 0);
-});
-
-test("reconnect, visibility, online and monitor recovery request fresh gate data", async () => {
-  const h = hookHarness();
-  h.render();
-  await h.succeed(h.requests.slice());
-  for (const trigger of [
-    () => h.streams[0].onopen(),
-    () => h.listeners.get("visibilitychange")(),
-    () => h.listeners.get("online")(),
-    () => { h.event("GATE_MONITOR_UNAVAILABLE"); h.event("GATE_MONITOR_OK"); },
-  ]) {
-    const start = h.requests.length;
-    trigger();
-    assert.equal(h.requests.length, start + 1);
-    await h.succeed(h.requests.slice(start));
-  }
-  h.streams[0].onerror();
-  assert.match(h.render().refreshWarning, /Reconnecting/);
-  h.unmount();
-});
-
-test("manual refresh cancels stale requests; unmount prevents trailing work", async () => {
-  const h = hookHarness();
-  h.render();
-  h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  h.render().refreshData();
-  assert.equal(h.requests[0].options.signal.aborted, true);
-  await h.succeed(h.requests.slice(0, 2), [{ prd_name: "OLD" }]);
-  assert.equal(h.render().rows.length, 0);
-  await h.succeed(h.requests.slice(2, 4));
-  assert.equal(h.render().loading, false);
-  h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  h.event("PLANNING_SUMMARY_GATE_UPDATED");
-  h.unmount();
-  await h.succeed(h.requests.slice(4));
-  assert.equal(h.requests.length, 5);
-  assert.equal(h.timers.size, 0);
-});
-
-test("initial SSE connection performs one table read and no summary request", async () => {
-  const h = hookHarness("2026-01-01", { autoOpen: false });
   try {
     h.render();
-    assert.deepEqual(h.requests.map(request => request.url), ["calendar"]);
-    h.streams[0].onopen();
     assert.deepEqual(h.requests.map(request => request.url), ["calendar", "table"]);
-    await h.succeed(h.requests.slice());
+    await h.succeed(h.requests, [], { table: 18000 });
     assert.equal(h.render().loading, false);
+    h.advanceTime(17999);
+    h.listeners.get("visibilitychange")();
     assert.equal(h.requests.length, 2);
-    assert.ok(![...h.timerDelays.values()].includes(1000));
-    h.streams[0].onopen();
+    h.advanceTime(1);
+    h.runTimer(18000);
+    assert.deepEqual(h.requests.slice(2).map(request => request.url), ["table"]);
+    assert.equal(h.requests[2].options.params.refresh, false);
+
+    h.listeners.get("online")();
+    h.listeners.get("visibilitychange")();
     assert.equal(h.requests.length, 3);
-    assert.equal(h.requests.at(-1).url, "table");
+    await h.succeed(h.requests.slice(2), [], { table: null });
+    assert.equal([...h.timerDelays.values()].filter(delay => delay === 60000).length, 2);
   } finally { h.unmount(); }
 });
 
-test("slow and failed SSE connections cannot block initial load and late opens catch up", async () => {
-  for (const fail of [false, true]) {
-    const h = hookHarness("2026-01-01", { autoOpen: false });
-    try {
-      h.render();
-      if (fail) h.streams[0].onerror();
-      else h.runTimer(1000);
-      assert.deepEqual(h.requests.map(request => request.url), ["calendar", "table"]);
-      await h.succeed(h.requests.slice());
-      assert.equal(h.render().loading, false);
-      h.streams[0].onopen();
-      assert.equal(h.requests.at(-1).url, "table");
-      assert.equal(h.requests.length, 3);
-    } finally { h.unmount(); }
-  }
+test("scheduled refresh failure preserves rows and Updated, and retries without an overlap", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const rows = [{ prd_name: "SAMPLE", gate_name: "FFPC", gate_state: "in_gate" }];
+    await h.succeed(h.requests, rows, { table: 20000 });
+    const updated = h.render().lastUpdated;
+    h.advanceTime(20000);
+    h.runTimer(20000);
+    assert.equal(h.render().loading, false);
+    h.requests[2].reject(new Error("Synthetic timeout"));
+    await h.flush();
+    assert.equal(h.render().rows[0].prd_name, "SAMPLE");
+    assert.equal(h.render().lastUpdated, updated);
+    assert.match(h.render().refreshWarning, /out of date/);
+    h.advanceTime(4999);
+    h.listeners.get("online")();
+    assert.equal(h.requests.length, 3);
+    h.advanceTime(1);
+    h.runTimer(5000);
+    await h.succeed(h.requests.slice(3), [{ prd_name: "FRESH" }]);
+    assert.equal(h.requests.length, 4);
+    assert.equal(h.render().rows[0].prd_name, "FRESH");
+    assert.equal(h.render().refreshWarning, null);
+  } finally { h.unmount(); }
+});
+
+test("table refresh pauses offline and resumes once when overdue", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    await h.succeed(h.requests, [], { table: 20000 });
+    h.context.navigator.onLine = false;
+    h.advanceTime(20000);
+    h.runTimer(20000);
+    assert.equal(h.requests.length, 2);
+    h.context.navigator.onLine = true;
+    h.listeners.get("online")();
+    h.listeners.get("online")();
+    assert.deepEqual(h.requests.slice(2).map(request => request.url), ["table"]);
+  } finally { h.unmount(); }
+});
+
+test("manual refresh replaces an older read and preserves displayed rows until it succeeds", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    await h.succeed(h.requests, [{ prd_name: "CURRENT" }], { table: 20000 });
+    h.advanceTime(20000);
+    h.runTimer(20000);
+    const background = h.requests.at(-1);
+    const start = h.requests.length;
+    h.render().refreshData();
+    assert.equal(background.options.signal.aborted, true);
+    assert.equal(h.render().loading, false);
+    assert.equal(h.render().refreshing, true);
+    assert.equal(h.render().rows[0].prd_name, "CURRENT");
+    const manual = h.requests.slice(start);
+    assert.equal(manual[0].options.params.refresh, true);
+    await h.succeed([background], [{ prd_name: "STALE" }]);
+    assert.equal(h.render().rows[0].prd_name, "CURRENT");
+    await h.succeed(manual, [{ prd_name: "MANUAL" }]);
+    assert.equal(h.render().rows[0].prd_name, "MANUAL");
+    assert.equal(h.render().refreshing, false);
+  } finally { h.unmount(); }
 });
 
 test("calendar expires independently and manual refresh bypasses its cache", async () => {
   const h = hookHarness();
   try {
     h.render();
-    await h.succeed(h.requests.slice());
-    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    await h.succeed(h.requests.slice(), [], { table: 20000 });
+    h.advanceTime(20000);
+    h.runTimer(20000);
     await h.succeed(h.requests.slice(2));
     assert.equal(h.requests.filter(request => request.url === "calendar").length, 1);
-    h.advanceTime(60000);
+    h.advanceTime(40000);
     h.runTimer(60000);
     assert.equal(h.requests.at(-1).url, "calendar");
     assert.equal(h.requests.filter(request => request.url === "table").length, 2);
@@ -732,7 +552,6 @@ test("day rollover cancels old requests and loads the new calendar range", async
     h.setToday("2026-01-02");
     h.render();
     assert.ok(old.every(request => request.options.signal.aborted));
-    assert.equal(h.streams[0].closed, true);
     const fresh = h.requests.slice(2);
     assert.equal(fresh.find(request => request.url === "calendar").options.params.startdate, "2026-01-02");
     await h.succeed(fresh, [{ prd_name: "NEW" }]);
@@ -743,14 +562,16 @@ test("day rollover cancels old requests and loads the new calendar range", async
   } finally { h.unmount(); }
 });
 
-test("unmount before SSE opens prevents fallback work", async () => {
-  const h = hookHarness("2026-01-01", { autoOpen: false });
+test("unmount aborts pending reads and leaves no retries or listeners", async () => {
+  const h = hookHarness();
   h.render();
+  const pending = h.requests.slice();
   h.unmount();
-  await h.succeed(h.requests.slice());
-  h.streams[0].onopen();
-  assert.equal(h.requests.length, 1);
+  assert.ok(pending.every(request => request.options.signal.aborted));
+  await h.succeed(pending);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.timers.size, 0);
+  assert.equal(h.listeners.size, 0);
 });
 
 test("calendar cache shares reads, expires, forces refresh and does not cache failures", async () => {
@@ -934,7 +755,7 @@ test("sheet display rounds up without rounding lot quantities or changing raw to
   assert.equal(gateUnits.formatGateQuantity(0.001, "piece"), "<0.01");
 });
 
-test("unit switching uses cached quantities, keeps drilldown, and survives live refresh", async () => {
+test("unit switching uses cached quantities, keeps drilldown, and survives periodic refresh", async () => {
   const h = hookHarness();
   try {
     h.render();
@@ -960,7 +781,8 @@ test("unit switching uses cached quantities, keeps drilldown, and survives live 
       assert.equal(h.requests.length, 2);
     }
     value.setUnitMode("sheet");
-    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    h.advanceTime(60000);
+    h.listeners.get("visibilitychange")();
     await h.succeed(h.requests.slice(2), rows.map(row => ({ ...row, qty: row.qty * 2 })));
     value = h.render();
     assert.equal(value.unitMode, "sheet");
@@ -970,7 +792,7 @@ test("unit switching uses cached quantities, keeps drilldown, and survives live 
 });
 
 
-test("lot status filters all sections, composes with other filters and survives live refresh", async () => {
+test("lot status filters all sections, composes with other filters and survives periodic refresh", async () => {
   const h = hookHarness();
   try {
     h.render();
@@ -1012,7 +834,8 @@ test("lot status filters all sections, composes with other filters and survives 
     assert.equal(h.render().chartDataByUnit.piece[0].total, 20);
     h.render().setStatusFilter("all");
     assert.equal(h.requests.length, 2);
-    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    h.advanceTime(60000);
+    h.listeners.get("visibilitychange")();
     await h.succeed(h.requests.slice(2), rows.map(row => ({ ...row, qty: row.qty * 2 })));
     assert.equal(h.render().lotStatusFilter, "PENDING");
     check(40, 1);
@@ -1068,7 +891,8 @@ test("process groups filter all gate sections using stored classification withou
     assert.equal(value.filters.selectedProduct, "");
     assert.equal(value.currentProcessFilter, "");
     assert.deepEqual(Array.from(value.availableProducts), ["SAMPLE"]);
-    h.event("PLANNING_SUMMARY_GATE_UPDATED");
+    h.advanceTime(60000);
+    h.listeners.get("visibilitychange")();
     await h.succeed(h.requests.slice(2), rows.map(row => ({ ...row, qty: row.qty * 2 })));
     value = h.render();
     assert.equal(value.filters.category, "EFPC_GEN");
