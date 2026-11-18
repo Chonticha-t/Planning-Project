@@ -93,16 +93,55 @@ test("presence API uses authenticated identity and prevents deleting someone els
   assert.equal(pool.rows.size, 1);
 }));
 
-test("SSE sends initial and changed editors through compression and stops safely on disconnect", async () => withServer(async ({ request }) => {
-  const response = await request("/presence/events", "GET", undefined, false);
+function presenceReader(response) {
   assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
-  const reader = response.body.getReader();
-  const initial = new TextDecoder().decode((await reader.read()).value);
-  assert.ok(initial.includes('"editors":[]'));
-  await request("/presence", "POST", { tabId: tabA, scopes: [scope] });
-  const changed = new TextDecoder().decode((await reader.read()).value);
-  assert.ok(changed.includes('"fullName":"A Planner"'));
-  await reader.cancel();
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  return {
+    async next() {
+      let end = buffer.indexOf("\n\n");
+      while (end < 0) {
+        const part = await reader.read();
+        assert.equal(part.done, false, "Expected an editing status event");
+        buffer += part.value;
+        end = buffer.indexOf("\n\n");
+      }
+      const event = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      assert.match(event, /^event: presence\n/);
+      return JSON.parse(event.split("\n")[1].slice("data: ".length)).editors;
+    },
+    cancel: () => reader.cancel(),
+  };
+}
+
+test("two tabs share the in-flight snapshot and receive writes without waiting for a poll", { timeout: 5000 }, async () => withServer(async ({ request, pool }) => {
+  const query = pool.query.bind(pool);
+  let markSnapshotStarted, releaseSnapshot;
+  const snapshotStarted = new Promise(resolve => { markSnapshotStarted = resolve; });
+  const snapshotBlocked = new Promise(resolve => { releaseSnapshot = resolve; });
+  let reads = 0;
+  pool.query = async (sql, params) => {
+    const result = await query(sql, params);
+    if (sql.includes("SELECT username") && ++reads === 1) {
+      markSnapshotStarted();
+      await snapshotBlocked;
+    }
+    return result;
+  };
+  const viewers = await Promise.all([1, 2].map(async () => presenceReader(await request("/presence/events", "GET", undefined, false))));
+  await snapshotStarted;
+  try {
+    assert.equal((await request("/presence", "POST", { tabId: tabA, scopes: [scope] })).status, 200);
+    assert.equal(reads, 1);
+  } finally { releaseSnapshot(); }
+  assert.deepEqual(await Promise.all(viewers.map(viewer => viewer.next())), [[], []]);
+  const afterEdit = await Promise.all(viewers.map(viewer => viewer.next()));
+  assert.deepEqual(afterEdit.map(editors => editors[0].fullName), ["A Planner", "A Planner"]);
+  assert.equal(reads, 2);
+  assert.equal((await request(`/presence/${tabA}`, "DELETE")).status, 200);
+  assert.deepEqual(await Promise.all(viewers.map(viewer => viewer.next())), [[], []]);
+  await Promise.all(viewers.map(viewer => viewer.cancel()));
 }));
 
 test("database failures return unavailable and initialization can recover", async () => withServer(async ({ request, pool }) => {
@@ -110,6 +149,16 @@ test("database failures return unavailable and initialization can recover", asyn
   assert.equal((await request("/presence", "POST", { tabId: tabA, scopes: [scope] })).status, 503);
   pool.fail(false);
   assert.equal((await request("/presence", "POST", { tabId: tabA, scopes: [scope] })).status, 200);
+}));
+
+test("a failed presence stream closes and a new connection can receive status after recovery", { timeout: 5000 }, async () => withServer(async ({ request, pool }) => {
+  pool.fail(true);
+  const unavailable = await request("/presence/events", "GET", undefined, false);
+  assert.equal((await unavailable.body.getReader().read()).done, true);
+  pool.fail(false);
+  const viewer = presenceReader(await request("/presence/events", "GET", undefined, false));
+  assert.deepEqual(await viewer.next(), []);
+  await viewer.cancel();
 }));
 
 test("presence names fit the shared audit width; long display names are trimmed, usernames are not", async () => {

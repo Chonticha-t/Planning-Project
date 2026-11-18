@@ -37,12 +37,13 @@ function clientHarness() {
     emit(editors) { this.listeners.get("presence")({ data: JSON.stringify({ editors }) }); }
     close() { this.closed = true; }
   }
-  const timer = (work, ms) => { const id = ++timerId; timers.set(id, { work, ms }); return id; };
+  const timer = (work, ms, repeat = false) => { const id = ++timerId; timers.set(id, { work, ms, repeat }); return id; };
   const listen = target => ({
     addEventListener(name, handler) { const entries = target.get(name) ?? new Set(); entries.add(handler); target.set(name, entries); },
     removeEventListener(name, handler) { target.get(name)?.delete(handler); },
   });
   const document = { visibilityState: "visible", ...listen(documentListeners) };
+  const navigator = { onLine: true };
   const axios = {
     async post(url, body) { requests.push({ method: "POST", body }); },
     async delete(url) { requests.push({ method: "DELETE", url }); },
@@ -55,8 +56,9 @@ function clientHarness() {
     if (name.includes("apiConfig")) return { getApiBaseUrl: () => "http://test" };
     if (name.includes("editingPresence")) return { uniqueScopes };
     throw new Error(name);
-  }, window: { setInterval: timer, setTimeout: timer, clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id), ...listen(windowListeners) },
-  document, EventSource: FakeStream, crypto: { randomUUID: () => "11111111-1111-4111-8111-111111111111" },
+  }, window: { setInterval: (work, ms) => timer(work, ms, true), setTimeout: timer, clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id), ...listen(windowListeners) },
+  document, navigator, EventSource: FakeStream, Math: Object.assign(Object.create(Math), { random: () => 0 }),
+  crypto: { randomUUID: () => "11111111-1111-4111-8111-111111111111" },
   AbortController, Date: class extends Date { static now() { return now; } }, console };
   context.exports = context.module.exports;
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(moduleRoot, "hooks/useEditingPresence.ts"), "utf8"), {
@@ -73,12 +75,16 @@ function clientHarness() {
     return result;
   };
   return {
-    render, requests, streams, document,
+    render, requests, streams, document, navigator,
     get result() { return result; },
     advance(ms) { now += ms; },
     event(name) { for (const handler of (name === "visibilitychange" ? documentListeners : windowListeners).get(name) ?? []) handler(); },
     async tick(ms) {
-      for (const item of [...timers.values()].filter(item => item.ms === ms)) item.work();
+      for (const [id, item] of [...timers].filter(([, item]) => item.ms === ms)) {
+        if (!timers.has(id)) continue;
+        if (!item.repeat) timers.delete(id);
+        item.work();
+      }
       await new Promise(resolve => setImmediate(resolve));
       render();
     },
@@ -119,20 +125,55 @@ test("stale or disconnected presence is never presented as a confirmed editor li
     client.render();
     assert.equal(client.result.connected, true);
     assert.equal(client.result.editors.length, 1);
-    client.advance(21000);
-    await client.tick(5000);
+    client.advance(20000);
+    await client.tick(20000);
     assert.equal(client.result.connected, false);
     assert.equal(client.result.editors.length, 0);
+    assert.equal(stream.closed, true);
     stream.emit(editors);
     client.render();
+    assert.equal(client.result.connected, false);
+    client.advance(5000);
+    await client.tick(5000);
+    const reconnected = client.streams[1];
+    reconnected.emit(editors);
+    client.render();
     assert.equal(client.result.connected, true);
-    stream.onerror();
+    reconnected.onerror();
     client.render();
     assert.equal(client.result.editors.length, 0);
   } finally { client.close(); }
 });
 
-test("hidden pages release editing and preview/unmount stops the stream and heartbeat", async () => {
+test("retries back off while unavailable, cap at thirty seconds and reset on a valid snapshot", async () => {
+  const client = clientHarness();
+  try {
+    client.render();
+    for (const delay of [5000, 10000, 20000, 30000, 30000]) {
+      const count = client.streams.length;
+      const stream = client.streams.at(-1);
+      stream.onerror();
+      stream.onerror();
+      assert.equal(stream.closed, true);
+      client.advance(delay - 1);
+      await client.tick(delay - 1);
+      assert.equal(client.streams.length, count);
+      client.advance(1);
+      await client.tick(delay);
+      assert.equal(client.streams.length, count + 1);
+    }
+    client.streams.at(-1).emit([]);
+    client.render();
+    assert.equal(client.result.connected, true);
+    client.streams.at(-1).onerror();
+    const count = client.streams.length;
+    client.advance(5000);
+    await client.tick(5000);
+    assert.equal(client.streams.length, count + 1);
+  } finally { client.close(); }
+});
+
+test("hidden and offline tabs pause the stream, and preview stops the stream and heartbeat", async () => {
   const client = clientHarness();
   try {
     client.render([scope]);
@@ -141,11 +182,41 @@ test("hidden pages release editing and preview/unmount stops the stream and hear
     client.event("visibilitychange");
     await client.tick(200);
     assert.equal(client.requests.at(-1).body.scopes.length, 0);
-    client.render([scope], false);
     assert.equal(client.streams[0].closed, true);
+    await client.tick(15000);
+    assert.equal(client.streams.length, 1);
+    client.navigator.onLine = false;
+    client.document.visibilityState = "visible";
+    client.event("visibilitychange");
+    assert.equal(client.streams.length, 1);
+    client.navigator.onLine = true;
+    client.event("online");
+    client.event("visibilitychange");
+    assert.equal(client.streams.length, 2);
+    client.render([scope], false);
+    assert.equal(client.streams[1].closed, true);
     assert.equal(client.requests.at(-1).method, "DELETE");
     const count = client.requests.length;
     await client.tick(15000);
     assert.equal(client.requests.length, count);
+  } finally { client.close(); }
+});
+
+test("hiding a failing stream cancels its timer and preserves the remaining retry delay", async () => {
+  const client = clientHarness();
+  try {
+    client.render();
+    client.streams[0].onerror();
+    client.advance(1000);
+    client.document.visibilityState = "hidden";
+    client.event("visibilitychange");
+    await client.tick(5000);
+    assert.equal(client.streams.length, 1);
+    client.document.visibilityState = "visible";
+    client.event("visibilitychange");
+    assert.equal(client.streams.length, 1);
+    client.advance(4000);
+    await client.tick(4000);
+    assert.equal(client.streams.length, 2);
   } finally { client.close(); }
 });

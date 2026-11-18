@@ -6,6 +6,9 @@ import { uniqueScopes, type EditingScope, type EditingUser } from "../utils/edit
 
 const BASE = `${getApiBaseUrl()}/capacity_leveling`;
 const IDLE_MS = 120000;
+const PRESENCE_STALE_MS = 20000;
+const INITIAL_RETRY_MS = 5000;
+const MAX_RETRY_MS = 30000;
 
 export function useEditingPresence(scopes: EditingScope[], enabled: boolean) {
   const { user, canEditPlanning } = useAuth();
@@ -21,24 +24,92 @@ export function useEditingPresence(scopes: EditingScope[], enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
-    setConnected(false);
-    setEditors([]);
-    const stream = new EventSource(`${BASE}/presence/events`);
-    let lastMessage = 0;
-    stream.addEventListener("presence", event => {
+    let stream: EventSource | null = null;
+    let watchdog: number | undefined;
+    let retryTimer: number | undefined;
+    let retryAt = 0;
+    let retryDelay = INITIAL_RETRY_MS;
+    const canWatch = () => document.visibilityState === "visible" && navigator.onLine;
+
+    const clearPresence = () => {
+      setConnected(false);
+      setEditors([]);
+    };
+    const stopWatching = () => {
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(watchdog);
+      retryTimer = undefined;
+      const source = stream;
+      stream = null;
+      source?.close();
+    };
+    function retry() {
+      stopWatching();
+      clearPresence();
+      // Spread retries from tabs that disconnected at the same time.
+      retryAt = Date.now() + Math.min(MAX_RETRY_MS, retryDelay + Math.floor(Math.random() * 1000));
+      retryDelay = Math.min(MAX_RETRY_MS, retryDelay * 2);
+      connect();
+    }
+    const awaitPresence = () => {
+      window.clearTimeout(watchdog);
+      watchdog = window.setTimeout(retry, PRESENCE_STALE_MS);
+    };
+    function connect() {
+      if (stream || retryTimer !== undefined || !canWatch()) return;
+      const remaining = retryAt - Date.now();
+      if (remaining > 0) {
+        retryTimer = window.setTimeout(() => {
+          retryTimer = undefined;
+          connect();
+        }, remaining);
+        return;
+      }
+
+      let source: EventSource;
       try {
-        const body = JSON.parse((event as MessageEvent).data) as { editors: EditingUser[] };
-        if (!Array.isArray(body.editors)) return;
-        setEditors(body.editors);
-        setConnected(true);
-        lastMessage = Date.now();
-      } catch { setConnected(false); setEditors([]); }
-    });
-    stream.onerror = () => { setConnected(false); setEditors([]); };
-    const watchdog = window.setInterval(() => {
-      if (!lastMessage || Date.now() - lastMessage > 20000) { setConnected(false); setEditors([]); }
-    }, 5000);
-    return () => { stream.close(); window.clearInterval(watchdog); };
+        source = new EventSource(`${BASE}/presence/events`);
+      } catch {
+        retry();
+        return;
+      }
+      stream = source;
+      awaitPresence();
+      source.addEventListener("presence", event => {
+        if (stream !== source) return;
+        try {
+          const body = JSON.parse((event as MessageEvent).data) as { editors: EditingUser[] };
+          if (!Array.isArray(body?.editors)) {
+            retry();
+            return;
+          }
+          retryAt = 0;
+          retryDelay = INITIAL_RETRY_MS;
+          setEditors(body.editors);
+          setConnected(true);
+          awaitPresence();
+        } catch { retry(); }
+      });
+      source.onerror = () => { if (stream === source) retry(); };
+    }
+    const sync = () => {
+      if (canWatch()) connect();
+      else {
+        stopWatching();
+        clearPresence();
+      }
+    };
+    clearPresence();
+    connect();
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      stopWatching();
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
   }, [enabled]);
 
   useEffect(() => {
@@ -83,7 +154,9 @@ export function useEditingPresence(scopes: EditingScope[], enabled: boolean) {
     for (const event of ["pointerdown", "keydown", "input", "dragstart", "drop"]) window.addEventListener(event, interaction, true);
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("pagehide", leave);
-    const heartbeat = window.setInterval(() => void send(), 15000);
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState === "visible" && navigator.onLine) void send();
+    }, 15000);
     void send();
     return () => {
       stopped = true;

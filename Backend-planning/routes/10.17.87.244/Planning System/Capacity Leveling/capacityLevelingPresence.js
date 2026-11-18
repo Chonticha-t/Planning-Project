@@ -2,6 +2,7 @@ const express = require("express");
 const { LEVELING_GATES, isDate } = require("./capacityLeveling");
 
 const PRESENCE_TTL_MS = 45000;
+const PRESENCE_REFRESH_MS = 10000;
 // Matches created_by elsewhere; planning_in_gate_test widens existing tables to this.
 const NAME_MAX_LENGTH = 150;
 const validTab = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -71,13 +72,19 @@ const createPresenceRouter = ({ pool, verifyPlanner }) => {
   const store = createPresenceStore(pool);
   const viewers = new Set();
   let timer = null, pending = null;
+  let refreshAfterWrite = false;
 
   const removeViewer = (res) => {
     viewers.delete(res);
     if (!viewers.size && timer) { clearInterval(timer); timer = null; }
   };
-  const refresh = () => {
-    if (pending) return pending;
+  const refresh = (afterWrite = false) => {
+    if (!viewers.size) return;
+    if (pending) {
+      // A change committed during this read may be missing from its snapshot.
+      refreshAfterWrite ||= afterWrite;
+      return pending;
+    }
     pending = (async () => {
       try {
         const editors = await store.list();
@@ -92,7 +99,12 @@ const createPresenceRouter = ({ pool, verifyPlanner }) => {
       } catch {
         for (const res of viewers) { removeViewer(res); res.end(); }
       }
-    })().finally(() => { pending = null; });
+    })().finally(() => {
+      pending = null;
+      const refreshAgain = refreshAfterWrite;
+      refreshAfterWrite = false;
+      if (refreshAgain) void refresh();
+    });
     return pending;
   };
 
@@ -101,7 +113,7 @@ const createPresenceRouter = ({ pool, verifyPlanner }) => {
     res.flushHeaders();
     viewers.add(res);
     res.on("close", () => removeViewer(res));
-    if (!timer) { timer = setInterval(refresh, 5000); timer.unref?.(); }
+    if (!timer) { timer = setInterval(refresh, PRESENCE_REFRESH_MS); timer.unref?.(); }
     void refresh();
   });
 
@@ -114,7 +126,7 @@ const createPresenceRouter = ({ pool, verifyPlanner }) => {
     } catch (error) { return res.status(400).json({ status: "ERROR", message: error.message }); }
     try {
       await store.touch(req.user, req.body.tabId, scopes);
-      if (viewers.size) void refresh();
+      void refresh(true);
       return res.json({ status: "OK" });
     } catch { return res.status(503).json({ status: "ERROR", message: "Editing status is temporarily unavailable." }); }
   });
@@ -122,7 +134,7 @@ const createPresenceRouter = ({ pool, verifyPlanner }) => {
     if (!validTab(req.params.tabId)) return res.status(400).json({ status: "ERROR" });
     try {
       await store.remove(req.user.username, req.params.tabId);
-      if (viewers.size) void refresh();
+      void refresh(true);
       return res.json({ status: "OK" });
     } catch { return res.status(503).json({ status: "ERROR" }); }
   });
