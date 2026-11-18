@@ -495,9 +495,9 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                     Default for every day · open OT on single dates in <button type="button" className="font-semibold text-[#4f46e5] underline-offset-2 hover:underline cursor-pointer" onClick={() => setActiveTab("special")}>② Special Days</button>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                <div className="max-w-xs sm:max-w-sm">
                   <NumField
-                    label={cfg.otEnabled ? "OT open every day" : "OT closed by default"}
+                    label={cfg.otEnabled ? "Daily OT (Open)" : "Daily OT (Closed)"}
                     unit="min"
                     toggle={{ checked: cfg.otEnabled, onChange: (c) => updateCurrentShift({ otEnabled: c }) }}
                     value={cfg.otMinutes}
@@ -562,7 +562,7 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                 <div role="group" aria-label="Override target gates" className="grid grid-cols-4 gap-0.5 rounded-lg border border-base-300 bg-base-200/50 p-0.5">
                   {(
                     [
-                      { id: "gate", label: "One" },
+                      { id: "gate", label: "Single" },
                       { id: "FPC", label: "FPC" },
                       { id: "SMT", label: "SMT" },
                       { id: "all", label: "All" },
