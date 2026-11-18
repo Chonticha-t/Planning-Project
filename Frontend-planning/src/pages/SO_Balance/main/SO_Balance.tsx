@@ -3,22 +3,22 @@ import toast from "react-hot-toast";
 import type { GridSortModel } from "@mui/x-data-grid";
 
 import type { PlanningFilter, PlanningRow } from "../types";
-import usePOBalance, { EMPTY_FILTER } from "../hooks/usePOBalance";
+import useSOBalance, { EMPTY_FILTER } from "../hooks/useSOBalance";
 import SummaryCards from "../components/SummaryCards";
 import FilterBar from "../components/FilterBar";
 import ExchangeRateModal from "../components/ExchangeRateModal";
-import POBalanceTable from "../components/POBalanceTable";
-import POBalanceHistoryModal from "../components/POBalanceHistoryModal";
+import SOBalanceTable from "../components/SOBalanceTable";
+import SOBalanceHistoryModal from "../components/SOBalanceHistoryModal";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import "../../Planning_Summary_Gate/gateTheme.css";
 import { toDMY } from "../utils";
 
-const PO_Balance = () => {
+const SO_Balance = () => {
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const [isExchangeRateModalOpen, setIsExchangeRateModalOpen] = useState(false);
   const [selectedHistoryRow, setSelectedHistoryRow] = useState<PlanningRow | null>(null);
-  const { rows, summary, products, lastUpdatedAt, loading, fetchData, dbVersion } = usePOBalance();
+  const { rows, summary, products, lastUpdatedAt, loading, fetchData, dbVersion } = useSOBalance();
 
   const handleReset = useCallback(() => {
     setFilter(EMPTY_FILTER);
@@ -92,7 +92,7 @@ const PO_Balance = () => {
         lastUpdatedAt={lastUpdatedAt}
         productCount={productCount}
       />
-      <POBalanceTable
+      <SOBalanceTable
         rows={rows}
         loading={loading}
         sortModel={sortModel}
@@ -106,7 +106,7 @@ const PO_Balance = () => {
         onClose={handleCloseExchangeRate}
         dbVersion={dbVersion}
       />
-      <POBalanceHistoryModal
+      <SOBalanceHistoryModal
         isOpen={Boolean(selectedHistoryRow)}
         row={selectedHistoryRow}
         onClose={() => setSelectedHistoryRow(null)}
@@ -115,4 +115,4 @@ const PO_Balance = () => {
   );
 };
 
-export default PO_Balance;
+export default SO_Balance;

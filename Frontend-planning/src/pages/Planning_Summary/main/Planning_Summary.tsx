@@ -10,7 +10,7 @@ import PlanningSummaryTable, {
   formatScanWip,
 } from "../components/PlanningSummaryTable";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
-import { toDMY } from "../../PO_Balance/utils";
+import { toDMY } from "../../SO_Balance/utils";
 import "../../Planning_Summary_Gate/gateTheme.css";
 
 const Planning_Summary: React.FC = () => {

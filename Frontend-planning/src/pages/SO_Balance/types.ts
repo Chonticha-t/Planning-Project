@@ -66,7 +66,7 @@ export interface ApiResponse<T> {
   message: string;
 }
 
-export interface POBalanceHistoryRow {
+export interface SOBalanceHistoryRow {
   source_update_at: string | null;
   source_rev: number;
   prd_name: string;

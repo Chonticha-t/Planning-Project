@@ -3,7 +3,7 @@ const app = express();
 
 // 10.17.87.244 / Planning System / หน้า SO Balance
 const { router: auth_router } = require("../../../routes/10.17.87.244/Planning System/Auth/Auth");
-const po_balance = require("../../../routes/10.17.87.244/Planning System/PO Balance/PO Balance");
+const so_balance = require("../../../routes/10.17.87.244/Planning System/SO Balance/SO Balance");
 
 const planning_summary = require("../../../routes/10.17.87.244/Planning System/Planning Summary/Planning Summary");
 const planning_summary_gate = require("../../../routes/10.17.87.244/Planning System/Planning Summary Gate/Planning Summary Gate");
@@ -15,6 +15,6 @@ app.use("/planning_summary", planning_summary);
 app.use("/planning_summary_gate", planning_summary_gate);
 app.use("/capacity_leveling", capacity_leveling);
 app.use("/forecast", forecast);
-app.use("/", po_balance);
+app.use("/", so_balance);
 
 module.exports = app;

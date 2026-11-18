@@ -20,7 +20,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { type PlanningSummaryRow } from "../types";
 import { WipAssignModal } from "./WipAssignModal";
-import { toDMY } from "../../PO_Balance/utils";
+import { toDMY } from "../../SO_Balance/utils";
 
 interface PlanningSummaryTableProps {
   rows: PlanningSummaryRow[];

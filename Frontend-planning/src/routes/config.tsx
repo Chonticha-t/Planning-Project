@@ -7,7 +7,7 @@ import instruction from "@/assets/icon/menuDrawer/instruction/instruction.png";
 // =========================================
 // 🧭 PAGE IMPORTS (Lazy Loading)
 // =========================================
-const PO_Balance = React.lazy(() => import("@/pages/PO_Balance/main/PO_Balance"));
+const SO_Balance = React.lazy(() => import("@/pages/SO_Balance/main/SO_Balance"));
 const Planning_In_Gate = React.lazy(
   () => import("@/pages/Planning_In_Gate/main/Planning_In_Gate")
 );
@@ -66,7 +66,7 @@ export const routes_capacity: AppRoute[] = [
 export const routes_planning: AppRoute[] = [
   {
     path: `${BASE}/so_balance`,
-    element: <PO_Balance />,
+    element: <SO_Balance />,
     label: "SO BALANCE",
     Title: "SO BALANCE",
     isDefault: true,
@@ -99,7 +99,7 @@ export const routes_planning: AppRoute[] = [
 export const routes_hidden: AppRoute[] = [
   {
     path: `${BASE}/po_balance`,
-    element: <PO_Balance />,
+    element: <SO_Balance />,
     label: "SO BALANCE",
     Title: "SO BALANCE",
     icon: ClipboardList,
