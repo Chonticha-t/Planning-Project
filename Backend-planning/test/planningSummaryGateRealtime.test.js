@@ -875,7 +875,7 @@ test("calendar endpoint shares cached ranges, supports forced reads and rejects 
 });
 
 
-test("actual lots deduplicate PO allocations and exclude Need WIP and missing lot identifiers", () => {
+test("actual lots deduplicate SO allocations and exclude Need WIP and missing lot identifiers", () => {
   const base = { prd_name: "SAMPLE-A", gate_name: "FFPC", gate_state: "coming", lot_no: "LOT-A", qty: 900, pcs_per_sheet: 30, pri: 1 };
   const result = gateUnits.summarizeGateQuantities([
     base, { ...base, due_date: "2026-02-01", allocated_qty: 100 },

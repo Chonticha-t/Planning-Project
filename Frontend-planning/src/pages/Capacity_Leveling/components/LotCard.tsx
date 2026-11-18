@@ -213,7 +213,7 @@ export const LotCard: React.FC<LotCardProps> = ({
       onClick={() => onSelect(lot)}
       className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
     >
-      {/* Top Row: PO · Product & Drag Grip */}
+      {/* Top Row: SO · Product & Drag Grip */}
       <div className="flex items-start justify-between gap-1">
         {showSelection && <input type="checkbox" aria-label={`Select ${lot.label} ${lot.product}`}
           checked={isBatchSelected}

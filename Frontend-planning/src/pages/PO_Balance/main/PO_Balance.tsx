@@ -48,7 +48,7 @@ const PO_Balance = () => {
       columns: [
         { header: "PRODUCT", key: "prd_name", align: "left" },
         { header: "DUE DATE", key: "due_date", align: "center" },
-        { header: "PO BAL", key: "po_bal", align: "center", numFmt: "#,##0" },
+        { header: "SO BAL", key: "po_bal", align: "center", numFmt: "#,##0" },
         { header: "UNMOVEMENT", key: "unmovement", group: "INVENTORY", align: "center", numFmt: "#,##0" },
         { header: "REM UNMOVE", key: "rem_unmovement", group: "INVENTORY", align: "center", numFmt: "#,##0" },
         { header: "F/G", key: "f_g", group: "INVENTORY", align: "center", numFmt: "#,##0" },

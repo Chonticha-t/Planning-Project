@@ -239,7 +239,7 @@ html[data-sidebar-animating] .datagrid-outer * {
   pointer-events: none;
 }
 
-/* ── Status Pills (PO Balance Table) ── */
+/* ── Status Pills (SO Balance Table) ── */
 .status-pill-ready {
   background-color: #e2f9ee;
   color: #00a878;

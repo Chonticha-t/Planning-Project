@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-// 10.17.87.244 / Planning System / หน้า PO Balance
+// 10.17.87.244 / Planning System / หน้า SO Balance
 const { router: auth_router } = require("../../../routes/10.17.87.244/Planning System/Auth/Auth");
 const po_balance = require("../../../routes/10.17.87.244/Planning System/PO Balance/PO Balance");
 

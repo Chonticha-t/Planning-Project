@@ -837,7 +837,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 <th>{boardGate} DATE</th>
                 <th>SLACK</th>
                 <th>STATUS</th>
-                <th>PO DUE</th>
+                <th>SO DUE</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -1056,7 +1056,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       )}
                     </td>
 
-                    {/* PO DUE */}
+                    {/* SO DUE */}
                     <td className="font-medium text-[13px] text-base-content/80">
                       {dayjs(lot.dueDate).format("DD/MM/YYYY")}
                     </td>

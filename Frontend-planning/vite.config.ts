@@ -21,7 +21,7 @@ const pwaOptions: Partial<VitePWAOptions> = {
   manifest: {
     name: "Planning",
     short_name: "Planning",
-    description: "Production planning from PO and FG stock",
+    description: "Production planning from SO and FG stock",
     icons: [
       { src: "icon/FujiLogo.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "icon/FujiLogo.png", sizes: "512x512", type: "image/png", purpose: "any" },

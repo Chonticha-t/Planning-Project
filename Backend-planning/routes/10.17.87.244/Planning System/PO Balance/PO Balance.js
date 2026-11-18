@@ -18,7 +18,7 @@ const setNoCache = (res) => {
 const sseClients = new Set();
 
 const broadcastChange = () => {
-  const payload = `data: ${JSON.stringify({ type: "PO_BALANCE_UPDATED", timestamp: Date.now() })}\n\n`;
+  const payload = `data: ${JSON.stringify({ type: "SO_BALANCE_UPDATED", timestamp: Date.now() })}\n\ndata: ${JSON.stringify({ type: "PO_BALANCE_UPDATED", timestamp: Date.now() })}\n\n`;
   for (const client of sseClients) {
     try {
       client.write(payload);
@@ -33,7 +33,7 @@ let lastDbFingerprint = null;
 let isCheckingDb = false;
 
 // Backend ตรวจจับการเปลี่ยนแปลงใน Database ทุกๆ 2.5 วินาที (เฉพาะเมื่อมีหน้าเว็บเปิดค้างอยู่)
-// ตรวจสอบทั้ง po_balance, po_price และ exchange_rate_monthly เพื่อ sync แบบ Real-time
+// ตรวจสอบทั้ง so_balance, so_price และ exchange_rate_monthly เพื่อ sync แบบ Real-time
 setInterval(async () => {
   if (sseClients.size === 0 || isCheckingDb) return;
   isCheckingDb = true;
@@ -41,20 +41,20 @@ setInterval(async () => {
   try {
     const queryStr = `
       SELECT
-        -- ตรวจสอบ po_balance
-        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.po_balance)          AS bal_updated_at,
-        (SELECT COUNT(*)::int FROM planning.po_balance)                                                   AS bal_total_rows,
-        (SELECT COALESCE(SUM(po_bal), 0)::float8 FROM planning.po_balance)                                AS total_po_bal,
-        (SELECT COALESCE(SUM(unmovement), 0)::float8 FROM planning.po_balance)                            AS total_unmovement,
-        (SELECT COALESCE(SUM(f_g), 0)::float8 FROM planning.po_balance)                                   AS total_fg,
-        (SELECT COALESCE(SUM(net_required_pcs), 0)::float8 FROM planning.po_balance)                      AS total_net_required,
-        (SELECT COUNT(*)::int FROM planning.po_balance WHERE status = 'ready')                            AS ready_rows,
-        (SELECT COUNT(*)::int FROM planning.po_balance WHERE TRIM(item) LIKE '94%')                       AS fpc_rows,
+        -- ตรวจสอบ so_balance
+        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.so_balance)          AS bal_updated_at,
+        (SELECT COUNT(*)::int FROM planning.so_balance)                                                   AS bal_total_rows,
+        (SELECT COALESCE(SUM(po_bal), 0)::float8 FROM planning.so_balance)                                AS total_po_bal,
+        (SELECT COALESCE(SUM(unmovement), 0)::float8 FROM planning.so_balance)                            AS total_unmovement,
+        (SELECT COALESCE(SUM(f_g), 0)::float8 FROM planning.so_balance)                                   AS total_fg,
+        (SELECT COALESCE(SUM(net_required_pcs), 0)::float8 FROM planning.so_balance)                      AS total_net_required,
+        (SELECT COUNT(*)::int FROM planning.so_balance WHERE status = 'ready')                            AS ready_rows,
+        (SELECT COUNT(*)::int FROM planning.so_balance WHERE TRIM(item) LIKE '94%')                       AS fpc_rows,
 
-        -- ตรวจสอบ po_price
-        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.po_price)              AS price_updated_at,
-        (SELECT COUNT(*)::int FROM planning.po_price)                                                     AS price_total_rows,
-        (SELECT COALESCE(SUM(price), 0)::float8 FROM planning.po_price)                                    AS total_price,
+        -- ตรวจสอบ so_price
+        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.so_price)              AS price_updated_at,
+        (SELECT COUNT(*)::int FROM planning.so_price)                                                     AS price_total_rows,
+        (SELECT COALESCE(SUM(price), 0)::float8 FROM planning.so_price)                                    AS total_price,
 
         -- ตรวจสอบ exchange_rate_monthly
         (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.exchange_rate_monthly) AS rate_updated_at
@@ -208,7 +208,7 @@ router.get("/table", async (req, res) => {
 
   try {
     // numeric -> float8 เพื่อให้ได้ตัวเลขกลับไป / due_date -> text กันวันเลื่อนจาก timezone
-    // ดึงจาก view v_po_amount (po_balance + ราคา + อัตราแลกเปลี่ยน) เพื่อได้ยอดเงิน W/H F/G และ Output (THB)
+    // ดึงจาก view v_so_amount (so_balance + ราคา + อัตราแลกเปลี่ยน) เพื่อได้ยอดเงิน W/H F/G และ Output (THB)
     const queryStr = `
       SELECT
         v.prd_name,
@@ -225,14 +225,14 @@ router.get("/table", async (req, res) => {
         v.output_amount::float8                         AS output_amount,
         v.status,
         to_char(v.updated_at, 'YYYY-MM-DD HH24:MI:SS')  AS updated_at,
-        -- revision ล่าสุดของ PO (ตรงกับตัวที่ขึ้น Current ใน History modal)
+        -- revision ล่าสุดของ SO (ตรงกับตัวที่ขึ้น Current ใน History modal)
         (
           SELECT MAX(h.rev)::int
-          FROM planning.po_balance_history h
+          FROM planning.so_balance_history h
           WHERE h.prd_name = v.prd_name AND h.due_date = v.due_date
         )                                               AS source_rev
-      FROM planning.v_po_amount v
-      LEFT JOIN planning.po_balance pb
+      FROM planning.v_so_amount v
+      LEFT JOIN planning.so_balance pb
         ON pb.prd_name = v.prd_name AND pb.due_date = v.due_date
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY v.due_date, v.prd_name
@@ -277,8 +277,8 @@ router.get("/summary", async (req, res) => {
         COALESCE(SUM(v.wh_fg_amount), 0)::float8            AS wh_fg_amount,
         COALESCE(SUM(v.output_amount), 0)::float8           AS output_amount,
         to_char(MAX(v.updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-      FROM planning.v_po_amount v
-      LEFT JOIN planning.po_balance pb
+      FROM planning.v_so_amount v
+      LEFT JOIN planning.so_balance pb
         ON pb.prd_name = v.prd_name AND pb.due_date = v.due_date
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       GROUP BY v.status
@@ -316,7 +316,7 @@ router.get("/distinct_product", async (req, res) => {
   try {
     const queryStr = `
       SELECT DISTINCT prd_name
-      FROM planning.po_balance
+      FROM planning.so_balance
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY prd_name
     `;
@@ -350,7 +350,7 @@ router.get("/last_updated", async (req, res) => {
         COALESCE(SUM(unmovement), 0)::float8                 AS total_unmovement,
         COALESCE(SUM(f_g), 0)::float8                        AS total_fg,
         COALESCE(SUM(net_required_pcs), 0)::float8           AS total_net_required
-      FROM planning.po_balance
+      FROM planning.so_balance
     `;
 
     const { rows } = await query(queryStr);
@@ -376,7 +376,7 @@ router.get("/last_updated", async (req, res) => {
   }
 });
 
-// GET /api_p1/planning/history - one saved PO balance per source revision.
+// GET /api_p1/planning/history - one saved SO balance per source revision.
 router.get("/history", async (req, res) => {
   setNoCache(res);
   const prd_name = asStr(req.query.prd_name);
@@ -411,7 +411,7 @@ router.get("/history", async (req, res) => {
              h.rev::int AS source_rev,
              h.po_bal::float8 AS po_bal,
              to_char(h.updated_at, 'YYYY-MM-DD HH24:MI:SS') AS source_update_at
-      FROM planning.po_balance_history h
+      FROM planning.so_balance_history h
       WHERE h.prd_name = $1 AND h.due_date = CAST($2 AS date)
       ORDER BY h.rev ASC
     `;
@@ -612,7 +612,7 @@ router.post("/exchange_rate", verifyPlanner, async (req, res) => {
 
     await client.query("COMMIT");
 
-    // แจ้งเตือนหน้าเว็บผ่าน SSE ว่าอัตราแลกเปลี่ยนเปลี่ยนและยอดเงิน v_po_amount อัปเดตแล้ว
+    // แจ้งเตือนหน้าเว็บผ่าน SSE ว่าอัตราแลกเปลี่ยนเปลี่ยนและยอดเงิน v_so_amount อัปเดตแล้ว
     broadcastChange();
 
     return res.json({
@@ -665,7 +665,7 @@ router.delete("/exchange_rate", verifyPlanner, async (req, res) => {
     `;
     const result = await query(deleteQuery, [y, mNo]);
 
-    // แจ้งเตือนหน้าเว็บผ่าน SSE ว่าอัตราแลกเปลี่ยนเปลี่ยนและยอดเงิน v_po_amount อัปเดตแล้ว
+    // แจ้งเตือนหน้าเว็บผ่าน SSE ว่าอัตราแลกเปลี่ยนเปลี่ยนและยอดเงิน v_so_amount อัปเดตแล้ว
     broadcastChange();
 
     return res.json({

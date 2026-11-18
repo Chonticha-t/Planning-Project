@@ -28,7 +28,7 @@ const sum = (left: number | null, right: number | null): number | null => {
 };
 
 // Each call defines one reporting scope (a gate/date, period, or filtered details).
-// Full-lot WIP is repeated across PO allocations: count it once, never sum it twice.
+// Full-lot WIP is repeated across SO allocations: count it once, never sum it twice.
 export const summarizeGateQuantities = (rows: PlanningSummaryGateRow[]): GateQuantitySummary => {
   const result: GateQuantitySummary = {
     total: emptyValues(), in_gate: emptyValues(), coming: emptyValues(),

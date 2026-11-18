@@ -177,7 +177,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
           <div className="text-xs text-base-content/60 mt-1 tabular-nums">
             {formatGateQuantity(activeLot.qty, "piece")} pcs
             {activeLot.sheets !== null ? ` · ${formatGateQuantity(activeLot.sheets, "sheet")} sheets` : ""}
-            {activeLot.item ? ` · ${activeLot.item}` : ""} · PO due {formatDate(activeLot.dueDate)}
+            {activeLot.item ? ` · ${activeLot.item}` : ""} · SO due {formatDate(activeLot.dueDate)}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
             <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-base-200 text-base-content/70 border border-base-300">
@@ -207,7 +207,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
           <details className="rounded-xl border border-base-300 p-3 text-xs">
             <summary className="cursor-pointer font-semibold">Source allocations ({activeLot.allocations?.length ?? 0})</summary>
             <div className="mt-2 max-h-56 overflow-auto">
-              <table className="w-full text-left"><thead><tr><th>Product / PO / Item</th><th>Due</th><th>Source arrival</th><th>Qty</th></tr></thead>
+              <table className="w-full text-left"><thead><tr><th>Product / SO / Item</th><th>Due</th><th>Source arrival</th><th>Qty</th></tr></thead>
                 <tbody>{activeLot.allocations?.map((row, index) => (
                   <tr key={`${row.workKey}-${index}`} className="border-t border-base-200">
                     <td className="py-2">{row.prd_name}<br />{row.po_no || "-"} / {row.item || "-"}</td>

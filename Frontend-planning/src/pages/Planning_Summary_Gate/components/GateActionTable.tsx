@@ -260,7 +260,7 @@ const PAGE_SIZE = 50;
 const SORT_OPTIONS = [
   { key: "default", label: "Default (Priority)" },
   { key: "prd_name", label: "PRODUCT NAME" },
-  { key: "due_date", label: "PO DUE DATE" },
+  { key: "due_date", label: "SO DUE DATE" },
   { key: "lot_no", label: "LOT NO" },
   { key: "cal_net_required", label: "NET REQUIRED" },
   { key: "net_wip_qty", label: "NET WIP" },
@@ -786,7 +786,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
           <thead>
             <tr className="bg-base-200/70 border-b border-base-300 text-[12.5px] font-bold tracking-[0.04em] text-base-content">
               <th className="px-2 py-2">PRODUCT NAME</th>
-              <th className="px-2 py-2">PO DUE DATE</th>
+              <th className="px-2 py-2">SO DUE DATE</th>
               <th className="px-2 py-2">LOT NO</th>
               <th className="px-2 py-2">NET REQUIRED</th>
               <th className="px-2 py-2">NET WIP</th>
@@ -841,7 +841,7 @@ export const GateActionTable: React.FC<GateActionTableProps> = memo(({
                       <span className="font-semibold text-[15px] text-base-content">{row.prd_name}</span>
                     </td>
 
-                    {/* PO DUE DATE */}
+                    {/* SO DUE DATE */}
                     <td className="font-medium text-[13.5px] text-base-content tabular-nums px-2 py-2">
                       {formatDateShort(row.due_date)}
                     </td>

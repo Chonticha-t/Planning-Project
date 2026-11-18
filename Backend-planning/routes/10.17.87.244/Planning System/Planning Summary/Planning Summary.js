@@ -31,7 +31,7 @@ const broadcastChange = () => {
 };
 
 /**
- * 🔄 ฟังก์ชันจัดสรรคิว PO และ WIP ใหม่ตามลำดับ FIFO (seq DESC, lot_no ASC)
+ * 🔄 ฟังก์ชันจัดสรรคิว SO และ WIP ใหม่ตามลำดับ FIFO (seq DESC, lot_no ASC)
  * โดยห้ามนำ Lot ที่อยู่ใน planning.planning_lot_skip ไปลงใน Due Date ที่ <= skipped_due_date
  */
 let isAssignTableReady = false;
@@ -142,7 +142,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
     }
   }
 
-  // 1. จัดกลุ่ม PO ตาม Due Date (เรียง due_date ASC)
+  // 1. จัดกลุ่ม SO ตาม Due Date (เรียง due_date ASC)
   const poMap = new Map();
   for (const r of currentRows) {
     const due = r.due_date;
@@ -231,7 +231,7 @@ const reallocateProductWithSkips = async (client, prdName) => {
     return String(a.lot_no).localeCompare(String(b.lot_no)); // lot_no ASC (FIFO)
   });
 
-  // 3. จับคู่ WIP Lots เข้ากับแต่ละ PO ตามลำดับ Due Date และ FIFO
+  // 3. จับคู่ WIP Lots เข้ากับแต่ละ SO ตามลำดับ Due Date และ FIFO
   const newSummaryRows = [];
   const assignedDueDateByLot = new Map();
 
@@ -886,7 +886,7 @@ router.post("/skip_due", verifyPlanner, async (req, res) => {
       [prd_name, lot_no, initialNextDue, due_date, seq, process || null, skippedBy]
     );
 
-    // 3. คำนวณจับคู่ PO และเรียง FIFO ใหม่สำหรับ prd_name นี้ทันที
+    // 3. คำนวณจับคู่ SO และเรียง FIFO ใหม่สำหรับ prd_name นี้ทันที
     const { assignedDueDateByLot } = await reallocateProductWithSkips(
       client,
       prd_name
@@ -1187,7 +1187,7 @@ router.get("/summary", async (req, res) => {
 });
 
 /**
- * 🔽 3. GET /distinct_filters: ค่าตัวเลือกสำหรับ Filter Dropdowns (รองรับการกรองตาม item_prefix เหมือนหน้า PO Balance)
+ * 🔽 3. GET /distinct_filters: ค่าตัวเลือกสำหรับ Filter Dropdowns (รองรับการกรองตาม item_prefix เหมือนหน้า SO Balance)
  */
 router.get("/distinct_filters", async (req, res) => {
   setNoCache(res);

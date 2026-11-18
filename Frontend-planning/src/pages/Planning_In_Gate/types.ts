@@ -176,7 +176,8 @@ export interface MonthLot {
   scanIn: string; // YYYY-MM-DD HH:mm
   scanOut: string;
   shift: "D" | "N";
-  po: string;
+  so: string;
+  po?: string;
   due: string; // YYYY-MM-DD
   lateDays: number; // 0 = on time (scan out date vs due)
 }
