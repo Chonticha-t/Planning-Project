@@ -2,14 +2,23 @@ import React, { useMemo, useRef, useEffect, useState } from "react";
 import dayjs from "dayjs";
 import {
   AlertCircle,
+  CalendarOff,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  ChevronsDown,
+  ChevronsUp,
   Calendar,
+  Clock3,
+  GripVertical,
+  LayoutGrid,
+  Moon,
   Pencil,
   Search,
+  Sun,
+  Table,
   X,
 } from "lucide-react";
 import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData, BoardGateStateFilter } from "../types";
@@ -35,6 +44,7 @@ interface ReleaseBoardProps {
   today: string;
   plannedIndex: Map<string, string>;
   viewMode: ViewMode;
+  onViewModeChange?: (mode: ViewMode) => void;
   granularity: Granularity;
   selectedLot: LotItem | null;
   onSelectLot: (lot: LotItem) => void;
@@ -71,6 +81,51 @@ const STATUS_BAR: Record<string, string> = {
   unset: "bg-slate-300",
 };
 
+const SHIFT_THEMES = {
+  day: {
+    label: "Day Shift",
+    shortLabel: "Day",
+    Icon: Sun,
+    badge: "bg-yellow-100 text-yellow-950 border-yellow-300",
+    background: undefined,
+  },
+  night: {
+    label: "Night Shift",
+    shortLabel: "Night",
+    Icon: Moon,
+    badge: "bg-indigo-100 text-indigo-950 border-indigo-200",
+    background: undefined,
+  },
+  over: {
+    label: "Overflow",
+    shortLabel: "Over",
+    Icon: Clock3,
+    badge: "bg-rose-100 text-rose-950 border-rose-300",
+    background: undefined,
+  },
+  unassigned: {
+    label: "Shift pending",
+    shortLabel: "Pending",
+    Icon: Clock3,
+    badge: "bg-base-200 text-base-content/70 border-base-300",
+    background: undefined,
+  },
+  no_load: {
+    label: "No load",
+    shortLabel: "No load",
+    Icon: Clock3,
+    badge: "bg-base-200 text-base-content/50 border-base-300",
+    background: undefined,
+  },
+  none: {
+    label: "No shift",
+    shortLabel: "None",
+    Icon: Clock3,
+    badge: "",
+    background: undefined,
+  },
+} as const;
+
 export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   data,
   gates,
@@ -84,6 +139,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   today,
   plannedIndex,
   viewMode,
+  onViewModeChange,
   granularity,
   selectedLot,
   onSelectLot,
@@ -138,7 +194,21 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
+  const [hideOffDays, setHideOffDays] = useState(true);
   const [batchTargetDate, setBatchTargetDate] = useState("");
+  const [internalViewMode, setInternalViewMode] = useState<ViewMode>(viewMode);
+  useEffect(() => {
+    setInternalViewMode(viewMode);
+  }, [viewMode]);
+  const activeViewMode = onViewModeChange ? viewMode : internalViewMode;
+  const handleViewModeChange = (mode: ViewMode) => {
+    setInternalViewMode(mode);
+    onViewModeChange?.(mode);
+  };
+  const [collapsedDays, setCollapsedDays] = useState<Record<string, boolean>>({});
+  const toggleDayCollapse = (date: string) => {
+    setCollapsedDays((prev) => ({ ...prev, [date]: !prev[date] }));
+  };
   const [reorderTarget, setReorderTarget] = useState<{
     lotId: string;
     position: "before" | "after";
@@ -175,6 +245,31 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     () => gridData.filter((d) => d.date >= today && !d.gates[boardGate]?.off),
     [gridData, today, boardGate]
   );
+
+  // Columns shown on the daily board: optionally hide off days / holidays (unless lots are planned on them)
+  const boardDays = useMemo(() => {
+    if (!hideOffDays) return visibleDays;
+    return visibleDays.filter(
+      (col) => !col.gates[boardGate]?.off || filteredLots.some((l) => l.plannedDate === col.date)
+    );
+  }, [visibleDays, hideOffDays, boardGate, filteredLots]);
+
+  const expandAllDays = () => setCollapsedDays({});
+  const collapseAllDays = () => {
+    const all: Record<string, boolean> = {};
+    for (const d of boardDays) all[d.date] = true;
+    setCollapsedDays(all);
+  };
+  const areAllDaysCollapsed =
+    boardDays.length > 0 &&
+    boardDays.every((d) => Boolean(collapsedDays[d.date]));
+  const toggleAllDays = () => {
+    if (areAllDaysCollapsed) {
+      expandAllDays();
+    } else {
+      collapseAllDays();
+    }
+  };
 
   // Calendar weeks (Monday start) across the visible range, for the Weeks view.
   const weekGroups = useMemo<WeekGroup[]>(() => {
@@ -248,12 +343,12 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       ? moving : [];
   };
 
-  const getDropPosition = (e: React.DragEvent<HTMLDivElement>): "before" | "after" => {
+  const getDropPosition = (e: React.DragEvent<HTMLElement>): "before" | "after" => {
     const bounds = e.currentTarget.getBoundingClientRect();
     return e.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
   };
 
-  const handleCardDragOver = (e: React.DragEvent<HTMLDivElement>, target: LotItem) => {
+  const handleCardDragOver = (e: React.DragEvent<HTMLElement>, target: LotItem) => {
     const moving = getSameDayMovingLots(target);
     if (!moving.length) return;
     e.preventDefault();
@@ -270,7 +365,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       ? current : { lotId: target.id, position });
   };
 
-  const handleCardDrop = (e: React.DragEvent<HTMLDivElement>, target: LotItem) => {
+  const handleCardDrop = (e: React.DragEvent<HTMLElement>, target: LotItem) => {
     const moving = getSameDayMovingLots(target);
     if (!moving.length) return;
     e.preventDefault();
@@ -285,7 +380,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   ) : null;
 
   const handleColDragOver = (
-    e: React.DragEvent<HTMLDivElement>,
+    e: React.DragEvent<HTMLElement>,
     dayDate: string
   ) => {
     setReorderTarget(null);
@@ -298,12 +393,38 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   };
 
   const handleColDrop = (
-    e: React.DragEvent<HTMLDivElement>,
+    e: React.DragEvent<HTMLElement>,
     dayDate: string
   ) => {
     e.preventDefault();
     if (draggedLot && planningDates.has(dayDate)) {
       onMoveLots(selectedLotIds.has(draggedLot.id) ? selectedLots : [draggedLot], dayDate);
+    }
+    handleCardDragEnd();
+  };
+
+  const handleRowDragOver = (e: React.DragEvent<HTMLElement>, target: LotItem) => {
+    if (!draggedLot) return;
+    if (draggedLot.plannedDate === target.plannedDate) {
+      handleCardDragOver(e, target);
+    } else {
+      handleColDragOver(e, target.plannedDate);
+    }
+  };
+
+  const handleRowDrop = (e: React.DragEvent<HTMLElement>, target: LotItem) => {
+    if (!draggedLot) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedLot.plannedDate === target.plannedDate) {
+      const moving = getSameDayMovingLots(target);
+      if (moving.length) {
+        onReorderLots(moving.map((lot) => lot.id), target.id, getDropPosition(e));
+      }
+    } else {
+      if (planningDates.has(target.plannedDate)) {
+        onMoveLots(selectedLotIds.has(draggedLot.id) ? selectedLots : [draggedLot], target.plannedDate);
+      }
     }
     handleCardDragEnd();
   };
@@ -422,7 +543,43 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
         {/* Right Switchers & Scroll Controls */}
         <div className="flex flex-nowrap items-center gap-2 shrink-0">
-          {viewMode === "board" && granularity === "days" && (
+          {/* View Mode Switcher: Board vs Table */}
+          <div
+            role="group"
+            aria-label="View mode"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
+          >
+            <button
+              type="button"
+              aria-pressed={activeViewMode === "board"}
+              onClick={() => handleViewModeChange("board")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                activeViewMode === "board"
+                  ? "bg-primary text-primary-content shadow-xs"
+                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
+              }`}
+              title="Board View (Card columns by day)"
+            >
+              <LayoutGrid size={13} />
+              <span>Board</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={activeViewMode === "list"}
+              onClick={() => handleViewModeChange("list")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                activeViewMode === "list"
+                  ? "bg-primary text-primary-content shadow-xs"
+                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
+              }`}
+              title="Table View (Grouped by day)"
+            >
+              <Table size={13} />
+              <span>Table</span>
+            </button>
+          </div>
+
+          {activeViewMode === "board" && granularity === "days" && (
             <div className="inline-flex items-center gap-1 mr-1 shrink-0">
               <button
                 type="button"
@@ -441,6 +598,25 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 <ChevronRight size={14} />
               </button>
             </div>
+          )}
+
+
+
+          {granularity === "days" && (
+            <button
+              type="button"
+              aria-pressed={hideOffDays}
+              onClick={() => setHideOffDays((prev) => !prev)}
+              className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                hideOffDays
+                  ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                  : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+              }`}
+              title={hideOffDays ? "Hiding holidays (click to show all days)" : "Showing all days (click to hide holidays)"}
+            >
+              <CalendarOff size={13} />
+              <span>{hideOffDays ? "Hide Holidays" : "Show All Days"}</span>
+            </button>
           )}
 
           <button
@@ -464,7 +640,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             Edit
           </button>
 
-          {viewMode === "board" && (
+          {activeViewMode === "board" && (
             <div
               role="group"
               aria-label="Board size"
@@ -520,15 +696,17 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       {/* =========================================================
           VIEW 1: BOARD VIEW — DAYS (Horizontally Scrollable across ALL planning days)
          ========================================================= */}
-      {viewMode === "board" && granularity === "days" && (
+      {activeViewMode === "board" && granularity === "days" && (
         <div
           ref={scrollContainerRef}
           className={`flex overflow-x-auto pb-2 scroll-smooth ${isCompact ? "gap-1.5 min-h-[400px]" : "gap-2 min-h-[480px]"}`}
         >
           {/* Scrollable Day Columns for ALL planning days */}
-          {visibleDays.map((col) => {
+          {boardDays.map((col) => {
             const colLots = filteredLots.filter((l) => l.plannedDate === col.date);
             const colPct = cellPct(col.gates[boardGate]);
+            const colCap = data.capacity?.[boardGate]?.[col.date];
+            const colHasOt = Boolean(colCap?.hasOt);
             const isDayExpanded = Boolean(expandedDayCols[col.date]);
             const visibleLots = isDayExpanded
               ? colLots
@@ -566,8 +744,18 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 <div className="px-0.5 pb-2 border-b border-base-300/60 mb-2 shrink-0">
                   <div className="flex items-start justify-between">
                     <div className="leading-tight">
-                      <div className="text-[10.5px] font-semibold uppercase text-base-content/50">
-                        {col.dayLabel}
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10.5px] font-semibold uppercase text-base-content/50">
+                          {col.dayLabel}
+                        </span>
+                        {colHasOt && (
+                          <span
+                            title="Overtime active"
+                            className="px-1 py-0.5 rounded border border-base-300 bg-base-200/90 text-[9.5px] font-bold text-base-content/75 leading-none"
+                          >
+                            OT
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs font-bold text-base-content tabular-nums mt-0.5 flex flex-col items-start gap-1">
                         <span>{col.displayDate}</span>
@@ -704,7 +892,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       {/* =========================================================
           VIEW 2: BOARD VIEW — WEEKS GRANULARITY
          ========================================================= */}
-      {viewMode === "board" && granularity === "weeks" && (
+      {activeViewMode === "board" && granularity === "weeks" && (
         <div className="flex gap-3 overflow-x-auto min-h-[480px]">
           {/* One column per calendar week */}
           <div className={`grid grid-cols-1 gap-3 flex-1 ${isCompact ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 xl:grid-cols-3"}`}>
@@ -809,34 +997,52 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       )}
 
       {/* =========================================================
-          VIEW 3: LIST VIEW (Days or Weeks) — Styled like GateActionTable
+          VIEW 3: LIST / TABLE VIEW (Grouped by Date or Weeks)
          ========================================================= */}
-      {viewMode === "list" && (
+      {activeViewMode === "list" && (
         <div className="overflow-x-auto rounded-xl border border-base-300">
-          <table className="table table-sm table-fixed w-full min-w-[980px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:first-child:not([colspan])]:text-left [&_th:first-child]:text-left [&_th]:px-3 [&_th]:py-2.5 [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:align-middle [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
+          <table className="table table-sm table-fixed w-full min-w-[980px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:nth-child(2)]:text-left [&_th:nth-child(2)]:text-left [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
             <colgroup>
-              <col style={{ width: "128px" }} />
+              <col style={{ width: "42px" }} />
+              <col style={{ width: "160px" }} />
+              <col style={{ width: "120px" }} />
               <col style={{ width: "105px" }} />
-              <col style={{ width: "126px" }} />
-              <col style={{ width: "118px" }} />
-              <col style={{ width: "102px" }} />
-              <col style={{ width: "102px" }} />
-              <col style={{ width: "136px" }} />
-              <col style={{ width: "74px" }} />
-              <col style={{ width: "134px" }} />
-              <col style={{ width: "86px" }} />
+              <col style={{ width: "95px" }} />
+              <col style={{ width: "105px" }} />
+              <col style={{ width: "115px" }} />
+              <col style={{ width: "110px" }} />
+              <col style={{ width: "135px" }} />
+              <col style={{ width: "110px" }} />
             </colgroup>
             <thead>
-              <tr className="bg-base-200/70 border-b border-base-300 text-[12px] font-bold tracking-[0.04em] text-base-content">
+              <tr className="bg-base-200/80 border-b border-base-300 text-[11.5px] font-bold tracking-[0.03em] text-base-content">
+                <th className="text-center px-1 py-1">
+                  {granularity === "days" ? (
+                    <button
+                      type="button"
+                      onClick={toggleAllDays}
+                      className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-base-300/80 text-base-content/65 hover:text-primary transition-colors cursor-pointer"
+                      title={areAllDaysCollapsed ? "Expand all days" : "Collapse all days"}
+                      aria-label={areAllDaysCollapsed ? "Expand all days" : "Collapse all days"}
+                    >
+                      {areAllDaysCollapsed ? (
+                        <ChevronsDown size={15} className="text-primary" />
+                      ) : (
+                        <ChevronsUp size={15} />
+                      )}
+                    </button>
+                  ) : isEditMode ? (
+                    "SEL"
+                  ) : null}
+                </th>
                 <th>PRODUCT NAME</th>
                 <th>LOT</th>
-                <th>QUANTITY</th>
-                <th>EST. LOAD</th>
-                <th>ARRIVE BY</th>
+                <th>PCS</th>
+                <th>SHEET</th>
+                <th>STATUS</th>
+                <th>SHIFT</th>
                 <th>MUST OUT</th>
                 <th>{boardGate} DATE</th>
-                <th>SLACK</th>
-                <th>STATUS</th>
                 <th>SO DUE</th>
               </tr>
             </thead>
@@ -848,20 +1054,195 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       weekDates.has(l.plannedDate)
                     );
                     if (weekLots.length === 0) return [];
-                    const totalPcs = weekLots.some((lot) => lot.qty === null) ? null : weekLots.reduce((sum, lot) => sum + (lot.qty ?? 0), 0);
+                    const totalPcs = weekLots.some((lot) => lot.qty === null)
+                      ? null
+                      : weekLots.reduce((sum, lot) => sum + (lot.qty ?? 0), 0);
                     return [
                       {
-                        type: "header" as const,
+                        type: "week-header" as const,
                         wg,
                         count: boardCountLabel(weekLots),
                         totalPcs,
                       },
-                      ...weekLots.map((lot) => ({ type: "row" as const, lot })),
+                      ...weekLots.map((lot, idx) => ({
+                        type: "row" as const,
+                        lot,
+                        priority: idx + 1,
+                        alloc: shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id),
+                      })),
                     ];
                   })
-                : filteredLots.map((lot) => ({ type: "row" as const, lot }))
+                : boardDays.flatMap((col) => {
+                    const colLots = filteredLots.filter((l) => l.plannedDate === col.date);
+                    const colPct = cellPct(col.gates[boardGate]);
+                    const totalPcs = colLots.some((lot) => lot.qty === null)
+                      ? null
+                      : colLots.reduce((sum, lot) => sum + (lot.qty ?? 0), 0);
+                    const isCollapsed = Boolean(collapsedDays[col.date]);
+
+                    const colCap = data.capacity?.[boardGate]?.[col.date];
+                    const colReqCap = data.requiredCapacity?.[boardGate]?.[col.date];
+                    const hasOt = Boolean(colCap?.hasOt);
+                    const totalOtMin = hasOt && colCap && colReqCap
+                      ? Math.max(0, (colCap.capacityMin ?? 0) - (colReqCap.capacityMin ?? 0))
+                      : 0;
+
+                    const dayShiftHasOt = Boolean(colCap?.shifts?.day?.otOn);
+                    const dayShiftOtMin = dayShiftHasOt && colCap && colReqCap
+                      ? Math.max(0, (colCap.shifts?.day?.capacityMin ?? 0) - (colReqCap.shifts?.day?.capacityMin ?? 0))
+                      : 0;
+
+                    const nightShiftHasOt = Boolean(colCap?.shifts?.night?.otOn);
+                    const nightShiftOtMin = nightShiftHasOt && colCap && colReqCap
+                      ? Math.max(0, (colCap.shifts?.night?.capacityMin ?? 0) - (colReqCap.shifts?.night?.capacityMin ?? 0))
+                      : 0;
+
+                    const headerItem = {
+                      type: "day-header" as const,
+                      col,
+                      colLots,
+                      colPct,
+                      totalPcs,
+                      isCollapsed,
+                      hasOt,
+                      totalOtMin,
+                      dayShiftHasOt,
+                      dayShiftOtMin,
+                      nightShiftHasOt,
+                      nightShiftOtMin,
+                    };
+
+                    if (isCollapsed) {
+                      return [headerItem];
+                    }
+
+                    if (colLots.length === 0) {
+                      return [headerItem, { type: "empty-day" as const, col }];
+                    }
+
+                    // colLots is already ordered by Board Priority sequence!
+                    const mappedLots = colLots.map((lot, idx) => {
+                      const alloc = shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id);
+                      const status = alloc?.status ?? "unassigned";
+                      return {
+                        lot,
+                        col,
+                        priority: idx + 1,
+                        alloc,
+                        status,
+                      };
+                    });
+
+                    // Segment into Day Shift, Night Shift, and Others (Overflow / Unassigned)
+                    const dayLots = mappedLots.filter((m) => m.status === "day");
+                    const nightLots = mappedLots.filter((m) => m.status === "night");
+                    const otherLots = mappedLots.filter(
+                      (m) => m.status !== "day" && m.status !== "night"
+                    );
+
+                    const dayPcs = dayLots.some((m) => m.lot.qty === null)
+                      ? null
+                      : dayLots.reduce((sum, m) => sum + (m.lot.qty ?? 0), 0);
+                    const nightPcs = nightLots.some((m) => m.lot.qty === null)
+                      ? null
+                      : nightLots.reduce((sum, m) => sum + (m.lot.qty ?? 0), 0);
+                    const otherPcs = otherLots.some((m) => m.lot.qty === null)
+                      ? null
+                      : otherLots.reduce((sum, m) => sum + (m.lot.qty ?? 0), 0);
+
+                    const rows: Array<
+                      | typeof headerItem
+                      | { type: "empty-day"; col: typeof col }
+                      | {
+                          type: "shift-header";
+                          col: typeof col;
+                          shiftKey: string;
+                          theme: (typeof SHIFT_THEMES)[keyof typeof SHIFT_THEMES];
+                          lotsCount: number;
+                          totalPcs: number | null;
+                          shiftHasOt: boolean;
+                          shiftOtMin: number;
+                        }
+                      | {
+                          type: "row";
+                          lot: LotItem;
+                          col: typeof col;
+                          priority: number;
+                          alloc?: BoardShiftAllocation;
+                        }
+                    > = [headerItem];
+
+                    if (dayLots.length > 0) {
+                      rows.push({
+                        type: "shift-header",
+                        col,
+                        shiftKey: "day",
+                        theme: SHIFT_THEMES.day,
+                        lotsCount: dayLots.length,
+                        totalPcs: dayPcs,
+                        shiftHasOt: dayShiftHasOt,
+                        shiftOtMin: dayShiftOtMin,
+                      });
+                      for (const item of dayLots) {
+                        rows.push({
+                          type: "row",
+                          lot: item.lot,
+                          col: item.col,
+                          priority: item.priority,
+                          alloc: item.alloc,
+                        });
+                      }
+                    }
+
+                    if (nightLots.length > 0) {
+                      rows.push({
+                        type: "shift-header",
+                        col,
+                        shiftKey: "night",
+                        theme: SHIFT_THEMES.night,
+                        lotsCount: nightLots.length,
+                        totalPcs: nightPcs,
+                        shiftHasOt: nightShiftHasOt,
+                        shiftOtMin: nightShiftOtMin,
+                      });
+                      for (const item of nightLots) {
+                        rows.push({
+                          type: "row",
+                          lot: item.lot,
+                          col: item.col,
+                          priority: item.priority,
+                          alloc: item.alloc,
+                        });
+                      }
+                    }
+
+                    if (otherLots.length > 0) {
+                      const isOver = otherLots.some((m) => m.status === "over");
+                      rows.push({
+                        type: "shift-header",
+                        col,
+                        shiftKey: isOver ? "over" : "unassigned",
+                        theme: isOver ? SHIFT_THEMES.over : SHIFT_THEMES.unassigned,
+                        lotsCount: otherLots.length,
+                        totalPcs: otherPcs,
+                        shiftHasOt: false,
+                        shiftOtMin: 0,
+                      });
+                      for (const item of otherLots) {
+                        rows.push({
+                          type: "row",
+                          lot: item.lot,
+                          col: item.col,
+                          priority: item.priority,
+                          alloc: item.alloc,
+                        });
+                      }
+                    }
+
+                    return rows;
+                  })
               ).map((item) => {
-                if (item.type === "header") {
+                if (item.type === "week-header") {
                   return (
                     <tr
                       key={`hdr-${item.wg.id}`}
@@ -905,159 +1286,336 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   );
                 }
 
+                if (item.type === "day-header") {
+                  const isTargetDay = currentTargetDate === item.col.date;
+                  return (
+                    <tr
+                      key={`day-hdr-${item.col.date}`}
+                      onDragOver={(e) => handleColDragOver(e, item.col.date)}
+                      onDrop={(e) => handleColDrop(e, item.col.date)}
+                      onClick={() => toggleDayCollapse(item.col.date)}
+                      className={`border-b-2 border-base-300 cursor-pointer select-none transition-colors ${
+                        isTargetDay
+                          ? "bg-[#eef2ff] border-primary"
+                          : item.col.isToday
+                          ? "bg-primary/5 hover:bg-primary/10"
+                          : "bg-base-200/70 hover:bg-base-200"
+                      }`}
+                    >
+                      <td colSpan={10} className="!text-left px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleDayCollapse(item.col.date);
+                              }}
+                              className="text-base-content/60 hover:text-base-content cursor-pointer"
+                              title={item.isCollapsed ? "Expand day" : "Collapse day"}
+                            >
+                              {item.isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-xs tracking-wide uppercase ${
+                              item.col.isToday ? "bg-primary text-primary-content" : "bg-base-300 text-base-content"
+                            }`}>
+                              {item.col.dayLabel} {item.col.displayDate}
+                            </span>
+                            {item.col.isToday && (
+                              <span className="badge badge-xs badge-primary font-semibold">Today</span>
+                            )}
+                            {item.hasOt && (
+                              <span
+                                className="px-1.5 py-0.5 rounded border border-base-300 bg-base-200/90 text-[10.5px] font-bold text-base-content/75 leading-none"
+                                title="Overtime active"
+                              >
+                                OT
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold text-base-content/75 tabular-nums">
+                              {item.colLots.length > 0 ? boardCountLabel(item.colLots) : "0 lots"}
+                            </span>
+                            {item.totalPcs !== null && item.colLots.length > 0 && (
+                              <>
+                                <span className="text-base-content/30">·</span>
+                                <span className="text-xs font-medium text-base-content/70 tabular-nums">
+                                  {formatGateQuantity(item.totalPcs, "piece")} pcs
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-medium text-base-content/60">Load:</span>
+                              <span className={`text-xs font-bold tabular-nums ${
+                                item.colPct === null
+                                  ? "text-base-content/40"
+                                  : loadStatus(item.colPct) === "red"
+                                  ? "text-rose-600"
+                                  : loadStatus(item.colPct) === "yellow"
+                                  ? "text-amber-600"
+                                  : "text-emerald-600"
+                              }`}>
+                                {item.colPct === null ? "—" : `${item.colPct}%`}
+                              </span>
+                              <div className="flex items-center gap-1 w-20">
+                                {gates.map(({ gate }) => (
+                                  <span
+                                    key={gate}
+                                    title={`${gate}: ${item.col.gateStatusDots[gate]}`}
+                                    className={`flex-1 rounded-full ${gate === boardGate ? "h-[5px]" : "h-[3px] opacity-70"} ${STATUS_BAR[item.col.gateStatusDots[gate]]}`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+
+                            {isTargetDay && (
+                              <span className="badge badge-sm badge-primary text-[10px] font-semibold animate-pulse">
+                                Drop here to schedule
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                if (item.type === "shift-header") {
+                  const ShiftIcon = item.theme.Icon;
+                  return (
+                    <tr
+                      key={`shift-hdr-${item.col.date}-${item.shiftKey}`}
+                      onDragOver={(e) => handleColDragOver(e, item.col.date)}
+                      onDrop={(e) => handleColDrop(e, item.col.date)}
+                      className="bg-base-200/40 border-b border-base-300/80"
+                    >
+                      <td colSpan={10} className="!text-left px-4 py-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold leading-none ${item.theme.badge}`}
+                            >
+                              <ShiftIcon size={12} className="shrink-0" />
+                              <span>{item.theme.label}</span>
+                            </span>
+                            {item.shiftHasOt && (
+                              <span
+                                className="px-1.5 py-0.5 rounded border border-base-300 bg-base-200/90 text-[10px] font-bold text-base-content/70 leading-none"
+                                title="Overtime active for this shift"
+                              >
+                                OT
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold text-base-content/75 tabular-nums">
+                              {item.lotsCount} {item.lotsCount === 1 ? "lot" : "lots"}
+                            </span>
+                            {item.totalPcs !== null && (
+                              <>
+                                <span className="text-base-content/30">·</span>
+                                <span className="text-xs font-medium text-base-content/65 tabular-nums">
+                                  {formatGateQuantity(item.totalPcs, "piece")} pcs
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                if (item.type === "empty-day") {
+                  const isTargetDay = currentTargetDate === item.col.date;
+                  return (
+                    <tr
+                      key={`empty-${item.col.date}`}
+                      onDragOver={(e) => handleColDragOver(e, item.col.date)}
+                      onDrop={(e) => handleColDrop(e, item.col.date)}
+                      className={`transition-colors ${isTargetDay ? "bg-[#eef2ff]/50" : ""}`}
+                    >
+                      <td colSpan={10} className="py-2.5 px-4 text-center">
+                        <div className={`py-2 px-3 rounded-lg border-2 border-dashed text-xs text-base-content/50 transition-colors ${
+                          isTargetDay ? "border-primary bg-primary/10 text-primary font-semibold" : "border-base-300/80 bg-base-100/40"
+                        }`}>
+                          {isTargetDay ? `Drop here to move to ${item.col.dayLabel} ${item.col.displayDate}` : `No lots planned on ${item.col.dayLabel} ${item.col.displayDate} · Drag lots here to schedule`}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 const { lot } = item;
                 const isSelected = selectedLot?.id === lot.id;
-                const warning = moveWarning(lot, lot.plannedDate, plannedIndex, data);
-                const isLate = warning === "late" || warning === "order";
-                const moved = isMoved(lot);
-                const projectedEnd = occupancyWindow(data, lot)?.endDate;
-                const slackDays = projectedEnd && lot.mustOut ? dayjs(lot.mustOut).diff(dayjs(projectedEnd), "day") : null;
                 const isPickerOpen = listDatePicker?.lot.id === lot.id;
+                const isDragging = draggedLot?.id === lot.id;
+                const alloc = item.alloc ?? shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id);
+                const shiftTheme = SHIFT_THEMES[alloc?.status ?? "unassigned"] ?? SHIFT_THEMES.unassigned;
+                const ShiftIcon = shiftTheme.Icon;
+                const isReorderTargetBefore = reorderTarget?.lotId === lot.id && reorderTarget.position === "before";
+                const isReorderTargetAfter = reorderTarget?.lotId === lot.id && reorderTarget.position === "after";
+
+                const moved = isMoved(lot);
+                const originalDateDisplay = lot.baseDate ? dayjs(lot.baseDate).format("DD/MM/YYYY") : null;
+                const originalDateShort = lot.baseDate ? dayjs(lot.baseDate).format("DD/MM") : null;
+                const moveDiffDays = lot.baseDate ? dayjs(lot.plannedDate).diff(dayjs(lot.baseDate), "day") : 0;
 
                 return (
                   <tr
                     key={lot.id}
+                    draggable={!readOnly}
+                    onDragStart={(e) => handleCardDragStart(e, lot)}
+                    onDragEnd={handleCardDragEnd}
+                    onDragOver={(e) => handleRowDragOver(e, lot)}
+                    onDrop={(e) => handleRowDrop(e, lot)}
                     onClick={() => onSelectLot(lot)}
-                    className={`border-b border-base-300/50 hover:bg-base-200/40 text-[13.5px] leading-5 cursor-pointer transition-colors ${
-                      isSelected ? "bg-[#eef2ff]/60" : ""
-                    }`}
+                    className={`border-b border-base-300/50 hover:bg-base-200/40 text-[13px] leading-5 cursor-pointer transition-colors relative ${
+                      isSelected ? "bg-[#eef2ff]/80 ring-1 ring-inset ring-[#4f46e5]/40" : ""
+                    } ${isDragging ? "opacity-35" : ""} ${
+                      isReorderTargetBefore ? "!border-t-2 !border-t-primary" : ""
+                    } ${isReorderTargetAfter ? "!border-b-2 !border-b-primary" : ""}`}
                   >
-                    {/* PRODUCT NAME */}
-                    <td>
-                      <div className="flex items-center gap-2">
-                        {isEditMode && <input type="checkbox" className="checkbox checkbox-xs checkbox-primary"
-                          aria-label={`Select ${lot.label} ${lot.product}`} checked={selectedLotIds.has(lot.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => toggleLotSelection(lot)} />}
-                      <span className="font-semibold text-[14px] text-base-content">
-                        {lot.product}
-                      </span>
-                      </div>
-                    </td>
-
-                    {/* LOT */}
-                    <td>
-                      <span className="font-mono font-bold text-[13px] tracking-wide tabular-nums text-base-content select-all">
-                        {lot.label}
-                      </span>
-                    </td>
-
-                    {/* QUANTITY (pcs + sheets) */}
-                    <td>
-                      <div className="flex flex-col items-center leading-tight">
-                        <span className="font-bold text-[13.5px] text-base-content">
-                          {formatGateQuantity(lot.qty, "piece")} pcs
-                        </span>
-                        {lot.sheets !== null && (
-                          <span className="text-[11px] font-medium text-base-content/50">
-                            {formatGateQuantity(lot.sheets, "sheet")} sheets
-                          </span>
+                    {/* Drag Grip + Selection Checkbox */}
+                    <td
+                      className={`px-2 relative transition-all ${
+                        moved ? "border-l-[3.5px] !border-l-indigo-600 bg-indigo-50/20" : ""
+                      }`}
+                      title={
+                        moved
+                          ? `Moved from ${originalDateDisplay} (${moveDiffDays > 0 ? `+${moveDiffDays}d` : `${moveDiffDays}d`})`
+                          : undefined
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        {!readOnly && (
+                          <GripVertical
+                            size={13}
+                            className="cursor-grab text-base-content/40 hover:text-primary active:cursor-grabbing shrink-0"
+                            title="Drag to reorder or move to another day"
+                          />
+                        )}
+                        {isEditMode && (
+                          <input
+                            type="checkbox"
+                            className="checkbox checkbox-xs checkbox-primary"
+                            aria-label={`Select ${lot.label} ${lot.product}`}
+                            checked={selectedLotIds.has(lot.id)}
+                            onChange={() => toggleLotSelection(lot)}
+                          />
                         )}
                       </div>
                     </td>
 
-                    {/* EST. LOAD */}
+                    {/* PRODUCT NAME */}
                     <td>
-                      {lot.loadMin === null ? (
-                        <span className="text-[11.5px] font-semibold text-amber-700" title="Check gate lead time and normal shift minutes">
-                          Check plan
+                      <span className="font-semibold text-[13.5px] text-base-content">
+                        {lot.product}
+                      </span>
+                    </td>
+
+                    {/* LOT */}
+                    <td>
+                      <span className="font-mono font-bold text-[12.5px] tracking-wide tabular-nums text-base-content select-all">
+                        {lot.label}
+                      </span>
+                    </td>
+
+                    {/* PCS */}
+                    <td className="font-bold text-[13px] text-base-content tabular-nums">
+                      {formatGateQuantity(lot.qty, "piece")}
+                    </td>
+
+                    {/* SHEET */}
+                    <td className="font-medium text-[12.5px] text-base-content/80 tabular-nums">
+                      {lot.sheets !== null ? formatGateQuantity(lot.sheets, "sheet") : "-"}
+                    </td>
+
+                    {/* STATUS (In Gate / Coming / Need WIP) */}
+                    <td>
+                      {lot.gateState === "in_gate" ? (
+                        <span className="font-semibold text-xs text-emerald-600">
+                          In Gate
                         </span>
-                      ) : zeroLoadReason(lot) ? (
-                        <span className="text-[12px] font-medium text-base-content/60" title={ZERO_LOAD_TEXT[zeroLoadReason(lot)!].detail}>
-                          0 min · {ZERO_LOAD_TEXT[zeroLoadReason(lot)!].short}
+                      ) : lot.gateState === "coming" ? (
+                        <span className="font-semibold text-xs text-sky-600">
+                          Coming
+                        </span>
+                      ) : lot.gateState === "need_wip" ? (
+                        <span className="font-semibold text-xs text-amber-600">
+                          Need WIP
                         </span>
                       ) : (
-                        <span className="font-medium text-[13px] text-base-content/80"
-                          title={`${lot.loadReason === "routing" && lot.routeLeadDays
-                            ? `Routing lead ${lot.routeLeadDays}d into ${lot.gate} ÷ ${lot.routeTotalProc ?? 1} proc`
-                            : `${lot.leadDays} planning day(s)`}, arrival ${occupancyWindow(data, lot)?.startDate ?? "unknown"}; normal minutes exclude OT`}>
-                          {Math.round(lot.loadMin).toLocaleString()} min/arrival lot
-                        </span>
+                        <span className="text-xs text-base-content/40">-</span>
                       )}
                     </td>
 
-                    {/* ARRIVE BY */}
-                    <td className="font-medium text-[13px] text-base-content/80">
-                      {lot.arriveBy ? dayjs(lot.arriveBy).format("DD/MM/YYYY") : "-"}
+                    {/* SHIFT */}
+                    <td>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold leading-none ${shiftTheme.badge}`}
+                      >
+                        <ShiftIcon size={11} className="shrink-0" />
+                        <span>{shiftTheme.shortLabel}</span>
+                      </span>
                     </td>
 
                     {/* MUST OUT */}
-                    <td className="font-medium text-[13px] text-base-content/80">
+                    <td className="font-medium text-[12.5px] text-base-content/80">
                       {dayjs(lot.mustOut).format("DD/MM/YYYY")}
                     </td>
 
                     {/* DATE AT THIS GATE (opens the date picker) */}
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        disabled={readOnly}
-                        onClick={(e) => {
-                          if (readOnly) return;
-                          if (isPickerOpen) {
-                            setListDatePicker(null);
-                          } else {
-                            setListDatePicker({
-                              lot,
-                              anchorEl: e.currentTarget,
-                            });
-                          }
-                        }}
-                        className={`inline-flex items-center justify-between gap-2 h-7 px-2.5 rounded-lg border text-xs font-semibold tabular-nums transition-colors cursor-pointer ${
-                          isPickerOpen
-                            ? "border-[#4f46e5] bg-[#eef2ff] text-[#4f46e5]"
-                            : "border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40 text-base-content"
-                        }`}
-                      >
-                        <span>
-                          {dayjs(lot.plannedDate).format("DD/MM/YYYY")}
-                        </span>
-                        <Calendar
-                          size={12}
-                          className="text-base-content/45 shrink-0"
-                        />
-                      </button>
-                    </td>
-
-                    {/* SLACK */}
-                    <td>
-                      <span
-                        className={`font-bold text-[13px] ${
-                          slackDays !== null && slackDays < 0 ? "text-rose-600" : "text-emerald-600"
-                        }`}
-                      >
-                        {slackDays === null ? "N/A" : slackDays >= 0 ? `+${slackDays}d` : `${slackDays}d`}
-                      </span>
-                    </td>
-
-                    {/* STATUS (Rectangular badge matching GateActionTable) */}
-                    <td>
-                      {isLate ? (
-                        <span title={WARNING_TEXT[warning as "late" | "order"]}
-                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-semibold leading-none ${
-                            warning === "order" ? "border-rose-400 bg-rose-100 text-rose-800" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
-                          <AlertCircle size={11} />
-                          {warning === "order" ? "Gate order" : "Late"}
-                        </span>
-                      ) : warning === "early" ? (
-                        <span title={WARNING_TEXT.early}
-                          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11.5px] font-semibold text-amber-800 leading-none">
-                          <AlertCircle size={11} />
-                          Early
-                        </span>
-                      ) : moved ? (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-[#eef2ff] px-2 py-1 text-[11.5px] font-semibold text-[#4f46e5] leading-none">
-                          Moved (was {dayjs(lot.baseDate).format("DD/MM")})
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11.5px] font-semibold text-emerald-700 leading-none">
-                          <CheckCircle2 size={11} />
-                          Fits
-                        </span>
-                      )}
+                      <div className="flex flex-col items-center justify-center">
+                        <button
+                          type="button"
+                          disabled={readOnly}
+                          onClick={(e) => {
+                            if (readOnly) return;
+                            if (isPickerOpen) {
+                              setListDatePicker(null);
+                            } else {
+                              setListDatePicker({
+                                lot,
+                                anchorEl: e.currentTarget,
+                              });
+                            }
+                          }}
+                          className={`inline-flex items-center justify-between gap-1.5 h-7 px-2 rounded-lg border text-xs font-semibold tabular-nums transition-colors cursor-pointer ${
+                            isPickerOpen
+                              ? "border-[#4f46e5] bg-[#eef2ff] text-[#4f46e5]"
+                              : moved
+                              ? "border-indigo-300 bg-indigo-50/50 hover:bg-indigo-100/60 text-indigo-950 shadow-2xs"
+                              : "border-base-300 bg-base-100 hover:border-primary/50 hover:bg-base-200/40 text-base-content"
+                          }`}
+                        >
+                          <span>
+                            {dayjs(lot.plannedDate).format("DD/MM/YYYY")}
+                          </span>
+                          <Calendar
+                            size={12}
+                            className="text-base-content/45 shrink-0"
+                          />
+                        </button>
+                        {moved && (
+                          <span
+                            className="mt-0.5 text-[10.5px] font-semibold text-indigo-700/90 tabular-nums leading-tight cursor-default"
+                            title={`Moved from ${originalDateDisplay} (${moveDiffDays > 0 ? `+${moveDiffDays}d` : `${moveDiffDays}d`})`}
+                          >
+                            <span className="text-base-content/40 font-normal">Orig </span>
+                            <span>{originalDateShort}</span>
+                            <span className="font-bold text-indigo-600 ml-0.5">
+                              ({moveDiffDays > 0 ? `+${moveDiffDays}d` : `${moveDiffDays}d`})
+                            </span>
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* SO DUE */}
-                    <td className="font-medium text-[13px] text-base-content/80">
+                    <td className="font-medium text-[12.5px] text-base-content/80">
                       {dayjs(lot.dueDate).format("DD/MM/YYYY")}
                     </td>
                   </tr>
