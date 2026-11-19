@@ -24,8 +24,8 @@ const TV_REFRESH_MS = 60000;
 
 export default function SavedPlanPage() {
   const [params, setParams] = useSearchParams();
-  const rawCategory = params.get("cat") ?? (params.get("group") === "SMT" ? "SMT" : "EFPC_AUTO");
-  const category = CATEGORIES.includes(rawCategory as InGateCategory) ? rawCategory as InGateCategory : "EFPC_AUTO";
+  const rawCategory = params.get("cat") ?? (params.get("group") === "SMT" ? "SMT" : "EFPC_GEN");
+  const category = CATEGORIES.includes(rawCategory as InGateCategory) ? rawCategory as InGateCategory : "EFPC_GEN";
   const today = dayjs().format("YYYY-MM-DD");
   const [date, setDate] = useState(today);
   const [selectedGate, setSelectedGate] = useState("FVAC");
