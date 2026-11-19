@@ -85,49 +85,34 @@ const getProductSnapshotMap = (prdName) => {
   return unallocatedLotSnapshotsByPrd.get(prdName);
 };
 
-let isSkipSnapshotTableReady = false;
-const ensureSkipSnapshotTable = async () => {
-  if (isSkipSnapshotTableReady) return;
-  await query(`
-    CREATE TABLE IF NOT EXISTS planning.planning_lot_skip_snapshot (
-      lot_no VARCHAR(100) PRIMARY KEY,
-      prd_name VARCHAR(100) NOT NULL,
-      snapshot JSONB NOT NULL,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+let isSkipSnapshotColumnReady = false;
+const ensureSkipSnapshotColumn = async (clientOrQuery = query) => {
+  if (isSkipSnapshotColumnReady) return;
+  const runner =
+    typeof clientOrQuery.query === "function"
+      ? clientOrQuery.query.bind(clientOrQuery)
+      : clientOrQuery;
+  await runner(`
+    ALTER TABLE planning.planning_lot_skip
+      ADD COLUMN IF NOT EXISTS lot_snapshot JSONB;
   `);
-  isSkipSnapshotTableReady = true;
+  if (typeof clientOrQuery === "function") isSkipSnapshotColumnReady = true;
 };
 
-const saveLotSnapshot = async (prdName, snapshot) => {
-  if (!prdName || !snapshot?.lot_no) return;
-  try {
-    await ensureSkipSnapshotTable();
-    await query(
-      `
-        INSERT INTO planning.planning_lot_skip_snapshot (lot_no, prd_name, snapshot, updated_at)
-        VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP)
-        ON CONFLICT (lot_no) DO UPDATE SET
-          prd_name = EXCLUDED.prd_name,
-          snapshot = EXCLUDED.snapshot,
-          updated_at = CURRENT_TIMESTAMP
-      `,
-      [snapshot.lot_no, prdName, JSON.stringify(snapshot)]
-    );
-  } catch {
-    // Best-effort DB snapshot; in-memory cache still preserves the lot.
-  }
-};
-
-const loadLotSnapshots = async (prdName) => {
+const loadLotSnapshots = async (prdName, clientOrQuery = query) => {
   if (!prdName) return [];
   try {
-    await ensureSkipSnapshotTable();
-    const res = await query(
+    await ensureSkipSnapshotColumn(clientOrQuery);
+    const runner =
+      typeof clientOrQuery.query === "function"
+        ? clientOrQuery.query.bind(clientOrQuery)
+        : clientOrQuery;
+    const res = await runner(
       `
-        SELECT lot_no, snapshot
-        FROM planning.planning_lot_skip_snapshot
+        SELECT lot_no, lot_snapshot AS snapshot
+        FROM planning.planning_lot_skip
         WHERE prd_name = $1
+          AND lot_snapshot IS NOT NULL
       `,
       [prdName]
     );
@@ -142,20 +127,14 @@ const loadLotSnapshots = async (prdName) => {
   }
 };
 
-const removeLotSnapshot = async (lotNo) => {
-  if (!lotNo) return;
-  try {
-    await ensureSkipSnapshotTable();
-    await query(`DELETE FROM planning.planning_lot_skip_snapshot WHERE lot_no = $1`, [lotNo]);
-  } catch {
-    // Best-effort DB snapshot cleanup.
-  }
-};
-
-const loadWipLotsFromSource = async (prdName) => {
+const loadWipLotsFromSource = async (prdName, clientOrQuery = query) => {
   if (!prdName) return [];
   try {
-    const res = await query(
+    const runner =
+      typeof clientOrQuery.query === "function"
+        ? clientOrQuery.query.bind(clientOrQuery)
+        : clientOrQuery;
+    const res = await runner(
       `
         SELECT
           lot AS lot_no,
@@ -183,13 +162,13 @@ const loadWipLotsFromSource = async (prdName) => {
   }
 };
 
-const findCachedLotSnapshot = async (prdName, lotNo) => {
+const findCachedLotSnapshot = async (prdName, lotNo, clientOrQuery = query) => {
   const memSnap = unallocatedLotSnapshotsByPrd.get(prdName)?.get(lotNo) || null;
   if (memSnap) return memSnap;
-  const dbSnaps = await loadLotSnapshots(prdName);
+  const dbSnaps = await loadLotSnapshots(prdName, clientOrQuery);
   const dbMatch = dbSnaps.find((s) => s.lot_no === lotNo);
   if (dbMatch) return dbMatch;
-  const wipSnaps = await loadWipLotsFromSource(prdName);
+  const wipSnaps = await loadWipLotsFromSource(prdName, clientOrQuery);
   return wipSnaps.find((s) => s.lot_no === lotNo) || null;
 };
 
@@ -379,8 +358,8 @@ const reallocateProductWithSkips = async (client, prdName, options = {}) => {
   const memorySnapshots = Array.from(
     unallocatedLotSnapshotsByPrd.get(prdName)?.values() || []
   );
-  const dbSnapshots = await loadLotSnapshots(prdName);
-  const sourceWipSnapshots = await loadWipLotsFromSource(prdName);
+  const dbSnapshots = await loadLotSnapshots(prdName, client);
+  const sourceWipSnapshots = await loadWipLotsFromSource(prdName, client);
   const baselineList = Array.isArray(options.baselineLots)
     ? options.baselineLots.filter(Boolean)
     : [];
@@ -698,33 +677,48 @@ const reallocateProductWithSkips = async (client, prdName, options = {}) => {
     );
   }
 
-  // 5. อัปเดตคอลัมน์ due_date (Due Date ใหม่ที่ย้ายไปลง) ในตาราง planning.planning_lot_skip
+  // 5. อัปเดตคอลัมน์ due_date (Due Date ใหม่ที่ย้ายไปลง) และ lot_snapshot ในตาราง planning.planning_lot_skip
+  const lotByNo = new Map(lotList.map((lot) => [lot.lot_no, lot]));
+  const prdSnapshots = getProductSnapshotMap(prdName);
+  await ensureSkipSnapshotColumn(client);
+
   for (const [lotNo] of skipMap.entries()) {
     const newTargetDue = assignedDueDateByLot.get(lotNo) || null;
+    const lot = lotByNo.get(lotNo);
+    let snapshotJson = null;
+    if (!newTargetDue && lot) {
+      const snapshot = extractLotSnapshot({
+        ...lot,
+        due_date: lastDueByLot.get(lotNo) || skipMap.get(lotNo) || null,
+      });
+      prdSnapshots.set(lotNo, snapshot);
+      snapshotJson = JSON.stringify(snapshot);
+    } else if (newTargetDue) {
+      prdSnapshots.delete(lotNo);
+    }
     await client.query(
       `
         UPDATE planning.planning_lot_skip
         SET due_date = $2::date,
+            lot_snapshot = $3::jsonb,
             updated_at = CURRENT_TIMESTAMP
         WHERE lot_no = $1
       `,
-      [lotNo, newTargetDue]
+      [lotNo, newTargetDue, snapshotJson]
     );
   }
 
-  // 6. อัปเดต Snapshot สำหรับ Lot ที่ยังไม่ถูกจัดสรร (เพื่อรองรับ Undo Skip / รอบจัดสรรถัดไป)
-  const prdSnapshots = getProductSnapshotMap(prdName);
+  // 6. อัปเดต in-memory Snapshot สำหรับ Lot ที่ไม่ได้อยู่ใน planning_lot_skip แต่ยังไม่ถูกจัดสรร
   for (const lot of lotList) {
+    if (skipMap.has(lot.lot_no)) continue;
     if (assignedDueDateByLot.has(lot.lot_no)) {
       prdSnapshots.delete(lot.lot_no);
-      await removeLotSnapshot(lot.lot_no);
     } else {
       const snapshot = extractLotSnapshot({
         ...lot,
-        due_date: lastDueByLot.get(lot.lot_no) || skipMap.get(lot.lot_no) || null,
+        due_date: lastDueByLot.get(lot.lot_no) || null,
       });
       prdSnapshots.set(lot.lot_no, snapshot);
-      await saveLotSnapshot(prdName, snapshot);
     }
   }
 
@@ -1102,6 +1096,7 @@ router.get("/table", async (req, res) => {
     // หรือสร้างแถวรอแสดงผลหาก Due เดิมถูก Lot อื่นเติมเต็มแล้ว เพื่อให้มองเห็นและกด Undo Skip ได้เสมอ
     let waitingSkips = [];
     try {
+      await ensureSkipSnapshotColumn();
       const skipWaitRes = await query(
         `
           SELECT
@@ -1110,7 +1105,8 @@ router.get("/table", async (req, res) => {
             to_char(skipped_due_date, 'YYYY-MM-DD') AS skipped_due_date,
             to_char(due_date, 'YYYY-MM-DD') AS due_date,
             seq::int4 AS seq,
-            process AS proc_disp
+            process AS proc_disp,
+            lot_snapshot
           FROM planning.planning_lot_skip
           WHERE due_date IS NULL
           ORDER BY updated_at DESC NULLS LAST, seq DESC NULLS LAST, lot_no ASC
@@ -1141,7 +1137,14 @@ router.get("/table", async (req, res) => {
       const qStopDate = asStr(req.query.stopdate);
       const qItemPrefix = asStr(req.query.item_prefix || req.query.type);
 
-      const resolveSnapshotForSkip = async (prdName, lotNo) => {
+      const resolveSnapshotForSkip = async (skipLot, prdName, lotNo) => {
+        if (skipLot?.lot_snapshot) {
+          const inlineSnap =
+            typeof skipLot.lot_snapshot === "string"
+              ? JSON.parse(skipLot.lot_snapshot)
+              : skipLot.lot_snapshot;
+          if (inlineSnap && inlineSnap.lot_no) return inlineSnap;
+        }
         let snap = unallocatedLotSnapshotsByPrd.get(prdName)?.get(lotNo) || null;
         if (!snap) {
           if (!dbSnapshotsByPrd.has(prdName)) {
@@ -1227,7 +1230,7 @@ router.get("/table", async (req, res) => {
             .reverse()
             .find((r) => r.prd_name === prdName && !r.lot_no && !r.skipped_lot_no);
 
-        const snapshot = await resolveSnapshotForSkip(prdName, lotNo);
+        const snapshot = await resolveSnapshotForSkip(skipLot, prdName, lotNo);
 
         if (targetRow) {
           applySkipFields(targetRow, skipLot, lotNo, snapshot);
@@ -1455,7 +1458,7 @@ router.post("/unskip_due", verifyPlanner, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const restoredSnapshot = await findCachedLotSnapshot(prd_name, lot_no);
+    const restoredSnapshot = await findCachedLotSnapshot(prd_name, lot_no, client);
 
     await client.query(
       `DELETE FROM planning.planning_lot_skip WHERE lot_no = $1`,

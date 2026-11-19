@@ -19,9 +19,6 @@ function createMockDb(initial = {}) {
   const assignRows = new Map(
     (initial.assignRows || []).map((r) => [r.lot_no, { ...r }])
   );
-  const snapshotRows = new Map(
-    (initial.snapshotRows || []).map((r) => [r.lot_no, { ...r }])
-  );
 
   const likePatternToText = (val) =>
     String(val || "")
@@ -38,7 +35,7 @@ function createMockDb(initial = {}) {
     if (/^CREATE TABLE IF NOT EXISTS planning\.planning_lot_assign/i.test(normalized)) {
       return { rows: [] };
     }
-    if (/^CREATE TABLE IF NOT EXISTS planning\.planning_lot_skip_snapshot/i.test(normalized)) {
+    if (/^ALTER TABLE planning\.planning_lot_skip\s+ADD COLUMN IF NOT EXISTS lot_snapshot/i.test(normalized)) {
       return { rows: [] };
     }
 
@@ -51,28 +48,13 @@ function createMockDb(initial = {}) {
       };
     }
 
-    if (/^INSERT INTO planning\.planning_lot_skip_snapshot/i.test(normalized)) {
-      const [lot_no, prd_name, snapshotJson] = params;
-      snapshotRows.set(lot_no, {
-        lot_no,
-        prd_name,
-        snapshot: JSON.parse(snapshotJson),
-      });
-      return { rows: [] };
-    }
-
-    if (/FROM planning\.planning_lot_skip_snapshot\s+WHERE prd_name = \$1/i.test(normalized)) {
+    if (/SELECT lot_no, lot_snapshot AS snapshot FROM planning\.planning_lot_skip WHERE prd_name = \$1/i.test(normalized)) {
       const [prd_name] = params;
       return {
-        rows: Array.from(snapshotRows.values())
-          .filter((r) => r.prd_name === prd_name)
-          .map((r) => ({ lot_no: r.lot_no, snapshot: r.snapshot })),
+        rows: Array.from(skipRows.values())
+          .filter((r) => r.prd_name === prd_name && r.lot_snapshot)
+          .map((r) => ({ lot_no: r.lot_no, snapshot: r.lot_snapshot })),
       };
-    }
-
-    if (/^DELETE FROM planning\.planning_lot_skip_snapshot WHERE lot_no = \$1/i.test(normalized)) {
-      snapshotRows.delete(params[0]);
-      return { rows: [] };
     }
 
     if (/SELECT to_char\(MIN\(due_date\), 'YYYY-MM-DD'\) AS next_due_date FROM planning\.planning_summary/i.test(normalized)) {
@@ -134,15 +116,17 @@ function createMockDb(initial = {}) {
             due_date: r.due_date,
             seq: r.seq ?? null,
             proc_disp: r.process ?? null,
+            lot_snapshot: r.lot_snapshot ?? null,
           })),
       };
     }
 
     if (/^UPDATE planning\.planning_lot_skip SET due_date = \$2::date/i.test(normalized)) {
-      const [lot_no, due_date] = params;
+      const [lot_no, due_date, snapshotJson] = params;
       const existing = skipRows.get(lot_no);
       if (existing) {
         existing.due_date = due_date || null;
+        existing.lot_snapshot = snapshotJson ? JSON.parse(snapshotJson) : null;
       }
       return { rows: [] };
     }
@@ -364,7 +348,7 @@ function createMockDb(initial = {}) {
         release() {},
       }),
     },
-    state: { summaryRows, skipRows, assignRows, snapshotRows },
+    state: { summaryRows, skipRows, assignRows },
   };
 }
 
@@ -776,5 +760,83 @@ test("skip_due when another Lot fills the Due Date still exposes waiting row acr
     const tableRestored = await api.get("/table");
     assert.equal(tableRestored.body.data.length, 1);
     assert.equal(tableRestored.body.data[0].lot_no, "LOT-PENDING");
+  });
+});
+
+test("reads persisted lot_snapshot directly from planning_lot_skip across restarts", async () => {
+  const db = createMockDb({
+    summaryRows: [
+      {
+        prd_name: "PROD-SNAP",
+        item: "94-999",
+        due_date: "2026-11-28",
+        due_datetime: "2026-11-28 00:00:00",
+        ship_to_p1: "2026-11-27",
+        ship_to_p1_datetime: null,
+        scan_in: null,
+        priority: "Normal",
+        day_left: 4,
+        po_bal: 100,
+        inventory: 0,
+        net_required_pcs: -100,
+        cal_net_required: -100,
+        status: "need wip",
+        lot_no: null,
+        proc_disp: null,
+        seq: null,
+        net_wip_qty: null,
+        rem_wip_qty: null,
+        factory_desc: null,
+        prd_type: "FPC",
+        gate_name: null,
+        yield: null,
+        lot_status: null,
+        lot_problem: null,
+        pending_reason: null,
+        updated_at: "2026-11-18 10:00:00",
+      },
+    ],
+    skipRows: [
+      {
+        prd_name: "PROD-SNAP",
+        lot_no: "LOT-SNAP",
+        due_date: null,
+        skipped_due_date: "2026-11-28",
+        seq: 12,
+        process: "FIN",
+        lot_snapshot: {
+          lot_no: "LOT-SNAP",
+          item: "94-999",
+          proc_disp: "FIN",
+          seq: 12,
+          net_wip_qty: 100,
+          factory_desc: "FAC-1",
+          prd_type: "FPC",
+          scan_in: null,
+          gate_name: "FIN",
+          yield: 98,
+          lot_status: "PENDING",
+          lot_problem: "Persisted issue",
+          pending_reason: "Persisted reason",
+          last_due_date: "2026-11-28",
+        },
+      },
+    ],
+  });
+
+  await withPlanningSummaryApp(db, async (api) => {
+    const tableRes = await api.get("/table");
+    assert.equal(tableRes.status, 200);
+    assert.equal(tableRes.body.data[0].skipped_lot_no, "LOT-SNAP");
+    assert.equal(tableRes.body.data[0].skipped_lot_net_wip_qty, 100);
+    assert.equal(tableRes.body.data[0].skipped_lot_problem, "Persisted issue");
+
+    const undoRes = await api.post("/unskip_due", {
+      prd_name: "PROD-SNAP",
+      lot_no: "LOT-SNAP",
+    });
+    assert.equal(undoRes.status, 200);
+    assert.equal(undoRes.body.data.restored_due_date, "2026-11-28");
+    assert.equal(db.state.skipRows.has("LOT-SNAP"), false);
   });
 });
