@@ -27,6 +27,9 @@ interface CapacityModalProps {
   /** Called after settings were stored, so the page can recalculate Load % */
   onSaved: () => void;
   onEditingChange?: (scopes: EditingScope[]) => void;
+  initialGate?: string | null;
+  initialTab?: "standard" | "special" | "table";
+  initialDate?: string | null;
 }
 
 const SHIFTS = [
@@ -64,10 +67,13 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   onClose,
   onSaved,
   onEditingChange,
+  initialGate,
+  initialTab,
+  initialDate,
 }) => {
   const { requirePlanner } = useAuth();
-  const [selectedGate, setSelectedGate] = useState("FADL");
-  const [activeTab, setActiveTab] = useState<"standard" | "special" | "table">("standard");
+  const [selectedGate, setSelectedGate] = useState(initialGate || "FADL");
+  const [activeTab, setActiveTab] = useState<"standard" | "special" | "table">(initialTab || "standard");
   const [selectedShift, setSelectedShift] = useState<Shift>("day");
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
   const [configs, setConfigs] = useState<Record<string, GateShiftConfig> | null>(null);
@@ -115,15 +121,37 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
     }
   }, []);
 
-  // Always start from the stored settings when the modal opens.
+  // Preload capacity settings on mount so the modal opens immediately without a loading flash.
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadConfigs(controller.signal);
+    return () => controller.abort();
+  }, [loadConfigs]);
+
+  // Reset to stored settings and refresh in the background whenever the modal opens.
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
-    setConfigs(null);
-    setMonthOffset(0);
+    setOriginalConfigs((stored) => {
+      if (stored.length > 0) {
+        setConfigs(Object.fromEntries(stored.map((gate) => [gate.gate, gate])));
+      }
+      return stored;
+    });
+    setIsDirty(false);
+    setConflict(false);
+    if (initialGate) setSelectedGate(initialGate);
+    if (initialTab) setActiveTab(initialTab);
+    if (initialDate) {
+      const targetMonth = dayjs(initialDate).startOf("month");
+      const currentMonth = dayjs().startOf("month");
+      setMonthOffset(targetMonth.diff(currentMonth, "month"));
+    } else {
+      setMonthOffset(0);
+    }
     void loadConfigs(controller.signal);
     return () => controller.abort();
-  }, [isOpen, loadConfigs]);
+  }, [isOpen, initialGate, initialTab, initialDate, loadConfigs]);
 
   if (!isOpen) return null;
 
