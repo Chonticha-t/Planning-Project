@@ -93,6 +93,20 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const [focusedBoardDate, setFocusedBoardDate] = useState<string | null>(null);
 
   const [capacityModalOpen, setCapacityModalOpen] = useState(false);
+  const [capacityModalTarget, setCapacityModalTarget] = useState<{
+    gate?: string | null;
+    tab?: "standard" | "special" | "table";
+    date?: string | null;
+  }>({});
+  const handleOpenCapacity = (
+    gate?: string | null,
+    tab?: "standard" | "special" | "table",
+    date?: string | null
+  ) => {
+    setSelectedLotId(null);
+    setCapacityModalTarget({ gate, tab, date });
+    setCapacityModalOpen(true);
+  };
   const [capacityEditingScopes, setCapacityEditingScopes] = useState<EditingScope[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -567,10 +581,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         }}
         dateRangeText={dateRangeText}
         editingPresence={!readOnly && <EditingPresence {...presence} scopes={editingScopes} username={user?.username} />}
-        onOpenCapacityModal={() => {
-          setSelectedLotId(null);
-          setCapacityModalOpen(true);
-        }}
+        onOpenCapacityModal={() => handleOpenCapacity(null, "standard")}
         onReload={() => void load(true)}
         isLoading={loading || saving}
         canReset={!readOnly && Boolean(data) && !loading && !saving}
@@ -725,10 +736,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             planVersion={data.plan?.version ?? 0}
             onApply={handleStageMoveLot}
             onCancel={() => setSelectedLotId(null)}
-            onOpenCapacityModal={() => {
-              setSelectedLotId(null);
-              setCapacityModalOpen(true);
-            }}
+            onOpenCapacityModal={() => handleOpenCapacity(selectedLot?.gate, "standard")}
             isDraggingCard={Boolean(draggedLot)}
           />
 
@@ -781,6 +789,9 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         onEditingChange={setCapacityEditingScopes}
         onClose={() => setCapacityModalOpen(false)}
         onSaved={() => void load(true)}
+        initialGate={capacityModalTarget.gate}
+        initialTab={capacityModalTarget.tab}
+        initialDate={capacityModalTarget.date}
       />
     </div>
   );

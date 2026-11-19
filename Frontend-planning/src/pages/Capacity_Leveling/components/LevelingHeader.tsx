@@ -187,10 +187,11 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
             type="button"
             onClick={onOpenCapacityModal}
             disabled={readOnly}
-            className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer"
+            title="Configure machines (MC), shifts, and OT calendar"
+            className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Settings size={13} className="text-base-content/70" />
-            <span>Capacity</span>
+            <span>Capacity & OT</span>
           </button>
 
           <button
