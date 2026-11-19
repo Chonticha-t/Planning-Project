@@ -1,10 +1,31 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import { X } from "lucide-react";
 import type { DayGateLoad, GateInfo, PlanMode, LevelingKpiData, ProcessCategory } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { cellPct, loadStatus, pctPillClass } from "../utils/levelingCalculations";
+import { cellPct, loadStatus } from "../utils/levelingCalculations";
 import { dailyGateTotals } from "../utils/dailyGateTotals";
+
+interface HoverBreakdownTooltip {
+  top: number;
+  left: number;
+  placeAbove: boolean;
+  title: string;
+  pctLabel: string | null;
+  inGatePcs: number | null;
+  inGateSheets: number | null;
+  inGateLots: number | null;
+  comingPcs: number | null;
+  comingSheets: number | null;
+  comingLots: number | null;
+  needWipPcs: number | null;
+  needWipSheets: number | null;
+  needCount: number | null;
+  totalPcs: number | null;
+  totalSheets: number | null;
+  totalLots: number | null;
+}
 
 export type GridUnitMode = "pct" | "piece" | "sheet" | "lot";
 
@@ -45,12 +66,30 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
   onSelectCell,
 }) => {
   const [unitMode, setUnitMode] = useState<GridUnitMode>("pct");
+  const [hoverTooltip, setHoverTooltip] = useState<HoverBreakdownTooltip | null>(null);
   const isCompare = planMode === "required" && Boolean(requiredGridData);
+
+  const openHoverTooltip = (
+    el: HTMLElement,
+    info: Omit<HoverBreakdownTooltip, "top" | "left" | "placeAbove">
+  ) => {
+    const rect = el.getBoundingClientRect();
+    const tooltipWidth = 200;
+    const tooltipHeight = 115;
+    const placeAbove = rect.bottom + tooltipHeight + 12 > window.innerHeight && rect.top > tooltipHeight + 12;
+    const top = placeAbove ? rect.top - 6 : rect.bottom + 6;
+    const left = Math.max(
+      10,
+      Math.min(rect.left + rect.width / 2 - tooltipWidth / 2, window.innerWidth - tooltipWidth - 10)
+    );
+    setHoverTooltip({ ...info, top, left, placeAbove });
+  };
 
   // Keep the two tables (Required / Planned) scrolled together horizontally
   const scrollRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const syncingRef = React.useRef(false);
   const handleScroll = (idx: number) => {
+    setHoverTooltip(null);
     if (syncingRef.current) return;
     const src = scrollRefs.current[idx];
     if (!src) return;
@@ -71,21 +110,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
       onSelectCell(gateId, dateStr);
     }
   };
-
-  // Compute summary metrics for the currently clicked cell (if both gate & date are selected)
-  const selectedCellSummary = React.useMemo(() => {
-    if (!selectedGate || !selectedDate) return null;
-    const dayCol = gridData.find((d) => d.date === selectedDate);
-    const gInfo = dayCol?.gates[selectedGate];
-    if (!gInfo) return null;
-    return {
-      pct: cellPct(gInfo, planMode === "planned"),
-      pcs: gInfo.totalPcs,
-      sheets: gInfo.totalSheets,
-      lots: gInfo.lotCount,
-      need: gInfo.needCount,
-    };
-  }, [gridData, selectedGate, selectedDate, planMode]);
 
   // One Gate Load table (used once in Planned mode, twice in Required mode)
   const renderTable = (data: DayGateLoad[], idx: number, allowPreview: boolean) => (
@@ -189,16 +213,38 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                   {data.map((col) => {
                     const gInfo = col.gates[gate.id];
 
+                    const showCellBreakdown = (el: HTMLElement, pctLabel: string | null) => {
+                      openHoverTooltip(el, {
+                        title: `${gate.name} · ${dayjs(col.date).format("DD/MM/YYYY")}`,
+                        pctLabel,
+                        inGatePcs: gInfo?.quantities?.in_gate.piece ?? 0,
+                        inGateSheets: gInfo?.quantities?.in_gate.sheet ?? 0,
+                        inGateLots: gInfo?.quantities?.in_gate.lot ?? 0,
+                        comingPcs: gInfo?.quantities?.coming.piece ?? 0,
+                        comingSheets: gInfo?.quantities?.coming.sheet ?? 0,
+                        comingLots: gInfo?.quantities?.coming.lot ?? 0,
+                        needWipPcs: gInfo?.quantities?.need_wip.piece ?? 0,
+                        needWipSheets: gInfo?.quantities?.need_wip.sheet ?? 0,
+                        needCount: gInfo?.needCount ?? 0,
+                        totalPcs: gInfo?.totalPcs ?? 0,
+                        totalSheets: gInfo?.totalSheets ?? 0,
+                        totalLots: gInfo?.lotCount ?? 0,
+                      });
+                    };
+
                     if (!gInfo || gInfo.off || gInfo.capacityMin === 0) {
                       return (
                         <td key={col.date} className="p-[3px] align-middle">
                           <button
                             type="button"
                             onClick={() => handleCellClick(gate.id, col.date)}
-                            title={gInfo && gInfo.lotCount > 0
-                              ? `${gate.name} is closed on ${col.displayDate} but ${gInfo.lotCount} actual lot(s) are scheduled to arrive`
-                              : undefined}
-                            className={`w-full h-[66px] min-h-[66px] rounded-[8px] border border-dashed flex flex-col items-center justify-center text-[10.5px] font-bold ${
+                            onMouseEnter={(e) => {
+                              if (gInfo && (gInfo.lotCount > 0 || gInfo.needCount > 0)) {
+                                showCellBreakdown(e.currentTarget, !gInfo || gInfo.off ? "OFF" : "No capacity");
+                              }
+                            }}
+                            onMouseLeave={() => setHoverTooltip(null)}
+                            className={`w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed flex flex-col items-center justify-center text-[10.5px] font-bold ${
                               gInfo && gInfo.lotCount > 0
                                 ? "border-rose-300 bg-rose-50 text-rose-700"
                                 : "border-slate-200/80 bg-slate-50/80 text-slate-400"
@@ -206,7 +252,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                           >
                             <span>{!gInfo || gInfo.off ? "OFF" : "No capacity"}</span>
                             {gInfo && gInfo.lotCount > 0 && (
-                              <span className="text-[9px] font-semibold">{gInfo.lotCount} arrivals</span>
+                              <span className="text-[9px] font-semibold">{gInfo.lotCount} lots</span>
                             )}
                             {Boolean(gInfo?.needCount) && <span className="text-[9px]">{gInfo.needCount} need</span>}
                           </button>
@@ -228,17 +274,20 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                             type="button"
                             aria-pressed={isCellSelected}
                             onClick={() => handleCellClick(gate.id, col.date)}
-                            title={`${gate.name} · ${col.displayDate}: ${gInfo.missingPlanning > 0 ? "Check normal shift minutes" : "MC is not set"}; Load % is unavailable | ${formatGateQuantity(pcs, "piece")} pcs | ${lots} lots`}
-                            className={`w-full h-[66px] min-h-[66px] rounded-[8px] border border-dashed border-amber-300 bg-amber-50/60 text-amber-800 flex flex-col items-center justify-center gap-1 py-1.5 px-1.5 cursor-pointer tabular-nums ${
+                            onMouseEnter={(e) =>
+                              showCellBreakdown(
+                                e.currentTarget,
+                                gInfo.missingPlanning > 0 ? "Check plan" : "Set MC"
+                              )
+                            }
+                            onMouseLeave={() => setHoverTooltip(null)}
+                            className={`w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed border-amber-300 bg-amber-50/60 text-amber-800 flex flex-col items-center justify-center gap-1 py-1 px-1.5 cursor-pointer tabular-nums ${
                               isCellSelected ? "ring-2 ring-[#4f46e5] shadow-xs" : ""
                             }`}
                           >
                             <span className="text-[11px] font-extrabold leading-none whitespace-nowrap">{gInfo.missingPlanning > 0 ? "Check plan" : "Set MC"}</span>
-                            <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
-                              {formatGateQuantity(pcs, "piece")} pcs
-                            </span>
                             <span className="text-[9px] opacity-75 leading-none whitespace-nowrap">{lots} lots</span>
-                            {gInfo.needCount > 0 && <span className="text-[9px]">{gInfo.needCount} need</span>}
+                            {gInfo.needCount > 0 && <span className="text-[9px] leading-none">{gInfo.needCount} need</span>}
                           </button>
                         </td>
                       );
@@ -260,7 +309,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                       : status === "yellow"
                       ? "bg-[#fef3c7] text-[#92400e] font-bold"
                       : "bg-[#d1fae5] text-[#065f46] font-semibold";
-                    const missingNote = " | Actual arrivals only for load; Need WIP excluded from load, included in pcs/sheets; capacity is shared by all groups";
 
                     return (
                       <td key={col.date} className="p-[3px] align-middle">
@@ -268,8 +316,9 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                           type="button"
                           aria-pressed={isCellSelected}
                           onClick={() => handleCellClick(gate.id, col.date)}
-                          title={`${gate.name} · ${col.displayDate}: ${displayPct}% load (${Math.round(gInfo.loadMin).toLocaleString()} / ${Math.round(gInfo.capacityMin ?? 0).toLocaleString()} min${gInfo.isDefaultMc ? " (default 1 MC)" : ""}${gInfo.hasOt ? ", OT open" : ""}) | ${formatGateQuantity(pcs, "piece")} pcs | ${formatGateQuantity(sheets, "sheet")} sheets | ${lots} lots${missingNote}`}
-                          className={`w-full h-[66px] min-h-[66px] rounded-[8px] flex flex-col items-center justify-center gap-1 py-1.5 px-1.5 transition-all cursor-pointer tabular-nums hover:brightness-95 focus-visible:outline-2 focus-visible:outline-primary ${pillStyle} ${
+                          onMouseEnter={(e) => showCellBreakdown(e.currentTarget, `${displayPct}%`)}
+                          onMouseLeave={() => setHoverTooltip(null)}
+                          className={`w-full h-[54px] min-h-[54px] rounded-[8px] flex flex-col items-center justify-center gap-1 py-1 px-1.5 transition-all cursor-pointer tabular-nums hover:brightness-95 focus-visible:outline-2 focus-visible:outline-primary ${pillStyle} ${
                             isCellSelected
                               ? "ring-2 ring-[#4f46e5] shadow-xs"
                               : hasPreview
@@ -289,9 +338,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                                   </span>
                                 </div>
                                 <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
-                                  {formatGateQuantity(pcs, "piece")} pcs
-                                </span>
-                                <span className="text-[9px] opacity-75 leading-none whitespace-nowrap">
                                   {lots} lots
                                 </span>
                               </>
@@ -301,9 +347,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                                   {displayPct}%
                                 </span>
                                 <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
-                                  {formatGateQuantity(pcs, "piece")} pcs
-                                </span>
-                                <span className="text-[9px] opacity-75 leading-none whitespace-nowrap">
                                   {lots} lots
                                 </span>
                               </>
@@ -314,11 +357,8 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                               <span className="text-[12px] font-extrabold leading-none whitespace-nowrap">
                                 {formatGateQuantity(pcs, "piece")}
                               </span>
-                              <span className="text-[9.5px] font-medium opacity-75 leading-none whitespace-nowrap">
-                                pcs
-                              </span>
-                              <span className="text-[9.5px] opacity-80 leading-none whitespace-nowrap">
-                                {displayPct}% · {lots} lots
+                              <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
+                                pcs · {lots} lots
                               </span>
                             </>
                           )}
@@ -328,11 +368,8 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                               <span className="text-[12px] font-extrabold leading-none whitespace-nowrap">
                                 {formatGateQuantity(sheets, "sheet")}
                               </span>
-                              <span className="text-[9.5px] font-medium opacity-75 leading-none whitespace-nowrap">
-                                sheets
-                              </span>
-                              <span className="text-[9.5px] opacity-80 leading-none whitespace-nowrap">
-                                {displayPct}% · {lots} lots
+                              <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
+                                sheets · {lots} lots
                               </span>
                             </>
                           )}
@@ -342,11 +379,8 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                               <span className="text-[12.5px] font-extrabold leading-none whitespace-nowrap">
                                 {lots}
                               </span>
-                              <span className="text-[9.5px] font-medium opacity-75 leading-none whitespace-nowrap">
+                              <span className="text-[9.5px] font-medium opacity-80 leading-none whitespace-nowrap">
                                 lots
-                              </span>
-                              <span className="text-[9.5px] opacity-80 leading-none whitespace-nowrap">
-                                {displayPct}% · {pcs === null ? "N/A" : `${(pcs / 1000).toFixed(1)}k`}
                               </span>
                             </>
                           )}
@@ -382,42 +416,58 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                     : unitMode === "sheet" ? formatGateQuantity(total.totalSheets, "sheet")
                     : formatGateQuantity(total.lotCount, "lot");
                   const preview = allowPreview && gates.some(({ gate }) => col.gates[gate]?.previewPct !== undefined);
-                  const totalStyle = total.pct !== null ? pctPillClass(total.pct)
-                    : total.incompleteGates > 0 ? "bg-amber-50/60 text-amber-800"
-                    : total.overloadGates > 0 ? "bg-rose-50 text-rose-700"
-                    : "bg-slate-50/80 text-slate-400";
-                  const totalBorder = preview ? "border-dashed border-[#4f46e5]"
-                    : total.pct !== null ? "border-transparent"
-                    : total.incompleteGates > 0 ? "border-dashed border-amber-300"
-                    : total.overloadGates > 0 ? "border-dashed border-rose-300"
-                    : "border-dashed border-slate-200/80";
-                  const details = `${formatGateQuantity(total.totalPcs, "piece")} pcs · ${formatGateQuantity(total.totalSheets, "sheet")} sheets · ${formatGateQuantity(total.lotCount, "lot")} gate-lots`;
+                  const isZero = total.lotCount === 0 && total.totalPcs === 0;
+                  const totalStyle = isZero
+                    ? "bg-slate-50/80 text-slate-400"
+                    : "bg-slate-100 text-slate-800 font-bold";
+                  const totalBorder = preview
+                    ? "border-dashed border-[#4f46e5]"
+                    : isZero
+                    ? "border-dashed border-slate-200/80"
+                    : "border-slate-200";
                   return (
                     <td key={col.date} className="p-[3px] align-top">
                       <div
                         data-daily-total={col.date}
                         data-total-unit={unitMode}
                         data-preview={preview || undefined}
-                        title={`${col.displayDate} · ${preview ? "Preview · " : ""}Total load ${loadLabel} (${total.loadMin === null ? "N/A" : total.loadMin.toLocaleString()} / ${total.capacityMin === null ? "N/A" : total.capacityMin.toLocaleString()} min) · ${details} · ${total.needCount ?? "N/A"} need · ${total.unidentifiedCount ?? "N/A"} no lot ID · ${total.overloadGates} overloaded gate(s) · ${total.incompleteGates} gate(s) with incomplete load/capacity data. Load = total workload minutes / total capacity minutes. Quantities include Need WIP; load excludes it. Cross-gate totals may count the same lot again.`}
-                        className={`flex h-[66px] min-h-[66px] w-full flex-col items-center justify-center gap-0.5 rounded-[8px] border px-1 py-0.5 tabular-nums ${totalStyle} ${totalBorder}`}>
+                        onMouseEnter={(e) =>
+                          openHoverTooltip(e.currentTarget, {
+                            title: `TOTAL · ${dayjs(col.date).format("DD/MM/YYYY")}`,
+                            pctLabel: loadLabel,
+                            inGatePcs: total.inGatePcs,
+                            inGateSheets: total.inGateSheets,
+                            inGateLots: total.inGateLots,
+                            comingPcs: total.comingPcs,
+                            comingSheets: total.comingSheets,
+                            comingLots: total.comingLots,
+                            needWipPcs: total.needWipPcs,
+                            needWipSheets: total.needWipSheets,
+                            needCount: total.needCount,
+                            totalPcs: total.totalPcs,
+                            totalSheets: total.totalSheets,
+                            totalLots: total.lotCount,
+                          })
+                        }
+                        onMouseLeave={() => setHoverTooltip(null)}
+                        className={`flex h-[54px] min-h-[54px] w-full flex-col items-center justify-center gap-1 rounded-[8px] border px-1 py-1 tabular-nums ${totalStyle} ${totalBorder}`}>
                         <span className="max-w-full shrink-0 truncate text-[12px] font-extrabold leading-none">{mainValue}</span>
-                        {!(loadLabel === "OFF" && total.totalPcs === 0) && <span className="max-w-full shrink-0 truncate text-[9.5px] font-medium leading-none opacity-80">
-                          {unitMode === "pct" ? `${formatGateQuantity(total.totalPcs, "piece")} pcs`
-                            : unitMode === "piece" ? "pcs"
-                            : unitMode === "sheet" ? "sheets" : "gate-lots"}
-                        </span>}
-                        {!(loadLabel === "OFF" && total.lotCount === 0) && <span className="max-w-full shrink-0 truncate text-[9px] leading-none opacity-75">
-                          {unitMode === "pct" ? `${formatGateQuantity(total.lotCount, "lot")} gate-lots`
-                            : `${loadLabel}${unitMode !== "lot" ? ` · ${formatGateQuantity(total.lotCount, "lot")} lots` : ""}`}
-                        </span>}
+                        {!(loadLabel === "OFF" && total.lotCount === 0 && total.totalPcs === 0) && (
+                          <span className="max-w-full shrink-0 truncate text-[9.5px] font-medium leading-none opacity-80">
+                            {unitMode === "pct"
+                              ? `${formatGateQuantity(total.lotCount, "lot")} lots`
+                              : unitMode === "piece"
+                              ? `pcs · ${formatGateQuantity(total.lotCount, "lot")} lots`
+                              : unitMode === "sheet"
+                              ? `sheets · ${formatGateQuantity(total.lotCount, "lot")} lots`
+                              : "lots"}
+                          </span>
+                        )}
                         {Boolean(total.needCount || total.unidentifiedCount) && (
                           <span className="max-w-full shrink-0 truncate text-[9px] leading-none opacity-80">
                             {total.needCount ? `${total.needCount} need` : ""}{total.unidentifiedCount ? ` ${total.unidentifiedCount} no ID` : ""}
                           </span>
                         )}
-                        {!(loadLabel === "OFF" && total.overloadGates === 0 && total.incompleteGates === 0) && <span className={`max-w-full shrink-0 truncate text-[9px] font-semibold leading-none ${total.overloadGates > 0 ? "text-rose-700" : "opacity-75"}`}>
-                          {total.overloadGates} over{total.incompleteGates > 0 ? ` · ${total.incompleteGates} incomplete` : ""}
-                        </span>}
                       </div>
                     </td>
                   );
@@ -468,13 +518,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               title={kpis.overloadDetail}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
             >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  kpis.overloadCells > 0
-                    ? "bg-rose-500"
-                    : "bg-emerald-500"
-                }`}
-              />
               <span className="text-base-content/60 font-medium">Overload</span>
               <span className="font-bold text-base-content">
                 {kpis.overloadCells}
@@ -491,11 +534,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               title={`${kpis.lateDetail}${kpis.orderCards ? ` · ${kpis.orderCards} with impossible gate order` : ""}`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
             >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  kpis.lateCards > 0 ? "bg-amber-500" : "bg-emerald-500"
-                }`}
-              />
               <span className="text-base-content/60 font-medium">
                 After must-out
               </span>
@@ -509,7 +547,6 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               title={`${kpis.movedEarlier} earlier · ${kpis.movedLater} later`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
             >
-              <span className="w-2 h-2 rounded-full bg-[#4f46e5]" />
               <span className="text-base-content/60 font-medium">Moved</span>
               <span className="font-bold text-base-content">
                 {kpis.movedCount}
@@ -520,7 +557,7 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
             </div>
           </div>
 
-          {/* Active Selection Pill showing Gate · Date + % / Pcs / Sheet / Lot when clicked */}
+          {/* Active Selection Pill */}
           {(selectedGate || selectedDate) && (
             <button
               type="button"
@@ -531,13 +568,10 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
               <span>
                 {[
                   selectedGate,
-                  selectedDate ? dayjs(selectedDate).format("DD/MM") : null,
+                  selectedDate ? dayjs(selectedDate).format("DD/MM/YYYY") : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
-                {selectedCellSummary
-                  ? ` — ${selectedCellSummary.pct === null ? "no %" : `${selectedCellSummary.pct}%`} · ${formatGateQuantity(selectedCellSummary.pcs, "piece")} pcs · ${formatGateQuantity(selectedCellSummary.sheets, "sheet")} sheets · ${selectedCellSummary.lots} lots / ${selectedCellSummary.need} need`
-                  : ""}
               </span>
               <X size={12} />
             </button>
@@ -597,6 +631,87 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
       ) : (
         renderTable(gridData, 0, true)
       )}
+
+      {hoverTooltip &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            style={{
+              top: hoverTooltip.top,
+              left: hoverTooltip.left,
+              transform: hoverTooltip.placeAbove ? "translateY(-100%)" : undefined,
+              backgroundColor: "var(--color-base-100, #fff)",
+            }}
+            className="pointer-events-none fixed z-[150] min-w-[200px] max-w-[240px] rounded-lg border border-base-300 bg-base-100 px-2.5 py-1.5 text-[11px] leading-snug shadow-lg flex flex-col gap-0.5"
+          >
+            <div className="flex items-center justify-between gap-2 font-bold text-base-content pb-0.5 border-b border-base-200">
+              <span>{hoverTooltip.title}</span>
+              {hoverTooltip.pctLabel && (
+                <span className="font-extrabold text-base-content/80 tabular-nums">
+                  {hoverTooltip.pctLabel}
+                </span>
+              )}
+            </div>
+            {(() => {
+              const formatRowVal = (
+                pcs: number | null,
+                sheets: number | null,
+                lots: number | null,
+                isNeed = false
+              ) => {
+                if (unitMode === "sheet") {
+                  return `${formatGateQuantity(sheets, "sheet")} sheets (${lots ?? 0} ${isNeed ? "need" : "lots"})`;
+                }
+                if (unitMode === "lot") {
+                  return `${lots ?? 0} ${isNeed ? "need" : "lots"}`;
+                }
+                return `${formatGateQuantity(pcs, "piece")} pcs (${lots ?? 0} ${isNeed ? "need" : "lots"})`;
+              };
+              const formatTotalVal = (
+                pcs: number | null,
+                sheets: number | null,
+                lots: number | null
+              ) => {
+                if (unitMode === "sheet") {
+                  return `${formatGateQuantity(sheets, "sheet")} sheets`;
+                }
+                if (unitMode === "lot") {
+                  return `${formatGateQuantity(lots, "lot")} lots`;
+                }
+                return `${formatGateQuantity(pcs, "piece")} pcs`;
+              };
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-2 whitespace-nowrap text-blue-600">
+                    <span>In Gate:</span>
+                    <span className="font-semibold tabular-nums">
+                      {formatRowVal(hoverTooltip.inGatePcs, hoverTooltip.inGateSheets, hoverTooltip.inGateLots)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 whitespace-nowrap text-cyan-600">
+                    <span>Coming:</span>
+                    <span className="font-semibold tabular-nums">
+                      {formatRowVal(hoverTooltip.comingPcs, hoverTooltip.comingSheets, hoverTooltip.comingLots)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 whitespace-nowrap text-orange-600">
+                    <span>Need WIP:</span>
+                    <span className="font-semibold tabular-nums">
+                      {formatRowVal(hoverTooltip.needWipPcs, hoverTooltip.needWipSheets, hoverTooltip.needCount, true)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 whitespace-nowrap font-bold pt-0.5 border-t border-base-200 text-base-content">
+                    <span>Total:</span>
+                    <span className="font-black tabular-nums">
+                      {formatTotalVal(hoverTooltip.totalPcs, hoverTooltip.totalSheets, hoverTooltip.totalLots)}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

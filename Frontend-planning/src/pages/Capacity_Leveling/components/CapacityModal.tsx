@@ -27,6 +27,9 @@ interface CapacityModalProps {
   /** Called after settings were stored, so the page can recalculate Load % */
   onSaved: () => void;
   onEditingChange?: (scopes: EditingScope[]) => void;
+  initialGate?: string | null;
+  initialTab?: "standard" | "special" | "table";
+  initialDate?: string | null;
 }
 
 const SHIFTS = [
@@ -64,10 +67,13 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
   onClose,
   onSaved,
   onEditingChange,
+  initialGate,
+  initialTab,
+  initialDate,
 }) => {
   const { requirePlanner } = useAuth();
-  const [selectedGate, setSelectedGate] = useState("FADL");
-  const [activeTab, setActiveTab] = useState<"standard" | "special" | "table">("standard");
+  const [selectedGate, setSelectedGate] = useState(initialGate || "FADL");
+  const [activeTab, setActiveTab] = useState<"standard" | "special" | "table">(initialTab || "standard");
   const [selectedShift, setSelectedShift] = useState<Shift>("day");
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
   const [configs, setConfigs] = useState<Record<string, GateShiftConfig> | null>(null);
@@ -115,15 +121,23 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
     }
   }, []);
 
-  // Always start from the stored settings when the modal opens.
+  // Always start from the stored settings when the modal opens, applying initial focus
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
     setConfigs(null);
-    setMonthOffset(0);
+    if (initialGate) setSelectedGate(initialGate);
+    if (initialTab) setActiveTab(initialTab);
+    if (initialDate) {
+      const targetMonth = dayjs(initialDate).startOf("month");
+      const currentMonth = dayjs().startOf("month");
+      setMonthOffset(targetMonth.diff(currentMonth, "month"));
+    } else {
+      setMonthOffset(0);
+    }
     void loadConfigs(controller.signal);
     return () => controller.abort();
-  }, [isOpen, loadConfigs]);
+  }, [isOpen, initialGate, initialTab, initialDate, loadConfigs]);
 
   if (!isOpen) return null;
 
@@ -210,6 +224,9 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
   const activeCapMin = calcGateCapacityMin(gateCfg);
   const shiftCapMin = shiftCapacityMin(cfg);
+  const originalGateCfg = originalConfigs.find((g) => g.gate === activeGate);
+  const originalCapMin = originalGateCfg ? calcGateCapacityMin(originalGateCfg) : null;
+  const capDiff = activeCapMin !== null && originalCapMin !== null ? activeCapMin - originalCapMin : 0;
 
   // ---- Special days: pick an action, then click (or drag over) dates ----
   const targetShifts: Shift[] = overrideTarget === "both" ? ["day", "night"] : [overrideTarget];
@@ -451,16 +468,83 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                   <div className="h-8 w-px bg-[var(--shift-accent-border)]" />
                   <div>
                     <div className="text-[10px] font-bold uppercase text-[color:var(--shift-accent-text)] opacity-80">Gate total / day</div>
-                    <div className="text-base font-extrabold text-[color:var(--shift-accent-text)]">{formatMinutes(activeCapMin)}</div>
+                    <div className="flex items-baseline justify-end gap-1.5">
+                      <span className="text-base font-extrabold text-[color:var(--shift-accent-text)]">{formatMinutes(activeCapMin)}</span>
+                      {capDiff !== 0 && (
+                        <span className={`text-[11px] font-bold ${capDiff > 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                          ({capDiff > 0 ? `+${formatMinutes(capDiff)}` : `-${formatMinutes(Math.abs(capDiff))}`})
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Section: Breaks */}
+              {/* 1. Primary: Machines & Shifts (Core Driver of Capacity) */}
+              <section className="rounded-2xl border border-base-300 bg-base-100 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold">1. Machines & Shift Hours</div>
+                    <div className="text-[11px] text-base-content/50">Number of machine lines and shift duration for {shiftLabel.toLowerCase()}</div>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold">
+                    <input
+                      type="checkbox"
+                      aria-label="Enable selected shift"
+                      checked={cfg.enabled}
+                      onChange={(e) => updateCurrentShift({ enabled: e.target.checked })}
+                      className="toggle toggle-sm toggle-primary"
+                    />
+                    {cfg.enabled ? "Shift active" : "Shift off"}
+                  </label>
+                </div>
+                <div className={`grid grid-cols-1 gap-2.5 sm:grid-cols-3 ${cfg.enabled ? "" : "opacity-60"}`}>
+                  <NumField
+                    label="Machines (MC)"
+                    icon={<Folder size={13} />}
+                    hint={cfg.mcLines === null ? "Default: 1 MC (not set)" : "Dedicated machine count"}
+                    value={cfg.mcLines}
+                    onChange={(v) => updateCurrentShift({ mcLines: optionalNumber(v) })}
+                  />
+                  <NumField
+                    label="Minutes / shift"
+                    unit="min"
+                    value={cfg.minPerShift}
+                    onChange={(v) => updateCurrentShift({ minPerShift: Number(v) })}
+                  />
+                  <NumField
+                    label="Manpower"
+                    icon={<Users size={13} />}
+                    value={cfg.manpower}
+                    onChange={(v) => updateCurrentShift({ manpower: optionalNumber(v) })}
+                  />
+                </div>
+              </section>
+
+              {/* 2. Secondary: Overtime (OT) */}
               <section className="rounded-2xl border border-base-300 bg-base-100 p-4">
                 <div className="mb-3">
-                  <div className="text-sm font-bold">Breaks</div>
-                  <div className="text-[11px] text-base-content/50">Turned-on breaks are deducted from every shift</div>
+                  <div className="text-sm font-bold">2. Daily Overtime (OT)</div>
+                  <div className="text-[11px] text-base-content/50">
+                    Default daily overtime · To open OT on single calendar dates use <button type="button" className="font-semibold text-[#4f46e5] underline-offset-2 hover:underline cursor-pointer" onClick={() => setActiveTab("special")}>② Special Days</button>
+                  </div>
+                </div>
+                <div className="max-w-xs sm:max-w-sm">
+                  <NumField
+                    label={cfg.otEnabled ? "Daily OT (Open)" : "Daily OT (Closed)"}
+                    unit="min"
+                    toggle={{ checked: cfg.otEnabled, onChange: (c) => updateCurrentShift({ otEnabled: c }) }}
+                    value={cfg.otMinutes}
+                    onChange={(v) => updateCurrentShift({ otMinutes: Number(v) })}
+                  />
+                </div>
+              </section>
+
+              {/* 3. Deductions: Breaks */}
+              <section className="rounded-2xl border border-base-300 bg-base-100 p-4">
+                <div className="mb-3">
+                  <div className="text-sm font-bold">3. Breaks</div>
+                  <div className="text-[11px] text-base-content/50">Turned-on breaks are deducted from operating minutes</div>
                 </div>
                 <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
                   <NumField
@@ -486,66 +570,6 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                   />
                 </div>
               </section>
-
-              {/* Section: Overtime */}
-              <section className="rounded-2xl border border-base-300 bg-base-100 p-4">
-                <div className="mb-3">
-                  <div className="text-sm font-bold">Overtime (OT)</div>
-                  <div className="text-[11px] text-base-content/50">
-                    Default for every day · open OT on single dates in <button type="button" className="font-semibold text-[#4f46e5] underline-offset-2 hover:underline cursor-pointer" onClick={() => setActiveTab("special")}>② Special Days</button>
-                  </div>
-                </div>
-                <div className="max-w-xs sm:max-w-sm">
-                  <NumField
-                    label={cfg.otEnabled ? "Daily OT (Open)" : "Daily OT (Closed)"}
-                    unit="min"
-                    toggle={{ checked: cfg.otEnabled, onChange: (c) => updateCurrentShift({ otEnabled: c }) }}
-                    value={cfg.otMinutes}
-                    onChange={(v) => updateCurrentShift({ otMinutes: Number(v) })}
-                  />
-                </div>
-              </section>
-
-              {/* Section: Shift */}
-              <section className="rounded-2xl border border-base-300 bg-base-100 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-bold">Shift</div>
-                    <div className="text-[11px] text-base-content/50">Machines, people and working time of the {shiftLabel.toLowerCase()}</div>
-                  </div>
-                  <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold">
-                    <input
-                      type="checkbox"
-                      aria-label="Enable selected shift"
-                      checked={cfg.enabled}
-                      onChange={(e) => updateCurrentShift({ enabled: e.target.checked })}
-                      className="toggle toggle-sm toggle-primary"
-                    />
-                    {cfg.enabled ? "Shift active" : "Shift off"}
-                  </label>
-                </div>
-                <div className={`grid grid-cols-1 gap-2.5 sm:grid-cols-3 ${cfg.enabled ? "" : "opacity-60"}`}>
-                  <NumField
-                    label="MC (lines)"
-                    icon={<Folder size={13} />}
-                    hint={cfg.mcLines === null ? "Default: 1 MC (not set)" : "Empty until known"}
-                    value={cfg.mcLines}
-                    onChange={(v) => updateCurrentShift({ mcLines: optionalNumber(v) })}
-                  />
-                  <NumField
-                    label="Manpower"
-                    icon={<Users size={13} />}
-                    value={cfg.manpower}
-                    onChange={(v) => updateCurrentShift({ manpower: optionalNumber(v) })}
-                  />
-                  <NumField
-                    label="Minutes / shift"
-                    unit="min"
-                    value={cfg.minPerShift}
-                    onChange={(v) => updateCurrentShift({ minPerShift: Number(v) })}
-                  />
-                </div>
-              </section>
             </div>
           </div>
         )}
@@ -555,6 +579,15 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
            ========================================================= */}
         {activeTab === "special" && (
           <div className="flex-1 min-h-0 overflow-y-auto bg-base-200/30 p-5 space-y-4 tabular-nums">
+            {initialDate && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-900">
+                <span className="font-semibold">
+                  Target: <strong>{activeGate}</strong> · <strong>{dayjs(initialDate).format("DD/MM/YYYY")}</strong>
+                </span>
+                <span className="text-[11px] opacity-80">Click the highlighted date in the calendar below to toggle OT or custom shift hours</span>
+              </div>
+            )}
+
             {/* Steps 1–3 */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <section className="rounded-2xl border border-base-300 bg-base-100 p-3.5">
@@ -685,6 +718,8 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
                           if (e.detail === 0) startPaint(date);
                         }}
                         className={`h-12 rounded-lg font-bold text-xs transition-colors cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                          initialDate === date ? "ring-2 ring-[#4f46e5] ring-offset-2 shadow-sm font-extrabold" : ""
+                        } ${
                           ov === "ot"
                             ? "bg-amber-100 text-amber-900 border border-amber-300"
                             : ov === "work"
@@ -815,9 +850,18 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-100">
-          <span className={`text-xs ${isDirty ? "font-semibold text-amber-700" : "text-base-content/50"}`}>
-            {isDirty ? "● Unsaved changes — Save stores standard capacity and special days together" : "No changes"}
-          </span>
+          {(() => {
+            const dirtyGateNames = originalConfigs
+              .filter((gate) => JSON.stringify(gate) !== JSON.stringify(configs[gate.gate]))
+              .map((g) => g.gate);
+            return (
+              <span className={`text-xs ${isDirty ? "font-semibold text-amber-700" : "text-base-content/50"}`}>
+                {isDirty
+                  ? `● Unsaved changes in ${dirtyGateNames.length} gate(s): ${dirtyGateNames.join(", ")}`
+                  : "No changes"}
+              </span>
+            );
+          })()}
           <div className="flex items-center gap-2">
             <button
               type="button"

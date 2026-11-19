@@ -1,4 +1,4 @@
-import type { PlanningSummaryGateRow } from "../Planning_Summary_Gate/types";
+import type { GateQuantitySummary, PlanningSummaryGateRow } from "../Planning_Summary_Gate/types";
 
 export type ProcessCategory = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 
@@ -216,6 +216,7 @@ export interface GateCell {
   unidentifiedCount: number;
   totalPcs: number | null;
   totalSheets: number | null;
+  quantities?: GateQuantitySummary;
   /** Actual arrivals with missing normal shift minutes. */
   missingPlanning: number;
   shiftLoadMin: Record<Shift, number>;

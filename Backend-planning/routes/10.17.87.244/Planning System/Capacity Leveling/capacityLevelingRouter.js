@@ -769,8 +769,6 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
             throw new ValidationError("The planned arrival exceeds the supported calendar range.");
           }
           const { calendar } = await loadCalendar(allDates[0], calendarEnd);
-          const proposed = new Map(storedMoves.map((move) => [`${move.workKey}|${move.gate}`, move.plannedDate]));
-          const arrivalOf = (card) => proposed.get(`${card.workKey}|${card.gate}`) || card.baseDate;
           for (const move of moves) {
             const card = source.get(`${move.workKey}|${move.gate}`);
             if (dayCapacity(gateConfig.get(move.gate), move.plannedDate, calendar.isWorking(move.plannedDate)).off) {
@@ -778,16 +776,6 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
             }
             const end = arrivalEndDate(move.plannedDate, card.leadDays, calendar);
             if (!end) throw new ValidationError("The arrival has no complete planning window.");
-            for (const row of card.allocations) {
-              const sibling = (gate, arrival) => source.get(`${arrivalWorkKey({ ...row, gate_name: gate, arrive_by: arrival })}|${gate}`);
-              const previous = row.prev_gate && row.prev_arrive_by ? sibling(row.prev_gate, row.prev_arrive_by) : null;
-              const previousEnd = previous ? arrivalEndDate(arrivalOf(previous), previous.leadDays, calendar) || row.prev_must_out : row.prev_must_out;
-              const next = row.next_gate && row.next_arrive_by ? sibling(row.next_gate, row.next_arrive_by) : null;
-              const nextArrival = next ? arrivalOf(next) : row.next_arrive_by;
-              if ((previousEnd && move.plannedDate < previousEnd) || (nextArrival && end > nextArrival)) {
-                throw new ValidationError("The arrival overlaps the previous or next gate. Adjust the affected gate dates before saving.");
-              }
-            }
           }
         }
 

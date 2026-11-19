@@ -403,6 +403,7 @@ export const buildGrid = (
   const standardByGate = new Map(data.gates.map((gate) => [gate.gate, gate.standardShiftMin]));
   for (const [cell, rows] of buckets) {
     const summary = summarizeGateQuantities(rows);
+    cell.quantities = summary;
     cell.lotCount = summary.total.lot;
     cell.needCount = summary.needCount;
     cell.unidentifiedCount = summary.unidentifiedCount;
