@@ -133,7 +133,7 @@ const getColumns = (
     headerName: "Product",
     headerAlign: "center",
     flex: 1,
-    minWidth: 140,
+    minWidth: 150,
     renderCell: ({ value }) => (
       <span className="font-semibold text-base-content text-[14px]">{value}</span>
     ),
