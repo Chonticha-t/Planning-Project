@@ -2,7 +2,7 @@ import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
-import { ArrowRight, Calendar, AlertCircle, X } from "lucide-react";
+import { ArrowRight, Calendar, AlertCircle, X, Package, Clock } from "lucide-react";
 import type { LotItem, DayGateLoad, LevelingData, MoveWarning, ProcessCategory } from "../types";
 import { computeMovePreview, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
 
@@ -87,11 +87,18 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
       >
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-base-300 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar size={15} className="text-base-content/60" />
-            <h3 className="text-sm font-bold text-base-content">
-              {isBatch ? `Move ${lots.length} Cards · ${gate}` : `Confirm Move · ${gate}`}
-            </h3>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#eef2ff] border border-indigo-100 flex items-center justify-center text-[#4f46e5] shrink-0">
+              <Calendar size={16} />
+            </div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-base-content">
+                {isBatch ? `Move ${lots.length} Cards` : "Confirm Move"}
+              </h3>
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
+                {gate}
+              </span>
+            </div>
           </div>
           <button
             type="button"
@@ -105,15 +112,56 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
 
         {/* Body */}
         <div className="p-5 flex flex-col gap-3.5 tabular-nums overflow-y-auto min-h-0">
-          {/* Card Info */}
-          <div>
-            <div className="text-sm font-bold text-base-content break-all leading-snug">
-              {isBatch ? `${lots.length} selected cards` : `${lot.label} · ${lot.product}`}
+          {/* Card Info Box */}
+          <div className="rounded-xl border border-base-200 bg-base-200/40 p-3.5 flex flex-col gap-2.5">
+            {/* Top row: Product & Lot No. */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-base-content/45 mb-0.5">
+                  Product
+                </div>
+                <div className="text-sm font-bold text-base-content break-all leading-snug">
+                  {isBatch ? `${lots.length} selected cards` : lot.product}
+                </div>
+              </div>
+              {!isBatch && (
+                <div className="shrink-0 text-right">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-base-content/45 mb-0.5">
+                    Lot No.
+                  </div>
+                  <span className="inline-block font-mono text-xs font-bold text-base-content px-2 py-0.5 rounded-md bg-base-100 border border-base-300 shadow-2xs">
+                    {lot.label}
+                  </span>
+                </div>
+              )}
             </div>
-            <div className="text-xs text-base-content/55 mt-0.5">
-              {isBatch
-                ? `${formatGateQuantity(lots.some((item) => item.qty === null) ? null : lots.reduce((sum, item) => sum + (item.qty ?? 0), 0), "piece")} pcs total`
-                : `${formatGateQuantity(lot.qty, "piece")} pcs · Must out ${dayjs(lot.mustOut).format("DD/MM/YYYY")}`}
+
+            {/* Bottom row: Meta stats (Quantity & Must Out) */}
+            <div className="flex items-center gap-3 pt-2 border-t border-base-300/60 text-xs">
+              <div className="inline-flex items-center gap-1.5 text-base-content/70">
+                <Package size={13} className="text-base-content/45 shrink-0" />
+                <span>
+                  Qty: <strong className="text-base-content font-bold tabular-nums">
+                    {formatGateQuantity(
+                      isBatch
+                        ? lots.some((item) => item.qty === null) ? null : lots.reduce((sum, item) => sum + (item.qty ?? 0), 0)
+                        : lot.qty,
+                      "piece"
+                    )}
+                  </strong> pcs
+                </span>
+              </div>
+              {!isBatch && (
+                <>
+                  <span className="text-base-content/25">•</span>
+                  <div className="inline-flex items-center gap-1.5 text-base-content/70">
+                    <Clock size={13} className="text-base-content/45 shrink-0" />
+                    <span>
+                      Must out: <strong className="text-base-content font-semibold tabular-nums">{dayjs(lot.mustOut).format("DD/MM/YYYY")}</strong>
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -121,27 +169,29 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-xl bg-base-200/40 border border-base-300 px-3.5 py-3">
             <div>
               <div className="text-[10px] font-semibold uppercase text-base-content/45">
-                From
+                Current Date
               </div>
-              <div className="text-xs font-semibold text-base-content/75 mt-0.5">
+              <div className="text-xs font-semibold text-base-content/80 mt-0.5">
                 {sourceDates.size > 1 ? `${sourceDates.size} dates` : dayjs(lot.plannedDate).format("ddd DD/MM/YYYY")}
               </div>
             </div>
 
             <div className="flex flex-col items-center px-2">
-              <ArrowRight size={14} className="text-base-content/40" />
+              <div className="w-6 h-6 rounded-full bg-base-100 border border-base-300 flex items-center justify-center text-base-content/60 shadow-2xs">
+                <ArrowRight size={13} />
+              </div>
               {!isBatch && (
-                <span className="text-[10px] font-medium text-base-content/50 mt-0.5">
-                  {shiftDays < 0 ? `${Math.abs(shiftDays)}d earlier` : `+${shiftDays}d later`}
+                <span className="text-[10px] font-medium text-base-content/50 mt-1 whitespace-nowrap">
+                  {shiftDays === 0 ? "Same day" : shiftDays < 0 ? `${Math.abs(shiftDays)}d earlier` : `+${shiftDays}d later`}
                 </span>
               )}
             </div>
 
             <div className="text-right">
-              <div className="text-[10px] font-semibold uppercase text-base-content/45">
-                To
+              <div className="text-[10px] font-semibold uppercase text-[#4f46e5]">
+                New Planned Date
               </div>
-              <div className="text-xs font-bold text-base-content mt-0.5">
+              <div className="text-xs font-bold text-[#4f46e5] mt-0.5">
                 {dayjs(targetDate).format("ddd DD/MM/YYYY")}
               </div>
             </div>
@@ -169,7 +219,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-base-200/80 text-[10.5px] uppercase text-base-content/60">
                   <tr>
-                    <th className="py-1.5 px-2.5 text-left">Lot / Product</th>
+                    <th className="py-1.5 px-2.5 text-left">Product / Lot</th>
                     <th className="py-1.5 px-2 text-center">From</th>
                     <th className="py-1.5 px-2 text-center">Must Out</th>
                     <th className="py-1.5 px-2.5 text-right">Status</th>
@@ -179,8 +229,8 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
                   {lots.map((item, index) => (
                     <tr key={item.id} className="border-t border-base-200">
                       <td className="py-1.5 px-2.5">
-                        <span className="font-semibold break-all">{item.label}</span>
-                        <span className="text-base-content/55 ml-1.5">{item.product}</span>
+                        <div className="font-bold text-base-content break-all leading-tight">{item.product}</div>
+                        <div className="font-mono text-[11px] text-base-content/65 leading-tight">{item.label}</div>
                       </td>
                       <td className="py-1.5 px-2 text-center text-base-content/70">{dayjs(item.plannedDate).format("DD/MM")}</td>
                       <td className="py-1.5 px-2 text-center text-base-content/70">{dayjs(item.mustOut).format("DD/MM")}</td>
@@ -260,7 +310,7 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
             aria-label="Confirm move"
             disabled={noLoadCount > 0}
             onClick={() => onConfirm(lots, targetDate)}
-            className="btn btn-sm h-9 px-5 rounded-xl btn-primary text-xs font-semibold cursor-pointer"
+            className="btn btn-sm h-9 px-5 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] text-white border-none text-xs font-semibold cursor-pointer shadow-sm"
           >
             Confirm Move
           </button>

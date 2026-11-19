@@ -17,12 +17,12 @@ import { formatMinutes, isMoved as cardIsMoved, WARNING_TEXT, ZERO_LOAD_TEXT, ze
 import { DatePickerPopover } from "./DatePickerPopover";
 
 const SHIFT_THEMES = {
-  day: { label: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: undefined },
-  night: { label: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: undefined },
-  over: { label: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: undefined },
-  unassigned: { label: "Shift pending", Icon: Clock3, badge: "bg-base-200 text-base-content/70 border-base-300", background: undefined },
-  no_load: { label: "No load", Icon: CircleSlash, badge: "bg-base-100 text-base-content/60 border-base-300 border-dashed", background: undefined },
-  none: { label: "No shift", Icon: Clock3, badge: "", background: undefined },
+  day: { label: "D/S", fullLabel: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: undefined },
+  night: { label: "N/S", fullLabel: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: undefined },
+  over: { label: "Over", fullLabel: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: undefined },
+  unassigned: { label: "Pending", fullLabel: "Shift pending", Icon: Clock3, badge: "bg-base-200 text-base-content/70 border-base-300", background: undefined },
+  no_load: { label: "No load", fullLabel: "No load", Icon: CircleSlash, badge: "bg-base-100 text-base-content/60 border-base-300 border-dashed", background: undefined },
+  none: { label: "No shift", fullLabel: "No shift", Icon: Clock3, badge: "", background: undefined },
 } as const;
 
 interface LotCardProps {
@@ -127,9 +127,9 @@ export const LotCard: React.FC<LotCardProps> = ({
   const shiftBadge = shiftAllocation && shiftTheme && shiftAllocation.status !== "none" ? (
     <span
       data-shift-status={shiftAllocation.status}
-      aria-label={`Planned shift: ${shiftTheme.label}`}
-      title={shiftAllocation.reason ?? `Planned allocation · Day: ${formatMinutes(shiftAllocation.dayMin)} · Night: ${formatMinutes(shiftAllocation.nightMin)}${shiftAllocation.overflowMin > 0 ? ` · Unallocated: ${formatMinutes(shiftAllocation.overflowMin)}` : ""}`}
-      className={`inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-tight ${isSelected && !isLifted ? "bg-white/20 text-white border-white/30" : shiftTheme.badge}`}
+      aria-label={`Planned shift: ${shiftTheme.fullLabel}`}
+      title={shiftAllocation.reason ?? `${shiftTheme.fullLabel} · Day: ${formatMinutes(shiftAllocation.dayMin)} · Night: ${formatMinutes(shiftAllocation.nightMin)}${shiftAllocation.overflowMin > 0 ? ` · Unallocated: ${formatMinutes(shiftAllocation.overflowMin)}` : ""}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-tight ${isSelected && !isLifted ? "bg-white/20 text-white border-white/30" : shiftTheme.badge}`}
     >
       <ShiftIcon size={11} className="shrink-0" aria-hidden="true" />
       <span>{shiftTheme.label}</span>
@@ -151,7 +151,7 @@ export const LotCard: React.FC<LotCardProps> = ({
           className={`rounded-xl ${compact ? "p-2" : "p-2.5"} border border-dashed border-base-300 bg-base-200/50 opacity-60 text-base-content/50 select-none cursor-grab`}
         >
           <div className="text-xs font-semibold leading-snug">
-            {lot.label} · {lot.product}
+            {lot.product} · {lot.label}
           </div>
           <div className="text-[10.5px] italic mt-1">dragging...</div>
         </div>
@@ -163,11 +163,11 @@ export const LotCard: React.FC<LotCardProps> = ({
           createPortal(
             <div
               style={{ top: liftPos.top, left: liftPos.left, background: shiftTheme?.background }}
-              className={`planning-summary-gate pointer-events-none fixed z-[60] ${compact ? "w-[132px] p-2" : "w-[160px] p-2.5"} -rotate-2 rounded-xl bg-base-100 border-[1.5px] border-primary shadow-lg select-none`}
+              className={`planning-summary-gate pointer-events-none fixed z-[60] ${compact ? "w-[144px] p-2" : "w-[174px] p-2.5"} -rotate-2 rounded-xl bg-base-100 border-[1.5px] border-primary shadow-lg select-none`}
             >
               <div className="flex items-start justify-between gap-1">
                 <span className="text-xs font-bold text-base-content leading-snug">
-                  {lot.label} · {lot.product}
+                  {lot.product} · {lot.label}
                 </span>
                 <GripVertical size={13} className="text-base-content/30 shrink-0" />
               </div>
@@ -191,7 +191,10 @@ export const LotCard: React.FC<LotCardProps> = ({
     "border border-base-300 bg-base-100 hover:border-base-content/30 text-base-content";
   if (isSelected) {
     borderClass =
-      "border-[1.5px] border-[#4f46e5] bg-[#4f46e5] text-white shadow-md ring-2 ring-[#4f46e5]/25";
+      "border-2 border-[#4f46e5] bg-[#4f46e5] text-white shadow-md";
+  } else if (isBatchSelected) {
+    borderClass =
+      "border-2 border-[#4f46e5] bg-[#eef2ff]/30 shadow-xs text-base-content";
   } else if (isLate) {
     borderClass = warning === "order"
       ? "border-2 border-rose-700 bg-rose-100/60 text-base-content"
@@ -211,28 +214,33 @@ export const LotCard: React.FC<LotCardProps> = ({
       onDragStart={(e) => onDragStart(e, lot)}
       onDragEnd={onDragEnd}
       onClick={() => onSelect(lot)}
-      className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} select-none ${borderClass} ${isBatchSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-base-100" : ""}`}
+      className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} select-none ${borderClass}`}
     >
-      {/* Top Row: SO · Product & Drag Grip */}
+      {/* Top Row: Product & Lot ID & Drag Grip */}
       <div className="flex items-start justify-between gap-1">
-        {showSelection && <input type="checkbox" aria-label={`Select ${lot.label} ${lot.product}`}
+        {showSelection && <input type="checkbox" aria-label={`Select ${lot.product} ${lot.label}`}
           checked={isBatchSelected}
           onClick={(e) => e.stopPropagation()}
           onChange={() => onToggleSelection(lot)}
-          className="checkbox checkbox-xs checkbox-primary mt-0.5 shrink-0 cursor-pointer" />}
+          className="w-3.5 h-3.5 rounded border border-base-300 text-[#4f46e5] accent-[#4f46e5] mt-0.5 shrink-0 cursor-pointer" />}
         <div
-          className={`min-w-0 flex-1 font-bold ${compact ? "text-[11px] leading-tight" : "text-xs leading-snug"} ${
+          className={`min-w-0 flex-1 ${
             isSelected ? "text-white" : "text-base-content"
           }`}
         >
-          <div className={compact ? "truncate" : "break-all"} title={lot.label}>{lot.label}</div>
           <div
             title={lot.product}
-            className={`font-semibold ${compact ? "truncate" : ""} ${
-              isSelected ? "text-white/90" : "text-base-content/80"
-            }`}
+            className={`font-bold ${compact ? "text-[11px] leading-tight truncate" : "text-xs leading-snug break-all"}`}
           >
             {lot.product}
+          </div>
+          <div
+            title={lot.label}
+            className={`font-semibold ${compact ? "text-[10.5px] leading-tight truncate" : "text-[11.5px] leading-snug break-all"} ${
+              isSelected ? "text-white/90" : "text-base-content/75"
+            }`}
+          >
+            {lot.label}
           </div>
         </div>
         <GripVertical
@@ -245,10 +253,10 @@ export const LotCard: React.FC<LotCardProps> = ({
         />
       </div>
 
-      {shiftBadge && <div className={compact ? "mt-1" : "mt-1.5"}>{shiftBadge}</div>}
+      {/* Shift Badge & Date Chip in the same row - never wrap */}
+      <div className={`${compact ? "mt-1" : "mt-1.5"} flex items-center gap-1 min-w-0`}>
+        {shiftBadge}
 
-      {/* Date Chip + Note Indicator Icon */}
-      <div className={`${compact ? "mt-1" : "mt-2"} relative flex items-center gap-1`}>
         <button
           ref={chipBtnRef}
           disabled={readOnly}
@@ -259,7 +267,7 @@ export const LotCard: React.FC<LotCardProps> = ({
             e.stopPropagation();
             if (!readOnly) setPopoverOpen((prev) => !prev);
           }}
-          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold tabular-nums border transition-colors cursor-pointer whitespace-nowrap min-w-0 ${
+          className={`inline-flex shrink-0 items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold tabular-nums border transition-colors cursor-pointer whitespace-nowrap min-w-0 ${
             isSelected
               ? "bg-white/20 text-white border-white/30 hover:bg-white/30"
               : isLate
@@ -275,7 +283,7 @@ export const LotCard: React.FC<LotCardProps> = ({
             size={10}
             className={`shrink-0 ${isSelected ? "text-white" : "text-primary"}`}
           />
-          <span>{compact ? dayjs(lot.plannedDate).format("DD/MM") : releaseDisplay}</span>
+          <span>{dayjs(lot.plannedDate).format(compact ? "DD/MM" : "DD/MM/YY")}</span>
         </button>
 
         {/* Trailing note button: warning, moved, changed source or incomplete planning data */}

@@ -158,7 +158,7 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
         <div className="px-5 py-4 border-b border-base-300 bg-base-100 shrink-0">
           <div className="flex items-start justify-between gap-2">
             <h4 className="text-base font-bold text-base-content break-all">
-              {activeLot.label} · {activeLot.product}
+              {activeLot.product} · {activeLot.label}
             </h4>
             <div className="flex items-center gap-2 shrink-0">
               <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">

@@ -231,6 +231,26 @@ html, body {
     scrollbar-gutter: auto;
 }
 
+/* ── Custom subtle thin scrollbar ── */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.45);
+  border-radius: 9999px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.75);
+}
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.45) transparent;
+}
+
 /* ── Sidebar animation: freeze DataGrid overflow to prevent column stutter ── */
 html[data-sidebar-animating] .datagrid-outer {
   overflow: hidden !important;

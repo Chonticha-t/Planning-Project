@@ -66,7 +66,7 @@ export const ConfirmReorderModal: React.FC<ConfirmReorderModalProps> = ({ before
               <tbody>
                 {moving.map((lot) => (
                   <tr key={lot.id} className="border-t border-base-300">
-                    <td className="px-3 py-2"><div className="font-semibold">{lot.label}</div><div className="text-base-content/60">{lot.product}</div></td>
+                    <td className="px-3 py-2"><div className="font-semibold">{lot.product}</div><div className="text-base-content/60">{lot.label}</div></td>
                     <td className="px-3 py-2"><div className="flex items-center justify-center gap-2 tabular-nums">
                       <span>{before.findIndex((item) => item.id === lot.id) + 1}</span><ArrowRight size={13} />
                       <span className="font-bold text-primary">{after.findIndex((item) => item.id === lot.id) + 1}</span>
