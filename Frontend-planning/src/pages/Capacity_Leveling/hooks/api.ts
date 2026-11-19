@@ -90,6 +90,18 @@ export const fetchPlanHistoryDetail = async (planId: string, signal?: AbortSigna
   return data.data;
 };
 
+export const fetchActivePlanDetail = async (signal?: AbortSignal, live = true, refresh = false, compact = true) => {
+  const { data } = await axios.get<{ data: PlanHistoryDetail | null }>(`${BASE}/plans/active`, {
+    params: {
+      ...(live ? { live: true } : {}),
+      ...(refresh ? { refresh: true } : {}),
+      ...(compact ? { compact: true } : {}),
+    },
+    signal,
+  });
+  return data.data;
+};
+
 export const deletePlanVersion = async (planId: string) => {
   await axios.delete(`${BASE}/plans/${encodeURIComponent(planId)}`);
 };

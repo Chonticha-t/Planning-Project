@@ -235,3 +235,37 @@ test("day work list and active summary exclude passedGate lots while monthly bas
   assert.deepEqual(allocations.get(lotA.id), { status: "none", dayMin: 0, nightMin: 0, overflowMin: 0 });
   assert.deepEqual(allocations.get(lotB.id), { status: "day", dayMin: 500, nightMin: 0, overflowMin: 0 });
 });
+
+test("readLatestSavedPlan uses single-request active reader without calling list/detail when provided", async () => {
+  const result = await readLatestSavedPlan({
+    active: async () => detail(3),
+    list: async () => { throw new Error("Must not call list when active reader is provided"); },
+    detail: async () => { throw new Error("Must not call detail when active reader is provided"); },
+  });
+  assert.equal(result?.plan.version, 3);
+  assert.equal(result?.snapshot.cards.length, 3);
+
+  const empty = await readLatestSavedPlan({
+    active: async () => null,
+    list: async () => { throw new Error("Must not call list"); },
+    detail: async () => { throw new Error("Must not call detail"); },
+  });
+  assert.equal(empty, null);
+});
+
+test("compact live snapshot without card.allocations still validates and renders Planning In Gate rows identically", () => {
+  const full = snapshot();
+  const compact: LevelingData = {
+    ...full,
+    cards: full.cards.map((card) => {
+      const copy = { ...card };
+      delete (copy as { allocations?: unknown }).allocations;
+      return copy;
+    }),
+  };
+  validateSnapshot(compact);
+  assert.deepEqual(
+    savedPlanRows(compact, "ALL").map(row => [row.label, row.qty, row.sheets, row.plannedDate]),
+    savedPlanRows(full, "ALL").map(row => [row.label, row.qty, row.sheets, row.plannedDate]),
+  );
+});

@@ -54,7 +54,12 @@ const createGateTableCache = ({
       entry.expiresAt = entry.loadedAt + ttlMs;
       // Entry identity prevents invalidated, replaced or evicted reads from repopulating the cache.
       if (entries.get(key) === entry) {
-        entry.bytes = Buffer.byteLength(JSON.stringify(value)) + Buffer.byteLength(key);
+        const valueBytes = typeof value === "string"
+          ? Buffer.byteLength(value)
+          : Buffer.isBuffer(value)
+            ? value.length
+            : Buffer.byteLength(JSON.stringify(value));
+        entry.bytes = valueBytes + Buffer.byteLength(key);
         bytes += entry.bytes;
         if (entry.bytes > maxBytes) {
           entry.oversized = true;

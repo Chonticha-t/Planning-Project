@@ -1,9 +1,10 @@
 import axios from "axios";
-import { fetchPlanHistory, fetchPlanHistoryDetail } from "../../Capacity_Leveling/hooks/api";
+import { fetchActivePlanDetail, fetchPlanHistory, fetchPlanHistoryDetail } from "../../Capacity_Leveling/hooks/api";
 import { readLatestSavedPlan } from "../savedPlan";
 import { useInGateRead } from "./useInGateRead";
 
 const read = (signal: AbortSignal, refresh: boolean) => readLatestSavedPlan({
+  active: signal => fetchActivePlanDetail(signal, true, refresh, true),
   list: signal => fetchPlanHistory(undefined, signal),
   detail: (id, signal) => fetchPlanHistoryDetail(id, signal, true, refresh),
 }, signal);

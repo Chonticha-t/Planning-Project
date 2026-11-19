@@ -626,7 +626,10 @@ test("saving a plan creates the next version with only the moved cards", async (
   assert.deepEqual(header.params.slice(1, 6), ["p1", 4, "p3", "2026-11-12", "2026-11-18"]);
   assert.equal(header.params[8], "planner");
   const item = pool.log.find((entry) => entry.sql.startsWith("INSERT INTO planning.work_plan_gate_item"));
-  assert.deepEqual(item.params.slice(2, 5).concat(item.params.slice(10)), [move.workKey, "FADL", "PRD-A", "2026-11-16", "2026-11-18"]);
+  assert.deepEqual(
+    [item.params[2][0], item.params[3][0], item.params[4][0], item.params[10][0], item.params[11][0]],
+    [move.workKey, "FADL", "PRD-A", "2026-11-16", "2026-11-18"]
+  );
   assert.ok(!pool.log.some((entry) => /^(UPDATE|DELETE)/.test(entry.sql)));
 
   // A stale version or a card that left Summary Gate rolls back without writing.
@@ -714,7 +717,12 @@ test("arrival save and reload preserve source and planned arrival dates with the
     [/FROM planning\.work_plan_gate_item/, () => stored],
     [/planning_summary_gate/, rows],
     [/INSERT INTO planning\.work_plan \(/, params => { header = { plan_id: params[0], plan_group_id: params[1], version_no: params[2], created_by: params[8], saved_at: "2026-11-12 12:00" }; assert.equal(params[6], PLAN_METHOD); return []; }],
-    [/INSERT INTO planning\.work_plan_gate_item/, params => { stored.push({ work_key: params[2], gate_name: params[3], original_date: params[10], planned_date: params[11] }); return []; }],
+    [/INSERT INTO planning\.work_plan_gate_item/, params => {
+      for (let i = 0; i < params[2].length; i++) {
+        stored.push({ work_key: params[2][i], gate_name: params[3][i], original_date: params[10][i], planned_date: params[11][i] });
+      }
+      return [];
+    }],
   ]);
   await withApi(pool, async api => {
     const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-18" }] } });
@@ -1317,9 +1325,16 @@ test("locked active plan snapshot freezes board arrivals and priority across WIP
       return [];
     }],
     [/INSERT INTO planning\.work_plan_gate_item/, params => {
-      movesByPlan.get(params[1]).push({
-        work_key: params[2], gate_name: params[3], original_date: params[10], planned_date: params[11],
-      });
+      const planId = params[0];
+      const workKeys = params[2];
+      for (let i = 0; i < workKeys.length; i++) {
+        movesByPlan.get(planId).push({
+          work_key: workKeys[i],
+          gate_name: params[3][i],
+          original_date: params[10][i],
+          planned_date: params[11][i],
+        });
+      }
       return [];
     }],
   ]);
@@ -1616,4 +1631,265 @@ test("saving a plan succeeds via savepoint rollback when work_plan_lot_card tabl
   assert.ok(pool.log.some((entry) => entry.sql === "SAVEPOINT sp_work_plan_lot_card"));
   assert.ok(pool.log.some((entry) => entry.sql === "ROLLBACK TO SAVEPOINT sp_work_plan_lot_card"));
   assert.ok(pool.log.some((entry) => entry.sql === "COMMIT"));
+});
+
+test("GET /plans/active?live=true&compact=true returns active plan in one call, strips duplicated card allocations, and skips baseline_snapshot on cache HIT", async () => {
+  const rowBase = { gate_name: "FVAC", arrive_by: "2026-11-14", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null };
+  const initialRows = [
+    work({ ...rowBase, lot_no: "LOT-A", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 5, pri: 1 }),
+  ];
+  let header = null;
+  let storedSnapshot = null;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
+    [/FROM planning\.capacity_setting/, () => [row({ gate_name: "FVAC", resource_count: 2 })]],
+    [/AS arrival_rows/, params => header && params[0] === header.plan_id ? [snapshotRow(storedSnapshot)] : []],
+    [/baseline_snapshot->'viewSnapshot' AS view_snapshot/, params => header && params[1] === header.plan_id ? [{
+      ...historyRow(header.version_no, header.version_no),
+      plan_id: header.plan_id,
+      current_plan_id: header.plan_id,
+      board_card_order: header.board_card_order,
+      view_snapshot: storedSnapshot,
+      has_snapshot: true,
+    }] : []],
+    [/FROM planning\.work_plan p/, () => header ? [{
+      ...historyRow(header.version_no, header.version_no),
+      plan_id: header.plan_id,
+      current_plan_id: header.plan_id,
+      has_snapshot: true,
+    }] : []],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && header ? [header] : []],
+    [/FROM planning\.work_plan_gate_item/, () => []],
+    [/planning_summary_gate/, () => initialRows],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      const snapshot = JSON.parse(params[9]);
+      storedSnapshot = snapshot.viewSnapshot;
+      header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2], note: params[7],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, has_snapshot: true,
+      };
+      return [];
+    }],
+  ]);
+
+  await withApi(pool, async (api) => {
+    // Empty state returns null cleanly without 404.
+    const empty = await api("/plans/active?live=true&compact=true");
+    assert.equal(empty.status, 200);
+    assert.equal((await empty.json()).data, null);
+
+    // Save v1 then load active plan in a single request.
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } })).status, 200);
+    const missRes = await api("/plans/active?live=true&compact=true");
+    assert.equal(missRes.status, 200);
+    assert.equal(missRes.headers.get("x-in-gate-cache"), "MISS");
+    const missBody = (await missRes.json()).data;
+    assert.equal(missBody.plan.planId, header.plan_id);
+    assert.equal(missBody.plan.isActive, true);
+    assert.equal(missBody.snapshot.cards.length, 1);
+    assert.equal("allocations" in missBody.snapshot.cards[0], false, "compact mode must omit duplicated card.allocations");
+    assert.equal(missBody.snapshot.arrivalRows.length, 1);
+
+    // Second request hits cache and must NOT detoast baseline_snapshot or query Summary Gate.
+    const beforeHit = pool.log.length;
+    const hitRes = await api("/plans/active?live=true&compact=true");
+    assert.equal(hitRes.status, 200);
+    assert.equal(hitRes.headers.get("x-in-gate-cache"), "HIT");
+    assert.deepEqual((await hitRes.json()).data, missBody);
+    const hitQueries = pool.log.slice(beforeHit);
+    assert.ok(!hitQueries.some((entry) => /baseline_snapshot/.test(entry.sql)), "cache HIT must not touch baseline_snapshot");
+    assert.ok(!hitQueries.some((entry) => /planning_summary_gate/.test(entry.sql)), "cache HIT must not query live Summary Gate");
+    assert.ok(!hitQueries.some((entry) => /work_plan_gate_item/.test(entry.sql)), "cache HIT must not re-query moves");
+  });
+});
+
+test("GET /plans falls back cleanly when has_snapshot generated column does not exist yet", async () => {
+  const pool = fakePool([
+    [/p\.has_snapshot/, () => {
+      const err = new Error('column p.has_snapshot does not exist');
+      err.code = "42703";
+      throw err;
+    }],
+    [/FROM planning\.work_plan p/, () => [{ ...historyRow(1, 1), has_snapshot: true }]],
+  ]);
+  await withApi(pool, async (api) => {
+    const first = await api("/plans");
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).data.plans[0].hasSnapshot, true);
+    const beforeSecond = pool.log.length;
+    const second = await api("/plans");
+    assert.equal(second.status, 200);
+    // Subsequent call remembers the fallback and avoids repeating the failing query.
+    assert.ok(!pool.log.slice(beforeSecond).some((entry) => /p\.has_snapshot/.test(entry.sql)));
+  });
+});
+
+test("saving multiple moved cards bulk-inserts work_plan_gate_item in a single UNNEST query", async () => {
+  const rowA = work({ lot_no: "L001", arrive_by: "2026-11-16" });
+  const rowB = work({ lot_no: "L002", arrive_by: "2026-11-16" });
+  const moveA = { workKey: arrivalWorkKey(rowA), gate: "FADL", plannedDate: "2026-11-17" };
+  const moveB = { workKey: arrivalWorkKey(rowB), gate: "FADL", plannedDate: "2026-11-18" };
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, []],
+    [/FROM planning\.planning_summary_gate/, [rowA, rowB]],
+  ]);
+  await withApi(pool, async (api) => {
+    const res = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [moveA, moveB] } });
+    assert.equal(res.status, 200);
+  });
+  const itemInserts = pool.log.filter((entry) => entry.sql.startsWith("INSERT INTO planning.work_plan_gate_item"));
+  assert.equal(itemInserts.length, 1, "expected a single bulk INSERT query for multiple moved cards");
+  assert.match(itemInserts[0].sql, /FROM UNNEST\(/i);
+  assert.deepEqual(itemInserts[0].params[2], [moveA.workKey, moveB.workKey]);
+  assert.deepEqual(itemInserts[0].params[3], ["FADL", "FADL"]);
+  assert.deepEqual(itemInserts[0].params[6], ["L001", "L002"]);
+  assert.deepEqual(itemInserts[0].params[10], ["2026-11-16", "2026-11-16"]);
+  assert.deepEqual(itemInserts[0].params[11], ["2026-11-17", "2026-11-18"]);
+});
+
+test("edge cases: concurrent /plans/active calls coalesce into one load, failed live read does not poison cache, and older plan after new save gets fresh isActive=false", async () => {
+  const rowBase = { gate_name: "FVAC", arrive_by: "2026-11-14", prev_gate: null, prev_must_out: null, next_gate: null, next_must_out: null };
+  const initialRows = [
+    work({ ...rowBase, lot_no: "LOT-E1", gate_state: "in_gate", current_gate: "FVAC", proc_disp: "FVAC", rem_proc_in_gate: 4, pri: 1 }),
+  ];
+  let failWorks = false;
+  let worksCalls = 0;
+  const plans = new Map();
+  let headId = null;
+
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
+    [/FROM planning\.capacity_setting/, () => [row({ gate_name: "FVAC", resource_count: 2 })]],
+    [/AS arrival_rows/, params => {
+      const p = plans.get(params[0]);
+      return p ? [snapshotRow(p.storedSnapshot)] : [];
+    }],
+    [/baseline_snapshot->'viewSnapshot' AS view_snapshot/, params => {
+      const p = plans.get(params[1]);
+      return p ? [{
+        ...historyRow(p.header.version_no, plans.get(headId).header.version_no),
+        plan_id: p.header.plan_id,
+        current_plan_id: headId,
+        board_card_order: p.header.board_card_order,
+        view_snapshot: p.storedSnapshot,
+        has_snapshot: true,
+      }] : [];
+    }],
+    [/FROM planning\.work_plan p/, params => {
+      if (!headId) return [];
+      const targetId = params.length > 1 && isPlanIdLike(params[1]) ? params[1] : headId;
+      const p = plans.get(targetId);
+      return p ? [{
+        ...historyRow(p.header.version_no, plans.get(headId).header.version_no),
+        plan_id: p.header.plan_id,
+        current_plan_id: headId,
+        has_snapshot: true,
+      }] : [];
+    }],
+    [/FROM planning\.work_plan\b/, params => params[0] === PLAN_METHOD && headId ? [plans.get(headId).header] : []],
+    [/FROM planning\.work_plan_gate_item/, () => []],
+    [/planning_summary_gate/, () => {
+      worksCalls++;
+      if (failWorks) throw new Error("Simulated Summary Gate outage");
+      return initialRows;
+    }],
+    [/INSERT INTO planning\.work_plan \(/, params => {
+      const snapshot = JSON.parse(params[9]);
+      const header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2], note: params[7],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, has_snapshot: true,
+      };
+      plans.set(params[0], { header, storedSnapshot: snapshot.viewSnapshot });
+      headId = params[0];
+      return [];
+    }],
+  ]);
+  // Add small async delay on works query so concurrent requests overlap in flight.
+  const origQuery = pool.query;
+  pool.query = async (sql, params) => {
+    if (/planning_summary_gate/.test(sql) && !failWorks) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return origQuery(sql, params);
+  };
+  pool.connect = async () => ({ query: pool.query, release() {} });
+  const isPlanIdLike = (v) => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+
+  await withApi(pool, async (api) => {
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } })).status, 200);
+    const v1Id = headId;
+
+    // 1) Failed live query returns 503 and does NOT poison cache on retry.
+    failWorks = true;
+    assert.equal((await api("/plans/active?live=true&compact=true")).status, 503);
+    failWorks = false;
+
+    // 2) 5 concurrent requests coalesce into 1 Summary Gate query (SHARED).
+    const beforeBurst = worksCalls;
+    const burst = await Promise.all(Array.from({ length: 5 }, () => api("/plans/active?live=true&compact=true")));
+    assert.ok(burst.every(res => res.status === 200));
+    assert.equal(worksCalls - beforeBurst, 1, "concurrent /plans/active requests must share one live load");
+    assert.ok(burst.some(res => res.headers.get("x-in-gate-cache") === "SHARED"));
+
+    // 3) Saving v2 invalidates cache; reading v1 live reports isActive=false and /plans/active returns v2.
+    assert.equal((await api("/plan", { method: "POST", body: { baseVersion: 1, moves: [] } })).status, 200);
+    const v2Id = headId;
+    assert.notEqual(v2Id, v1Id);
+
+    const activeV2 = await api("/plans/active?live=true&compact=true");
+    assert.equal(activeV2.status, 200);
+    assert.equal(activeV2.headers.get("x-in-gate-cache"), "MISS");
+    const v2Data = (await activeV2.json()).data;
+    assert.equal(v2Data.plan.planId, v2Id);
+    assert.equal(v2Data.plan.version, 2);
+    assert.equal(v2Data.plan.isActive, true);
+
+    const olderV1 = await api(`/plans/${v1Id}?live=true&compact=true`);
+    assert.equal(olderV1.status, 200);
+    const v1Data = (await olderV1.json()).data;
+    assert.equal(v1Data.plan.planId, v1Id);
+    assert.equal(v1Data.plan.isActive, false, "older version must report isActive=false even if previously cached as active");
+  });
+});
+
+test("edge case: GET /plans/active returns snapshot=null cleanly when active plan predates snapshots", async () => {
+  const pool = fakePool([
+    [/FROM planning\.work_plan p/, () => [{
+      ...historyRow(1, 1),
+      has_snapshot: false,
+      board_card_order: [],
+      view_snapshot: null,
+    }]],
+    [/FROM planning\.work_plan_gate_item/, () => []],
+  ]);
+  await withApi(pool, async (api) => {
+    const res = await api("/plans/active?live=true&compact=true");
+    assert.equal(res.status, 200);
+    const { data } = await res.json();
+    assert.equal(data.plan.version, 1);
+    assert.equal(data.plan.hasSnapshot, false);
+    assert.equal(data.snapshot, null);
+  });
+});
+
+test("edge case: buildGateItemColumns sanitizes null/invalid source_qty and empty dueDate without breaking bulk UNNEST insert", async () => {
+  const rowNeed = work({ lot_no: null, item: null, status: "need wip", gate_state: "need_wip", qty: 0, due_date: "2026-11-25" });
+  const move = { workKey: arrivalWorkKey(rowNeed), gate: "FADL", plannedDate: "2026-11-18" };
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, []],
+    [/FROM planning\.planning_summary_gate/, [rowNeed]],
+  ]);
+  await withApi(pool, async (api) => {
+    const res = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [move] } });
+    assert.equal(res.status, 200);
+  });
+  const itemInsert = pool.log.find((entry) => entry.sql.startsWith("INSERT INTO planning.work_plan_gate_item"));
+  assert.ok(itemInsert);
+  assert.deepEqual(itemInsert.params[5], [null]);
+  assert.deepEqual(itemInsert.params[6], [null]);
+  assert.deepEqual(itemInsert.params[9], [0]);
 });

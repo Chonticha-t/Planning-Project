@@ -11,6 +11,7 @@ export interface SavedGatePlan {
 export interface PlanReader {
   list: (signal?: AbortSignal) => Promise<PlanHistoryPage>;
   detail: (id: string, signal?: AbortSignal) => Promise<PlanHistoryDetail>;
+  active?: (signal?: AbortSignal) => Promise<PlanHistoryDetail | null>;
 }
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -60,8 +61,23 @@ export function validateSnapshot(value: unknown): asserts value is LevelingData 
   }
 }
 
-/** Pin both metadata and rows to one version; retry once if another planner saves during the read. */
+/** Pin both metadata and rows to one version; prefer single-request active endpoint when available. */
 export async function readLatestSavedPlan(reader: PlanReader, signal?: AbortSignal): Promise<SavedGatePlan | null> {
+  if (reader.active) {
+    signal?.throwIfAborted();
+    const detail = await reader.active(signal);
+    signal?.throwIfAborted();
+    if (detail === null) return null;
+    if (!detail?.plan || typeof detail.plan.planId !== "string"
+      || !Number.isSafeInteger(detail.plan.version) || detail.plan.version < 1
+      || typeof detail.plan.savedAt !== "string" || typeof detail.plan.savedBy !== "string"
+      || (detail.plan.note !== null && typeof detail.plan.note !== "string")) {
+      throw new Error("The active saved plan is unavailable. Please reload.");
+    }
+    if (!detail.snapshot) throw new Error("This plan has no saved snapshot. Save a new version in Capacity Leveling first.");
+    validateSnapshot(detail.snapshot);
+    return { plan: detail.plan, snapshot: detail.snapshot };
+  }
   for (let attempt = 0; attempt < 2; attempt++) {
     signal?.throwIfAborted();
     const page = await reader.list(signal);

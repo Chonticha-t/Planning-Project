@@ -163,6 +163,41 @@ const MOVES_SQL = `
   FROM planning.work_plan_gate_item
   WHERE plan_id = $1`;
 
+const INSERT_GATE_ITEMS_SQL = `
+  INSERT INTO planning.work_plan_gate_item (
+    item_id, plan_id, work_key, gate_name, prd_name, item, lot_no, due_date, source_status,
+    source_qty, original_date, planned_date
+  )
+  SELECT u.item_id, $1::uuid, u.work_key, u.gate_name, u.prd_name, u.item, u.lot_no, u.due_date,
+         u.source_status, u.source_qty, u.original_date, u.planned_date
+  FROM UNNEST(
+    $2::uuid[], $3::text[], $4::varchar[], $5::varchar[], $6::varchar[], $7::varchar[],
+    $8::date[], $9::varchar[], $10::numeric[], $11::date[], $12::date[]
+  ) AS u(item_id, work_key, gate_name, prd_name, item, lot_no, due_date, source_status,
+         source_qty, original_date, planned_date)`;
+
+const buildGateItemColumns = (storedMoves, source) => {
+  const cols = {
+    itemIds: [], workKeys: [], gates: [], prdNames: [], items: [], lotNos: [],
+    dueDates: [], sourceStatuses: [], sourceQtys: [], originalDates: [], plannedDates: [],
+  };
+  for (const move of storedMoves) {
+    const row = source.get(`${move.workKey}|${move.gate}`);
+    cols.itemIds.push(randomUUID());
+    cols.workKeys.push(move.workKey);
+    cols.gates.push(move.gate);
+    cols.prdNames.push(row.prdName);
+    cols.items.push(row.item ?? null);
+    cols.lotNos.push(row.lotNo ?? null);
+    cols.dueDates.push(row.dueDate || null);
+    cols.sourceStatuses.push(row.status ?? null);
+    cols.sourceQtys.push(finiteNonNegative(row.qty));
+    cols.originalDates.push(row.baseDate);
+    cols.plannedDates.push(move.plannedDate);
+  }
+  return cols;
+};
+
 const INSERT_PLAN_LOT_CARDS_SQL = `
   INSERT INTO planning.work_plan_lot_card (
     plan_id, version_no, lot_no, gate_name, prd_name, next_gate,
@@ -224,6 +259,12 @@ const planInfo = (row) => (row ? {
 
 // The highest version stays active: only older versions may be soft-deleted.
 // Include deleted versions when determining the head so version numbers are never reused.
+// Read the boolean has_snapshot column when available so listing 50 plans never detoasts baseline_snapshot.
+const HISTORY_META_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
+  p.has_snapshot,
+  to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS saved_at,
+  (SELECT head.plan_id FROM planning.work_plan head
+   WHERE head.calculation_method = $1 ORDER BY head.version_no DESC LIMIT 1) AS current_plan_id`;
 const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
   (p.baseline_snapshot->'viewSnapshot'->>'version' = '1') AS has_snapshot,
   to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS saved_at,
@@ -232,18 +273,34 @@ const HISTORY_COLUMNS = `p.plan_id, p.version_no, p.note, p.created_by,
 const historyInfo = (row) => ({ ...planInfo(row), isActive: row.plan_id === row.current_plan_id, hasSnapshot: Boolean(row.has_snapshot) });
 const isPlanId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
+// Compact live snapshot for Planning In Gate: cards already have allocations in arrivalRows,
+// and Planning In Gate rebuilds board rows from arrivalRows + cards without needing card.allocations duplicated.
+const compactLiveSnapshot = (snapshot) => {
+  if (!snapshot || !Array.isArray(snapshot.cards)) return snapshot;
+  return {
+    ...snapshot,
+    cards: snapshot.cards.map(({ allocations: _allocations, ...card }) => card),
+  };
+};
+
 const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cacheOptions = {}, inGateCacheOptions = {}, logLoadPerformance }) => {
   const router = express.Router();
   const observationCacheOptions = { maxBytes: 16 * 1024 * 1024, ...inGateCacheOptions };
   const finishedCache = createGateTableCache(observationCacheOptions);
   const monthlyCache = createGateTableCache(observationCacheOptions);
-  const livePlanCache = createGateTableCache({ maxEntries: 2, ...inGateCacheOptions });
-  router.use("/routing", createInGateRoutingRouter({ pool, finishedCache, monthlyCache }));
   const configuredTtl = Number(process.env.PLANNING_CAPACITY_CACHE_TTL_MS ?? 60000);
   const configuredMb = Number(process.env.PLANNING_CAPACITY_CACHE_MAX_MB ?? 128);
+  const maxCacheBytes = (Number.isFinite(configuredMb) && configuredMb >= 0 ? configuredMb : 128) * 1024 * 1024;
+  // Use the same memory ceiling as loadCache so large live plan snapshots do not get evicted as OVERSIZE.
+  const livePlanCache = createGateTableCache({
+    maxEntries: 2,
+    maxBytes: maxCacheBytes,
+    ...inGateCacheOptions,
+  });
+  router.use("/routing", createInGateRoutingRouter({ pool, finishedCache, monthlyCache }));
   const loadCache = createGateTableCache({
     ttlMs: Number.isFinite(configuredTtl) && configuredTtl >= 0 ? configuredTtl : 60000,
-    maxBytes: (Number.isFinite(configuredMb) && configuredMb >= 0 ? configuredMb : 128) * 1024 * 1024,
+    maxBytes: maxCacheBytes,
     ...cacheOptions,
   });
   router.use(createPresenceRouter({ pool, verifyPlanner }));
@@ -292,6 +349,142 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
     return fail(res, error, "Unable to access plan history. Please try again.");
   };
 
+  // Cache immutable saved plan snapshots (and moves/order) by plan_id in a plain in-memory LRU
+  // (avoiding JSON.stringify byte-counting of large 20-40MB objects on every cold load).
+  const planDetailStore = new Map();
+  const MAX_PLAN_DETAIL_ENTRIES = 2;
+  const planDetailCache = {
+    invalidate() { planDetailStore.clear(); },
+  };
+  let hasSnapshotColumnAvailable = null;
+
+  const queryPlanMeta = async (sqlWithColumn, sqlFallback, params) => {
+    if (hasSnapshotColumnAvailable === false) {
+      return pool.query(sqlFallback, params);
+    }
+    try {
+      const result = await pool.query(sqlWithColumn, params);
+      hasSnapshotColumnAvailable = true;
+      return result;
+    } catch (error) {
+      if (error?.code === "42703" && /has_snapshot/i.test(error.message || "")) {
+        hasSnapshotColumnAvailable = false;
+        return pool.query(sqlFallback, params);
+      }
+      throw error;
+    }
+  };
+
+  // Detoast baseline_snapshot only ONCE per plan_id via subquery (OFFSET 0), and fetch moves in parallel.
+  const loadImmutablePlanDetail = async (planId) => {
+    const existing = planDetailStore.get(planId);
+    if (existing) {
+      planDetailStore.delete(planId);
+      planDetailStore.set(planId, existing);
+      return existing;
+    }
+    const promise = (async () => {
+      const [planRes, movesRes] = await Promise.all([
+        pool.query(`SELECT s.plan_id, s.version_no, s.note, s.created_by, s.saved_at,
+            s.baseline_snapshot->'boardCardOrder' AS board_card_order,
+            s.baseline_snapshot->'viewSnapshot' AS view_snapshot
+          FROM (
+            SELECT p.plan_id, p.version_no, p.note, p.created_by,
+                   to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS saved_at,
+                   p.baseline_snapshot
+            FROM planning.work_plan p
+            WHERE p.calculation_method = $1 AND p.plan_id = $2 AND p.deleted_at IS NULL
+            OFFSET 0
+          ) s`,
+        [PLAN_METHOD, planId]),
+        pool.query(MOVES_SQL, [planId]),
+      ]);
+      if (!planRes.rows.length) return null;
+      const row = planRes.rows[0];
+      const baseSnapshot = row.view_snapshot?.version === 1 && row.view_snapshot?.data
+        ? { ...row.view_snapshot.data, plan: planInfo(row) } : null;
+      return {
+        row,
+        moves: movesRes.rows.map((move) => ({ workKey: move.work_key, gate: move.gate_name,
+          prdName: move.prd_name, lotNo: move.lot_no, dueDate: move.due_date,
+          originalDate: move.original_date, plannedDate: move.planned_date })),
+        boardCardOrder: row.board_card_order ?? [],
+        baseSnapshot,
+      };
+    })();
+    planDetailStore.set(planId, promise);
+    while (planDetailStore.size > MAX_PLAN_DETAIL_ENTRIES) {
+      planDetailStore.delete(planDetailStore.keys().next().value);
+    }
+    promise.then((val) => {
+      if (val === null && planDetailStore.get(planId) === promise) planDetailStore.delete(planId);
+    }).catch(() => {
+      if (planDetailStore.get(planId) === promise) planDetailStore.delete(planId);
+    });
+    return promise;
+  };
+
+  // Pre-serialized live payload cache: stores ONLY one representation per (planId, isActive, compact) key
+  // as a JSON string so gateTableCache never wastes CPU running JSON.stringify twice or hitting OVERSIZE.
+  const loadLivePlanPayload = async (metaRow, { refresh = false, compact = false } = {}) => {
+    const planId = metaRow.plan_id;
+    const plan = historyInfo(metaRow);
+    const cacheKey = `${planId}|${plan.isActive ? "active" : "older"}|${compact ? "compact" : "full"}`;
+    const cached = await livePlanCache.read(cacheKey, async () => {
+      // Run immutable snapshot read and live Summary Gate query in parallel.
+      const [detail, worksRes] = await Promise.all([
+        loadImmutablePlanDetail(planId),
+        pool.query(WORKS_SQL, [LEVELING_GATES]),
+      ]);
+      if (!detail || !detail.baseSnapshot) return null;
+      const routes = await readRouteRows(pool, (detail.baseSnapshot.arrivalRows ?? []).map((row) => row.prd_name));
+      const enriched = enrichSnapshotWithLiveStatus(
+        dropUnroutedFromSnapshot(detail.baseSnapshot, routes),
+        worksRes.rows
+      );
+      const snapshot = compact ? compactLiveSnapshot(enriched) : enriched;
+      return JSON.stringify({
+        status: "OK",
+        data: {
+          plan,
+          moves: detail.moves,
+          boardCardOrder: detail.boardCardOrder,
+          snapshot: { ...snapshot, plan: planInfo(metaRow) },
+        },
+      });
+    }, { force: refresh });
+    return cached;
+  };
+
+  const buildPlanDetailPayload = async (metaRow, { live = false, refresh = false, compact = false } = {}) => {
+    const planId = metaRow.plan_id;
+    const plan = historyInfo(metaRow);
+    if (live && plan.hasSnapshot) {
+      const cached = await loadLivePlanPayload(metaRow, { refresh, compact });
+      if (cached.value) {
+        return { cacheStatus: cached.status, serializedJson: cached.value };
+      }
+    }
+
+    const detail = await loadImmutablePlanDetail(planId);
+    if (!detail) return null;
+    if (detail.baseSnapshot && live) {
+      const cached = await loadLivePlanPayload(metaRow, { refresh, compact });
+      if (cached.value) {
+        return { cacheStatus: cached.status, serializedJson: cached.value };
+      }
+    }
+    return {
+      cacheStatus: null,
+      data: {
+        plan,
+        moves: detail.moves,
+        boardCardOrder: detail.boardCardOrder,
+        snapshot: detail.baseSnapshot ? { ...detail.baseSnapshot, plan: planInfo(metaRow) } : null,
+      },
+    };
+  };
+
   router.get("/plans", async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
@@ -300,11 +493,16 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         !Number.isSafeInteger(Number(before)) || Number(before) > 2147483647)) {
         throw new ValidationError("The history cursor is invalid.");
       }
-      const { rows } = await pool.query(`SELECT ${HISTORY_COLUMNS}
-        FROM planning.work_plan p
+      const params = [PLAN_METHOD, before === undefined ? null : Number(before)];
+      const whereClause = `FROM planning.work_plan p
         WHERE p.calculation_method = $1 AND p.deleted_at IS NULL
           AND ($2::integer IS NULL OR p.version_no < $2)
-        ORDER BY p.version_no DESC LIMIT 51`, [PLAN_METHOD, before === undefined ? null : Number(before)]);
+        ORDER BY p.version_no DESC LIMIT 51`;
+      const { rows } = await queryPlanMeta(
+        `SELECT ${HISTORY_META_COLUMNS} ${whereClause}`,
+        `SELECT ${HISTORY_COLUMNS} ${whereClause}`,
+        params
+      );
       return res.json({ status: "OK", data: {
         plans: rows.slice(0, 50).map(historyInfo),
         nextBefore: rows.length > 50 ? rows[49].version_no : null,
@@ -314,10 +512,62 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
     }
   });
 
+  const sendPlanDetailResult = (res, result) => {
+    if (result.cacheStatus) res.set("X-In-Gate-Cache", result.cacheStatus);
+    if (result.serializedJson) {
+      return res.type("application/json").send(result.serializedJson);
+    }
+    return res.json({ status: "OK", data: result.data });
+  };
+
+  // Single-request endpoint for Planning In Gate to fetch the active plan directly
+  // without first calling GET /plans to discover the active planId.
+  router.get("/plans/active", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const whereClause = `FROM planning.work_plan p
+        WHERE p.calculation_method = $1 AND p.deleted_at IS NULL
+        ORDER BY p.version_no DESC LIMIT 1`;
+      const { rows } = await queryPlanMeta(
+        `SELECT ${HISTORY_META_COLUMNS} ${whereClause}`,
+        `SELECT ${HISTORY_COLUMNS} ${whereClause}`,
+        [PLAN_METHOD]
+      );
+      if (!rows.length) return res.json({ status: "OK", data: null });
+      const live = req.query.live === "true";
+      const refresh = req.query.refresh === "true";
+      const compact = req.query.compact === "true";
+      const result = await buildPlanDetailPayload(rows[0], { live, refresh, compact });
+      if (!result) return res.json({ status: "OK", data: null });
+      return sendPlanDetailResult(res, result);
+    } catch (error) {
+      return historyFail(res, error);
+    }
+  });
+
   router.get("/plans/:planId", async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
       if (!isPlanId(req.params.planId)) throw new ValidationError("The plan ID is invalid.");
+      const live = req.query.live === "true";
+      const refresh = req.query.refresh === "true";
+      const compact = req.query.compact === "true";
+      if (live) {
+        const whereClause = `FROM planning.work_plan p
+          WHERE p.calculation_method = $1 AND p.plan_id = $2 AND p.deleted_at IS NULL`;
+        const { rows } = await queryPlanMeta(
+          `SELECT ${HISTORY_META_COLUMNS} ${whereClause}`,
+          `SELECT ${HISTORY_COLUMNS} ${whereClause}`,
+          [PLAN_METHOD, req.params.planId]
+        );
+        if (!rows.length) return res.status(404).json({ status: "ERROR", code: "PLAN_NOT_FOUND",
+          message: "This plan was deleted or is no longer available." });
+        const result = await buildPlanDetailPayload(rows[0], { live: true, refresh, compact });
+        if (!result) return res.status(404).json({ status: "ERROR", code: "PLAN_NOT_FOUND",
+          message: "This plan was deleted or is no longer available." });
+        return sendPlanDetailResult(res, result);
+      }
+
       const { rows } = await pool.query(`SELECT ${HISTORY_COLUMNS},
           p.baseline_snapshot->'boardCardOrder' AS board_card_order,
           p.baseline_snapshot->'viewSnapshot' AS view_snapshot
@@ -327,19 +577,8 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       if (!rows.length) return res.status(404).json({ status: "ERROR", code: "PLAN_NOT_FOUND",
         message: "This plan was deleted or is no longer available." });
       const moves = (await pool.query(MOVES_SQL, [req.params.planId])).rows;
-      const baseSnapshot = rows[0].view_snapshot?.version === 1 && rows[0].view_snapshot?.data
+      const snapshot = rows[0].view_snapshot?.version === 1 && rows[0].view_snapshot?.data
         ? { ...rows[0].view_snapshot.data, plan: planInfo(rows[0]) } : null;
-      // The live view (Planning In Gate) also drops saved cards at gates the product never visits;
-      // otherwise they would read as passed once the live rows skip those gates.
-      let snapshot = baseSnapshot;
-      if (baseSnapshot && req.query.live === "true") {
-        const cached = await livePlanCache.read(rows[0].plan_id, async () => enrichSnapshotWithLiveStatus(
-          dropUnroutedFromSnapshot(baseSnapshot, await readRouteRows(pool, (baseSnapshot.arrivalRows ?? []).map((row) => row.prd_name))),
-          (await pool.query(WORKS_SQL, [LEVELING_GATES])).rows
-        ), { force: req.query.refresh === "true" });
-        snapshot = { ...cached.value, plan: baseSnapshot.plan };
-        res.set("X-In-Gate-Cache", cached.status);
-      }
       return res.json({ status: "OK", data: {
         plan: historyInfo(rows[0]),
         moves: moves.map((move) => ({ workKey: move.work_key, gate: move.gate_name,
@@ -371,6 +610,8 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       if (outcome === "PLAN_NOT_FOUND") return res.status(404).json({ status: "ERROR", code: outcome,
         message: "This plan was deleted or is no longer available." });
       loadCache.invalidate();
+      planDetailCache.invalidate();
+      livePlanCache.invalidate();
       return res.json({ status: "OK", message: "Plan removed from history. The active plan is unchanged." });
     } catch (error) {
       return historyFail(res, error);
@@ -589,14 +830,14 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
           dates[0], dates[dates.length - 1], PLAN_METHOD, note || null, actorOf(req),
           JSON.stringify({ boardCardOrderVersion: 1, boardCardOrder: order, moveHistory: history,
             viewSnapshot: { version: 1, capturedAt: new Date().toISOString(), data: view } })]);
-        for (const move of storedMoves) {
-          const row = source.get(`${move.workKey}|${move.gate}`);
-          await client.query(`INSERT INTO planning.work_plan_gate_item (
-              item_id, plan_id, work_key, gate_name, prd_name, item, lot_no, due_date, source_status,
-              source_qty, original_date, planned_date
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [randomUUID(), planId, move.workKey, move.gate, row.prdName, row.item, row.lotNo, row.dueDate || null,
-            row.status, row.qty, row.baseDate, move.plannedDate]);
+        if (storedMoves.length) {
+          const itemCols = buildGateItemColumns(storedMoves, source);
+          await client.query(INSERT_GATE_ITEMS_SQL, [
+            planId,
+            itemCols.itemIds, itemCols.workKeys, itemCols.gates, itemCols.prdNames, itemCols.items,
+            itemCols.lotNos, itemCols.dueDates, itemCols.sourceStatuses, itemCols.sourceQtys,
+            itemCols.originalDates, itemCols.plannedDates,
+          ]);
         }
         const lotCards = buildPlanLotCardColumns(view.cards);
         if (lotCards.lotNos.length) {
@@ -629,6 +870,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
       }
       loadCache.invalidate();
       finishedCache.invalidate();
+      livePlanCache.invalidate();
       return res.json({ status: "OK", data: { plan: outcome.plan, movedCount: moves.length,
         orderedGroupCount: outcome.orderedGroupCount }, message: "Plan saved." });
     } catch (error) {
