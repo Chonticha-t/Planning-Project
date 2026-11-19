@@ -60,7 +60,7 @@ interface CapacityLevelingProps {
 const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPreview, onViewSnapshot, activeVersion }) => {
   const readOnly = Boolean(snapshot);
   const [preview, setPreview] = useState<LevelingData | null>(null);
-  const { user, requirePlanner } = useAuth();
+  const { user, canEditPlanning, requirePlanner } = useAuth();
   const [category, setCategory] = useState<ProcessCategory>("EFPC_GEN");
   const [planMode, setPlanMode] = useState<PlanMode>("planned");
   const [viewMode, setViewMode] = useState<ViewMode>("board");
@@ -346,14 +346,21 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     const sameDay = (lot: LotItem) => lot.gate === target.gate && lot.plannedDate === target.plannedDate;
     setDraggedLot(null);
     setHoverTargetDate(null);
-    setSelectedLotId(null);
-    setPendingReorder({ movingIds, targetId, position,
-      before: applyBoardCardOrder(board, effectiveBoardCardOrder).filter(sameDay),
-      after: applyBoardCardOrder(board, next).filter(sameDay) });
-  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder]);
+    // Leveling (moving/reordering cards) requires a planner login.
+    void requirePlanner(() => {
+      setSelectedLotId(null);
+      setPendingReorder({ movingIds, targetId, position,
+        before: applyBoardCardOrder(board, effectiveBoardCardOrder).filter(sameDay),
+        after: applyBoardCardOrder(board, next).filter(sameDay) });
+    });
+  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder, requirePlanner]);
 
   const handleConfirmReorder = useCallback(() => {
     if (saving || loading || readOnly || !data || !pendingReorder) return;
+    if (!canEditPlanning) {
+      void requirePlanner();
+      return;
+    }
     const { movingIds, targetId, position, before } = pendingReorder;
     const board = buildBoardLots(data, lots);
     const ordered = applyBoardCardOrder(board, effectiveBoardCardOrder);
@@ -378,7 +385,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       ...[...next].filter(([key, ids]) => ids !== effectiveBoardCardOrder.get(key))]));
     setLots((current) => appendMoveHistory(current, history));
     setPendingReorder(null);
-  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder, pendingReorder, user]);
+  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder, pendingReorder, user, canEditPlanning, requirePlanner]);
 
   // Stage the whole group without changing dates until the confirmation succeeds.
   const handleStageMoveLots = useCallback(
@@ -395,10 +402,13 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       }
       const changedLots = lotsToStage.filter((lot) => lot.plannedDate !== targetDate);
       if (changedLots.length === 0) return;
-      setSelectedLotId(null);
-      setPendingMove({ lots: changedLots, targetDate });
+      // Leveling (moving cards) requires a planner login.
+      void requirePlanner(() => {
+        setSelectedLotId(null);
+        setPendingMove({ lots: changedLots, targetDate });
+      });
     },
-    [lots, isValidMoveTarget, data, readOnly]
+    [lots, isValidMoveTarget, data, readOnly, requirePlanner]
   );
 
   const handleStageMoveLot = useCallback((lot: LotItem, targetDate: string) => {
@@ -456,6 +466,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const handleMoveLots = useCallback(
     (lotsToMove: LotItem[], targetDate: string) => {
       if (readOnly) return;
+      if (!canEditPlanning) {
+        void requirePlanner();
+        return;
+      }
       const ids = new Set(lotsToMove.flatMap((lot) => lot.sourceIds || [lot.id]));
       const stagedDates = new Map(lotsToMove.flatMap((lot) => (lot.sourceIds || [lot.id]).map((id) => [id, lot.plannedDate] as const)));
       const currentLots = expandBoardLots(lots, lotsToMove);
@@ -493,7 +507,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         { id: "move-lots", duration: 2500 }
       );
     },
-    [lots, isValidMoveTarget, user, data, plannedIndex, readOnly]
+    [lots, isValidMoveTarget, user, data, plannedIndex, readOnly, canEditPlanning, requirePlanner]
   );
 
   const handleConfirmSave = useCallback(
