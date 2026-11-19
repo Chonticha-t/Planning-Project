@@ -20,6 +20,8 @@ import {
   Search,
   Sun,
   Table,
+  Maximize2,
+  Minimize2,
   X,
 } from "lucide-react";
 import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData, BoardGateStateFilter } from "../types";
@@ -187,7 +189,17 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [hideOffDays, setHideOffDays] = useState(true);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
   const [batchTargetDate, setBatchTargetDate] = useState("");
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const dateDropdownRef = useRef<HTMLDivElement>(null);
@@ -443,7 +455,13 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div
+      className={
+        isFullscreen
+          ? "fixed inset-0 z-[100] flex flex-col gap-3 p-4 bg-base-100 overflow-hidden shadow-2xl animate-in fade-in duration-150"
+          : "flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs"
+      }
+    >
       {/* Persistent Header Bar with Board Controls, Search/Filter & Actions (Guaranteed Single Row) */}
       <div className="flex flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-0.5">
         {/* Left: Title + Gate Switcher + Divider + Search + Status Dropdown */}
@@ -679,6 +697,22 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               ))}
             </div>
           )}
+
+          {/* Expand / Maximize Board Toggle */}
+          <button
+            type="button"
+            aria-pressed={isFullscreen}
+            onClick={() => setIsFullscreen((prev) => !prev)}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+              isFullscreen
+                ? "border-primary bg-primary text-primary-content shadow-xs"
+                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+            }`}
+            title={isFullscreen ? "Exit full view (Esc)" : "Expand board to full view"}
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span>{isFullscreen ? "Minimize" : "Maximize"}</span>
+          </button>
         </div>
       </div>
 
@@ -791,7 +825,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       {activeViewMode === "board" && granularity === "days" && (
         <div
           ref={scrollContainerRef}
-          className={`flex overflow-x-auto pb-2 scroll-smooth ${isCompact ? "gap-1.5 min-h-[400px]" : "gap-2 min-h-[480px]"}`}
+          className={`flex overflow-x-auto pb-2 scroll-smooth ${isCompact ? "gap-1.5 min-h-[400px]" : "gap-2 min-h-[480px]"} ${isFullscreen ? "flex-1 min-h-0" : ""}`}
         >
           {/* Scrollable Day Columns for ALL planning days */}
           {boardDays.map((col) => {
@@ -822,7 +856,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 data-day-col={col.date}
                 onDragOver={(e) => handleColDragOver(e, col.date)}
                 onDrop={(e) => handleColDrop(e, col.date)}
-                className={`shrink-0 flex flex-col max-h-[580px] rounded-xl transition-all ${isCompact ? "w-[156px] p-1.5" : "w-[184px] p-2"} ${
+                className={`shrink-0 flex flex-col ${isFullscreen ? "h-[calc(100vh-140px)]" : "max-h-[580px]"} rounded-xl transition-all ${isCompact ? "w-[156px] p-1.5" : "w-[184px] p-2"} ${
                   isTargetCol
                     ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
                     : isFocusedCol
@@ -1068,7 +1102,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           VIEW 3: LIST / TABLE VIEW (Grouped by Date or Weeks)
          ========================================================= */}
       {activeViewMode === "list" && (
-        <div className="overflow-x-auto rounded-xl border border-base-300">
+        <div className={`overflow-x-auto rounded-xl border border-base-300 ${isFullscreen ? "flex-1 overflow-y-auto" : ""}`}>
           <table className="table table-sm table-fixed w-full min-w-[980px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:nth-child(2)]:text-left [&_th:nth-child(2)]:text-left [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
             <colgroup>
               <col style={{ width: "42px" }} />
