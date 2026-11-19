@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { X } from "lucide-react";
 import type { DayGateLoad, GateInfo, PlanMode, LevelingKpiData, ProcessCategory } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { cellPct, loadStatus } from "../utils/levelingCalculations";
+import { cellPct, loadStatus, pctPillClass } from "../utils/levelingCalculations";
 import { dailyGateTotals } from "../utils/dailyGateTotals";
 
 interface HoverBreakdownTooltip {
@@ -419,12 +419,22 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
                   const isZero = total.lotCount === 0 && total.totalPcs === 0;
                   const totalStyle = isZero
                     ? "bg-slate-50/80 text-slate-400"
-                    : "bg-slate-100 text-slate-800 font-bold";
+                    : total.pct !== null
+                    ? pctPillClass(total.pct)
+                    : total.incompleteGates > 0
+                    ? "bg-amber-50/60 text-amber-800"
+                    : total.overloadGates > 0
+                    ? "bg-rose-50 text-rose-700"
+                    : "bg-slate-50/80 text-slate-400";
                   const totalBorder = preview
                     ? "border-dashed border-[#4f46e5]"
-                    : isZero
-                    ? "border-dashed border-slate-200/80"
-                    : "border-slate-200";
+                    : total.pct !== null
+                    ? "border-transparent"
+                    : total.incompleteGates > 0
+                    ? "border-dashed border-amber-300"
+                    : total.overloadGates > 0
+                    ? "border-dashed border-rose-300"
+                    : "border-dashed border-slate-200/80";
                   return (
                     <td key={col.date} className="p-[3px] align-top">
                       <div

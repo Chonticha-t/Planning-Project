@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import {
   AlertCircle,
   CalendarOff,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -76,14 +77,14 @@ interface WeekGroup {
 const SHIFT_THEMES = {
   day: {
     label: "Day Shift",
-    shortLabel: "Day",
+    shortLabel: "D/S",
     Icon: Sun,
     badge: "bg-yellow-100 text-yellow-950 border-yellow-300",
     background: undefined,
   },
   night: {
     label: "Night Shift",
-    shortLabel: "Night",
+    shortLabel: "N/S",
     Icon: Moon,
     badge: "bg-indigo-100 text-indigo-950 border-indigo-200",
     background: undefined,
@@ -188,6 +189,26 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   const [isCompact, setIsCompact] = useState(false);
   const [hideOffDays, setHideOffDays] = useState(true);
   const [batchTargetDate, setBatchTargetDate] = useState("");
+  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
+  const dateDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dateDropdownOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dateDropdownRef.current && !dateDropdownRef.current.contains(e.target as Node)) {
+        setDateDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDateDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [dateDropdownOpen]);
   const [internalViewMode, setInternalViewMode] = useState<ViewMode>(viewMode);
   useEffect(() => {
     setInternalViewMode(viewMode);
@@ -662,26 +683,105 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
       </div>
 
       {isEditMode && selectedLots.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
-          <span className="text-xs font-bold text-primary" role="status">
-            {selectedLots.length} card(s) selected
-          </span>
-          <span className="text-xs text-base-content/60">Drag a selected card or choose a date:</span>
-          <select aria-label="Move selected lots to date" value={batchTargetDate}
-            onChange={(e) => setBatchTargetDate(e.target.value)}
-            className="select select-sm h-8 w-auto rounded-lg border-base-300 bg-base-100 text-xs">
-            <option value="">Select target date</option>
-            {planningDays.map((day) => <option key={day.date} value={day.date}>
-              {dayjs(day.date).format("ddd DD/MM/YYYY")}
-            </option>)}
-          </select>
-          <button type="button" disabled={!planningDates.has(batchTargetDate)}
-            onClick={() => onMoveLots(selectedLots, batchTargetDate)}
-            className="btn btn-sm btn-primary h-8 rounded-lg text-xs">
-            Move {selectedLots.length} card(s)
-          </button>
-          <button type="button" onClick={() => onSelectionChange([])}
-            className="btn btn-sm btn-ghost h-8 rounded-lg text-xs">Clear selection</button>
+        <div className="flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl bg-base-100 border border-base-300 shadow-xs mb-2.5">
+          {/* Left: Count Badge */}
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#4f46e5] text-white tabular-nums shadow-2xs shrink-0">
+              {selectedLots.length} {selectedLots.length === 1 ? "card" : "cards"} selected
+            </span>
+            <span className="text-xs text-base-content/55 hidden md:inline truncate">
+              Drag selected cards or move directly to date:
+            </span>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Custom Aligned Date Dropdown */}
+            <div className="relative" ref={dateDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setDateDropdownOpen((prev) => !prev)}
+                className="h-8 px-3 rounded-lg border border-base-300 bg-base-100 text-xs font-medium text-base-content hover:bg-base-200/60 inline-flex items-center gap-2 cursor-pointer shadow-2xs transition-colors"
+              >
+                <Calendar size={13} className="text-[#4f46e5]" />
+                <span className="tabular-nums">
+                  {batchTargetDate ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="font-bold text-[#4f46e5] uppercase text-[11px]">
+                        {dayjs(batchTargetDate).format("ddd")}
+                      </span>
+                      <span>{dayjs(batchTargetDate).format("DD/MM/YYYY")}</span>
+                    </span>
+                  ) : (
+                    "Choose target date..."
+                  )}
+                </span>
+                <ChevronDown
+                  size={13}
+                  className={`text-base-content/40 transition-transform ${
+                    dateDropdownOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {dateDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-52 max-h-64 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl thin-scrollbar">
+                  {planningDays.map((day) => {
+                    const isSelected = batchTargetDate === day.date;
+                    return (
+                      <button
+                        key={day.date}
+                        type="button"
+                        onClick={() => {
+                          setBatchTargetDate(day.date);
+                          setDateDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer text-left ${
+                          isSelected
+                            ? "bg-[#eef2ff] text-[#4f46e5] font-bold"
+                            : "text-base-content hover:bg-base-200/70"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 tabular-nums">
+                          <span
+                            className={`w-9 text-[11px] font-bold uppercase shrink-0 ${
+                              isSelected ? "text-[#4f46e5]" : "text-base-content/50"
+                            }`}
+                          >
+                            {dayjs(day.date).format("ddd")}
+                          </span>
+                          <span className="font-mono text-xs font-semibold tracking-wide">
+                            {dayjs(day.date).format("DD/MM/YYYY")}
+                          </span>
+                        </div>
+                        {isSelected && <Check size={14} className="text-[#4f46e5] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              disabled={!planningDates.has(batchTargetDate)}
+              onClick={() => onMoveLots(selectedLots, batchTargetDate)}
+              className="btn btn-xs h-8 px-3.5 rounded-lg bg-[#4f46e5] hover:bg-[#4338ca] text-white border-none text-xs font-semibold disabled:bg-base-200 disabled:text-base-content/30 cursor-pointer shadow-2xs"
+            >
+              Move {selectedLots.length > 1 ? `(${selectedLots.length})` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onSelectionChange([]);
+                setBatchTargetDate("");
+                setDateDropdownOpen(false);
+              }}
+              className="btn btn-xs btn-ghost h-8 px-2.5 rounded-lg text-xs font-medium text-base-content/60 hover:text-base-content hover:bg-base-200 cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       )}
 
@@ -722,7 +822,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 data-day-col={col.date}
                 onDragOver={(e) => handleColDragOver(e, col.date)}
                 onDrop={(e) => handleColDrop(e, col.date)}
-                className={`shrink-0 flex flex-col max-h-[580px] rounded-xl transition-all ${isCompact ? "w-[140px] p-1.5" : "w-[162px] p-2"} ${
+                className={`shrink-0 flex flex-col max-h-[580px] rounded-xl transition-all ${isCompact ? "w-[156px] p-1.5" : "w-[184px] p-2"} ${
                   isTargetCol
                     ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
                     : isFocusedCol
@@ -776,7 +876,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 </div>
 
                 {/* Internally Scrollable Column Cards Body */}
-                <div className={`flex-1 flex flex-col overflow-y-auto pr-0.5 min-h-0 ${isCompact ? "gap-1.5" : "gap-2"}`}>
+                <div className={`flex-1 flex flex-col overflow-y-auto pr-0.5 min-h-0 thin-scrollbar ${isCompact ? "gap-1.5" : "gap-2"}`}>
                   {visibleLots.map((lot, index) => {
                     const isThisMovingPreview =
                       movingIds.has(lot.id) &&
@@ -1458,8 +1558,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         {isEditMode && (
                           <input
                             type="checkbox"
-                            className="checkbox checkbox-xs checkbox-primary"
-                            aria-label={`Select ${lot.label} ${lot.product}`}
+                            className="w-3.5 h-3.5 rounded border border-base-300 text-[#4f46e5] accent-[#4f46e5] cursor-pointer"
+                            aria-label={`Select ${lot.product} ${lot.label}`}
                             checked={selectedLotIds.has(lot.id)}
                             onChange={() => toggleLotSelection(lot)}
                           />
