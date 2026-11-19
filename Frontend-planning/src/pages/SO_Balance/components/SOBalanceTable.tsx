@@ -102,7 +102,7 @@ const amountCol = (
   ignoreSign = false,
 ): GridColDef<PlanningRow> => ({
   ...numberCol(field, headerName),
-  minWidth: 150,
+  minWidth: 135,
   ...(ignoreSign && { sortComparator: absSortComparator }),
   renderCell: ({ value }) => (
     <NumberCell value={value} decimals={2} colorClass={colorClass} />
@@ -115,7 +115,7 @@ const StatusPill = ({ value }: { value: PlanningStatus }) => {
   const isReady = value === "ready";
   return (
     <span
-      className={`status-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+      className={`status-pill inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
         isReady ? "status-pill-ready" : "status-pill-plan"
       }`}
     >
@@ -132,8 +132,8 @@ const getColumns = (
     field: "prd_name",
     headerName: "Product",
     headerAlign: "center",
-    flex: 1.4,
-    minWidth: 160,
+    flex: 1,
+    minWidth: 140,
     renderCell: ({ value }) => (
       <span className="font-semibold text-base-content text-[14px]">{value}</span>
     ),
@@ -144,7 +144,7 @@ const getColumns = (
     align: "center",
     headerAlign: "center",
     flex: 1,
-    minWidth: 125,
+    minWidth: 115,
     renderCell: ({ value }) => (
       <span className="font-medium tabular-nums text-base-content text-[14px] whitespace-nowrap">
         {toDMY(value)}
@@ -156,7 +156,7 @@ const getColumns = (
     headerName: "SO Bal",
     type: "number",
     flex: 1.15,
-    minWidth: 150,
+    minWidth: 170,
     align: "center",
     headerAlign: "center",
     renderCell: ({ row, value }) => {
@@ -171,7 +171,7 @@ const getColumns = (
             e.stopPropagation();
             onViewHistory?.(row);
           }}
-          className="group inline-flex items-center justify-center gap-2 pl-2 pr-1 py-0.5 rounded-md text-[14px] tabular-nums font-semibold text-base-content/85 hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
+          className="group inline-flex items-center justify-center gap-1.5 whitespace-nowrap pl-2 pr-1 py-0.5 rounded-md text-[14px] tabular-nums font-semibold text-base-content/85 hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
           title="ดูประวัติการคำนวณ (SO History)"
           aria-label={`View SO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
         >
@@ -199,7 +199,7 @@ const getColumns = (
     align: "center",
     headerAlign: "center",
     flex: 1.1,
-    minWidth: 150,
+    minWidth: 155,
     renderCell: ({ value }) => <StatusPill value={value} />,
   },
 ];
@@ -320,7 +320,7 @@ const SOBalanceTable = ({
             },
             "& .MuiDataGrid-columnHeader": {
               backgroundColor: "var(--color-base-200)",
-              px: 2,
+              px: 1.25,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
               fontSize: 13.5,
@@ -381,7 +381,7 @@ const SOBalanceTable = ({
 
             // ── Cells / Rows (นิ่ง ไม่กระพริบ ไม่ Dim แสง) ──
             "& .MuiDataGrid-cell": {
-              px: 2,
+              px: 1.25,
               borderColor: border,
             },
             "& .MuiDataGrid-row:hover": {
