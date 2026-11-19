@@ -111,13 +111,63 @@ test("API reads all observed lots from gate_output_log in a parameterized read-o
     assert.ok(queries[0][0].includes("REPEATABLE READ READ ONLY"));
     const scan = queries.find(([sql]) => sql.includes("FROM planning.gate_output_log"));
     assert.deepEqual(scan[1], [date]);
-    assert.match(scan[0], /g\.source_in_date >= \$1::date AND g\.source_in_date < \$1::date/);
-    assert.match(scan[0], /FROM active_plan p/);
+    assert.match(scan[0], /g\.source_in_date >= \(\$1::text\)::date AND g\.source_in_date < \(\$1::text\)::date/);
+    assert.match(scan[0], /FROM planning\.work_plan_lot_card|JOIN planning\.work_plan_lot_card/);
     assert.match(scan[0], /planned_on_day/);
+    // Never mix untyped/text $1 with $1::date in the same query (PostgreSQL rejects 42P08).
+    assert.ok(!/\$1::date\b/.test(scan[0]), "SQL must cast $1 consistently as text before casting to date");
     assert.ok(!queries.some(([sql]) => /^(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/.test(sql)));
     assert.equal(queries.at(-2)[0], "COMMIT");
     assert.equal(queries.at(-1)[0], "RELEASE");
   });
+});
+test("finished endpoint falls back cleanly to legacy JSONB SQL when work_plan_lot_card does not exist yet", async () => {
+  const queries = [];
+  const pool = {
+    connect: async () => ({
+      release: () => queries.push(["RELEASE"]),
+      query: async (sql, params) => {
+        queries.push([sql, params]);
+        if (sql.includes("work_plan_lot_card")) {
+          const err = new Error('relation "planning.work_plan_lot_card" does not exist');
+          err.code = "42P01";
+          throw err;
+        }
+        return {
+          rows: sql.includes("FROM planning.gate_output_log") ? [{
+            prd_name: "PRODUCT-A",
+            lot_no: "LOT-A",
+            gate_name: "GATE-A",
+            next_gate: "GATE-B",
+            source_process: "PROCESS-1",
+            scan_type: "SCAN IN",
+            scanned_at: `${date}T22:56:00.000`,
+            process_group: "EFPC_GEN",
+            updated_at: `${date} 23:00`,
+          }] : [],
+        };
+      },
+    }),
+  };
+  const app = express();
+  app.use(createInGateRoutingRouter({ pool }));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise(resolve => server.once("listening", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/finished?date=${date}`);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.data.rows.length, 1);
+    assert.equal(body.data.rows[0].lotNo, "LOT-A");
+    assert.ok(queries.some(([sql]) => sql.includes("work_plan_lot_card")));
+    assert.ok(queries.some(([sql]) => sql === "ROLLBACK"));
+    assert.ok(queries.some(([sql]) => sql.includes("FROM active_plan p, jsonb_array_elements")));
+    assert.equal(queries.at(-2)[0], "COMMIT");
+    assert.equal(queries.at(-1)[0], "RELEASE");
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 test("source failures are explicit and release the connection without leaking database details", async () => {
   await withApi(async (api, queries) => {

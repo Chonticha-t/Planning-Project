@@ -1545,3 +1545,75 @@ test("load endpoint returns pre-OT requiredCapacity alongside OT-enabled capacit
     assert.equal(data.requiredCapacity.FADL["2026-11-15"].capacityMin, 0);
   });
 });
+
+test("saving a plan bulk-inserts deduplicated lot cards into work_plan_lot_card and skips need WIP", async () => {
+  let header;
+  let insertedLotCards;
+  const rows = [
+    work({ lot_no: "L001", pcs_per_sheet: 12, qty: 1000, sheets: 84 }),
+    work({ lot_no: "L002", gate_name: "FIN", next_gate: "W/H", pcs_per_sheet: 20, qty: 500, sheets: 25 }),
+    work({ lot_no: null, status: "need wip", gate_state: "need_wip" }),
+  ];
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, (params) => (params[0] === PLAN_METHOD && header ? [header] : [])],
+    [/planning_summary_gate/, rows],
+    [/INSERT INTO planning\.work_plan \(/, (params) => {
+      header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: [], move_history: {},
+      };
+      return [];
+    }],
+    [/INSERT INTO planning\.work_plan_lot_card/, (params) => {
+      insertedLotCards = params;
+      return [];
+    }],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [], boardCardOrder: [] } });
+    assert.equal(response.status, 200);
+  });
+  assert.ok(insertedLotCards, "expected bulk insert into planning.work_plan_lot_card");
+  assert.equal(insertedLotCards[0], header.plan_id);
+  assert.equal(insertedLotCards[1], 1);
+  assert.deepEqual(insertedLotCards[2], ["L001", "L002"]);
+  assert.deepEqual(insertedLotCards[3], ["FADL", "FIN"]);
+  assert.deepEqual(insertedLotCards[4], ["PRD-A", "PRD-A"]);
+  assert.deepEqual(insertedLotCards[5], ["FIN", "W/H"]);
+  assert.deepEqual(insertedLotCards[6], ["EFPC_GEN", "EFPC_GEN"]);
+  assert.deepEqual(insertedLotCards[7], ["2026-11-16", "2026-11-16"]);
+  assert.deepEqual(insertedLotCards[8], [1000, 500]);
+  assert.deepEqual(insertedLotCards[9], [84, 25]);
+  assert.deepEqual(insertedLotCards[10], [12, 20]);
+});
+
+test("saving a plan succeeds via savepoint rollback when work_plan_lot_card table is not created yet", async () => {
+  let header;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/FROM planning\.work_plan\b/, (params) => (params[0] === PLAN_METHOD && header ? [header] : [])],
+    [/planning_summary_gate/, [work({ lot_no: "L001" })]],
+    [/INSERT INTO planning\.work_plan \(/, (params) => {
+      header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: [], move_history: {},
+      };
+      return [];
+    }],
+    [/INSERT INTO planning\.work_plan_lot_card/, () => {
+      const err = new Error('relation "planning.work_plan_lot_card" does not exist');
+      err.code = "42P01";
+      throw err;
+    }],
+  ]);
+  await withApi(pool, async (api) => {
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [], boardCardOrder: [] } });
+    assert.equal(response.status, 200);
+  });
+  assert.ok(pool.log.some((entry) => entry.sql === "SAVEPOINT sp_work_plan_lot_card"));
+  assert.ok(pool.log.some((entry) => entry.sql === "ROLLBACK TO SAVEPOINT sp_work_plan_lot_card"));
+  assert.ok(pool.log.some((entry) => entry.sql === "COMMIT"));
+});

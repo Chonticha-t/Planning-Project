@@ -163,6 +163,61 @@ const MOVES_SQL = `
   FROM planning.work_plan_gate_item
   WHERE plan_id = $1`;
 
+const INSERT_PLAN_LOT_CARDS_SQL = `
+  INSERT INTO planning.work_plan_lot_card (
+    plan_id, version_no, lot_no, gate_name, prd_name, next_gate,
+    process_group, planned_date, qty_pcs, qty_sheets, pcs_per_sheet
+  )
+  SELECT $1::uuid, $2::integer, u.lot_no, u.gate_name, u.prd_name, u.next_gate,
+         u.process_group, u.planned_date, u.qty_pcs, u.qty_sheets, u.pcs_per_sheet
+  FROM UNNEST(
+    $3::varchar[], $4::varchar[], $5::varchar[], $6::varchar[],
+    $7::varchar[], $8::date[], $9::numeric[], $10::numeric[], $11::numeric[]
+  ) AS u(lot_no, gate_name, prd_name, next_gate, process_group, planned_date, qty_pcs, qty_sheets, pcs_per_sheet)
+  ON CONFLICT (plan_id, lot_no, gate_name, planned_date) DO NOTHING`;
+
+const finiteNonNegative = (value) => {
+  const num = Number(value);
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(num) && num >= 0 ? num : null;
+};
+
+const finitePositive = (value) => {
+  const num = Number(value);
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(num) && num > 0 ? num : null;
+};
+
+// Deduplicate lot cards by (lot_no, gate_name, planned_date) for relational indexing.
+const buildPlanLotCardColumns = (cards) => {
+  const seen = new Set();
+  const cols = {
+    lotNos: [], gates: [], prdNames: [], nextGates: [],
+    processGroups: [], plannedDates: [], qtyPcs: [], qtySheets: [], pcsPerSheet: [],
+  };
+  for (const card of Array.isArray(cards) ? cards : []) {
+    if (card?.kind !== "lot") continue;
+    const lotNo = typeof card.lotNo === "string" ? card.lotNo.trim() : "";
+    const gateName = typeof card.gate === "string" ? card.gate.trim() : "";
+    const prdName = typeof card.prdName === "string" ? card.prdName.trim() : "";
+    const plannedDate = card.plannedDate;
+    if (!lotNo || !gateName || !prdName || !isDate(plannedDate)) continue;
+    const key = `${lotNo}\0${gateName}\0${plannedDate}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const nextGate = typeof card.nextGate === "string" && card.nextGate.trim() ? card.nextGate.trim() : null;
+    const processGroup = typeof card.processGroup === "string" && card.processGroup.trim() ? card.processGroup.trim() : null;
+    cols.lotNos.push(lotNo);
+    cols.gates.push(gateName);
+    cols.prdNames.push(prdName);
+    cols.nextGates.push(nextGate);
+    cols.processGroups.push(processGroup);
+    cols.plannedDates.push(plannedDate);
+    cols.qtyPcs.push(finiteNonNegative(card.qty));
+    cols.qtySheets.push(finiteNonNegative(card.sheets));
+    cols.pcsPerSheet.push(finitePositive(card.allocations?.[0]?.pcs_per_sheet));
+  }
+  return cols;
+};
+
 const planInfo = (row) => (row ? {
   planId: row.plan_id, version: row.version_no, note: row.note, savedBy: row.created_by, savedAt: row.saved_at,
 } : null);
@@ -542,6 +597,25 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [randomUUID(), planId, move.workKey, move.gate, row.prdName, row.item, row.lotNo, row.dueDate || null,
             row.status, row.qty, row.baseDate, move.plannedDate]);
+        }
+        const lotCards = buildPlanLotCardColumns(view.cards);
+        if (lotCards.lotNos.length) {
+          await client.query("SAVEPOINT sp_work_plan_lot_card");
+          try {
+            await client.query(INSERT_PLAN_LOT_CARDS_SQL, [
+              planId, baseVersion + 1,
+              lotCards.lotNos, lotCards.gates, lotCards.prdNames, lotCards.nextGates,
+              lotCards.processGroups, lotCards.plannedDates, lotCards.qtyPcs, lotCards.qtySheets, lotCards.pcsPerSheet,
+            ]);
+            await client.query("RELEASE SAVEPOINT sp_work_plan_lot_card");
+          } catch (cardError) {
+            if (cardError?.code === "42P01") {
+              await client.query("ROLLBACK TO SAVEPOINT sp_work_plan_lot_card");
+              await client.query("RELEASE SAVEPOINT sp_work_plan_lot_card");
+            } else {
+              throw cardError;
+            }
+          }
         }
         return { plan: planInfo((await client.query(LATEST_PLAN_SQL, [PLAN_METHOD])).rows[0]), orderedGroupCount: order.length };
       });

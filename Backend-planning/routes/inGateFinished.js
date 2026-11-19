@@ -3,6 +3,51 @@ const isDay = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v
   && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 const FINISHED_LOG_SQL = `WITH active_plan AS (
+  SELECT plan_id
+  FROM planning.work_plan
+  WHERE calculation_method = 'gate_arrival_max_target_v1'
+    AND deleted_at IS NULL
+  ORDER BY version_no DESC
+  LIMIT 1
+), indexed_planned AS (
+  SELECT DISTINCT c.lot_no, c.gate_name
+  FROM active_plan p
+  JOIN planning.work_plan_lot_card c ON c.plan_id = p.plan_id
+  WHERE c.planned_date = ($1::text)::date
+), unindexed_plan AS (
+  SELECT w.baseline_snapshot->'viewSnapshot'->'data'->'cards' AS cards
+  FROM active_plan p
+  JOIN planning.work_plan w ON w.plan_id = p.plan_id
+  WHERE NOT EXISTS (
+    SELECT 1 FROM planning.work_plan_lot_card c WHERE c.plan_id = p.plan_id
+  )
+    AND jsonb_typeof(w.baseline_snapshot->'viewSnapshot'->'data'->'cards') = 'array'
+), planned_on_day AS (
+  SELECT lot_no, gate_name FROM indexed_planned
+  UNION
+  SELECT DISTINCT BTRIM(c->>'lotNo') AS lot_no, BTRIM(c->>'gate') AS gate_name
+  FROM unindexed_plan p, jsonb_array_elements(p.cards) AS c
+  WHERE c->>'kind' = 'lot'
+    AND c->>'plannedDate' = $1::text
+    AND NULLIF(BTRIM(c->>'lotNo'), '') IS NOT NULL
+    AND NULLIF(BTRIM(c->>'gate'), '') IS NOT NULL
+)
+SELECT g.prd_name, g.lot_no, g.gate_name, g.next_gate, g.source_process, g.scan_type,
+  to_char(g.source_in_date, 'YYYY-MM-DD"T"HH24:MI:SS.MS') AS scanned_at,
+  g.process_group,
+  COALESCE(g.source_updated_at::text, g.recorded_at::text) AS updated_at
+  FROM planning.gate_output_log g
+  WHERE g.gate_name <> 'PRE_FFPC'
+    AND (
+      (g.source_in_date >= ($1::text)::date AND g.source_in_date < ($1::text)::date + INTERVAL '1 day')
+      OR EXISTS (
+        SELECT 1 FROM planned_on_day p
+        WHERE p.lot_no = g.lot_no AND p.gate_name = g.gate_name
+      )
+    )
+  ORDER BY g.source_in_date DESC, g.lot_no LIMIT 5001`;
+
+const FINISHED_LOG_LEGACY_SQL = `WITH active_plan AS (
   SELECT baseline_snapshot->'viewSnapshot'->'data'->'cards' AS cards
   FROM planning.work_plan
   WHERE calculation_method = 'gate_arrival_max_target_v1'
@@ -14,7 +59,7 @@ const FINISHED_LOG_SQL = `WITH active_plan AS (
   SELECT DISTINCT BTRIM(c->>'lotNo') AS lot_no, BTRIM(c->>'gate') AS gate_name
   FROM active_plan p, jsonb_array_elements(p.cards) AS c
   WHERE c->>'kind' = 'lot'
-    AND c->>'plannedDate' = $1
+    AND c->>'plannedDate' = $1::text
     AND NULLIF(BTRIM(c->>'lotNo'), '') IS NOT NULL
     AND NULLIF(BTRIM(c->>'gate'), '') IS NOT NULL
 )
@@ -25,7 +70,7 @@ SELECT g.prd_name, g.lot_no, g.gate_name, g.next_gate, g.source_process, g.scan_
   FROM planning.gate_output_log g
   WHERE g.gate_name <> 'PRE_FFPC'
     AND (
-      (g.source_in_date >= $1::date AND g.source_in_date < $1::date + INTERVAL '1 day')
+      (g.source_in_date >= ($1::text)::date AND g.source_in_date < ($1::text)::date + INTERVAL '1 day')
       OR EXISTS (
         SELECT 1 FROM planned_on_day p
         WHERE p.lot_no = g.lot_no AND p.gate_name = g.gate_name
@@ -90,7 +135,17 @@ function createFinishedHandler({ pool, cache }) {
       await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
       await client.query("SET LOCAL statement_timeout = '8s'");
       await client.query("SET LOCAL lock_timeout = '2s'");
-      const finished = (await client.query(FINISHED_LOG_SQL, [date])).rows;
+      let finished;
+      try {
+        finished = (await client.query(FINISHED_LOG_SQL, [date])).rows;
+      } catch (queryError) {
+        if (queryError?.code !== "42P01") throw queryError;
+        await client.query("ROLLBACK");
+        await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        await client.query("SET LOCAL statement_timeout = '8s'");
+        await client.query("SET LOCAL lock_timeout = '2s'");
+        finished = (await client.query(FINISHED_LOG_LEGACY_SQL, [date])).rows;
+      }
       if (finished.length > 5000) throw new Error("WIP_LIMIT");
       const rows = finished.map(row => ({
         id: JSON.stringify([row.prd_name, row.lot_no, row.gate_name]),
