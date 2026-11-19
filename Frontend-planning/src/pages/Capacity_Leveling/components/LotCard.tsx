@@ -17,9 +17,9 @@ import { formatMinutes, isMoved as cardIsMoved, WARNING_TEXT, ZERO_LOAD_TEXT, ze
 import { DatePickerPopover } from "./DatePickerPopover";
 
 const SHIFT_THEMES = {
-  day: { label: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: "color-mix(in oklab, #facc15 10%, var(--color-base-100))" },
-  night: { label: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: "color-mix(in oklab, #4f46e5 7%, var(--color-base-100))" },
-  over: { label: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: "color-mix(in oklab, #f43f5e 6%, var(--color-base-100))" },
+  day: { label: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: undefined },
+  night: { label: "Night Shift", Icon: Moon, badge: "bg-indigo-100 text-indigo-950 border-indigo-200", background: undefined },
+  over: { label: "Over capacity", Icon: AlertTriangle, badge: "bg-rose-100 text-rose-900 border-rose-200", background: undefined },
   unassigned: { label: "Shift pending", Icon: Clock3, badge: "bg-base-200 text-base-content/70 border-base-300", background: undefined },
   no_load: { label: "No load", Icon: CircleSlash, badge: "bg-base-100 text-base-content/60 border-base-300 border-dashed", background: undefined },
   none: { label: "No shift", Icon: Clock3, badge: "", background: undefined },

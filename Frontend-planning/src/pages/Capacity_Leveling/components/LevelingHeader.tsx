@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   Calendar,
@@ -65,16 +66,21 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
   onOpenPlanHistory,
 }) => {
   const navigate = useNavigate();
+  const [confirmDialog, setConfirmDialog] = useState<"discard" | "leave" | null>(null);
+
+  useEffect(() => {
+    if (!confirmDialog) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setConfirmDialog(null);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [confirmDialog]);
 
   const handleBackClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (
-      !readOnly &&
-      isDraftModified &&
-      !window.confirm(
-        "You have unsaved changes on the Capacity Leveling board. Leave without saving?"
-      )
-    ) {
+    if (!readOnly && isDraftModified) {
+      setConfirmDialog("leave");
       return;
     }
     navigate("/planning/planning_summary_gate");
@@ -87,7 +93,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         <button
           type="button"
           onClick={handleBackClick}
-          className="btn btn-xs btn-ghost h-8 px-2.5 rounded-lg border border-base-300 text-xs font-semibold text-base-content/70 hover:text-base-content flex items-center gap-1.5 cursor-pointer"
+          className="btn btn-xs h-8 px-3 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer"
           title="Back to Planning Summary Gate"
         >
           <ArrowLeft size={14} />
@@ -211,7 +217,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
               {isDraftModified && onDiscardDraft && (
                 <button
                   type="button"
-                  onClick={onDiscardDraft}
+                  onClick={() => setConfirmDialog("discard")}
                   disabled={isLoading}
                   title="Discard unsaved draft moves and restore the current saved plan"
                   className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content/80 hover:text-base-content flex items-center gap-1.5 cursor-pointer"
@@ -226,7 +232,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
                 onClick={onResetRequired}
                 disabled={!canReset || readOnly}
                 title="Reset arrival dates and card order for all process groups and gates back to source arrivals. Review before saving."
-                className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-amber-300 hover:bg-amber-50 text-amber-900 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw size={13} />
                 <span>Reset to Required</span>
@@ -262,6 +268,70 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
           </button>
         </div>
       </div>
+
+      {confirmDialog &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="planning-summary-gate fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="header-confirm-title"
+              aria-describedby="header-confirm-description"
+              className="w-full max-w-md rounded-2xl border border-base-300 bg-base-100 p-5 shadow-2xl text-base-content"
+            >
+              <div>
+                <h2 id="header-confirm-title" className="text-base font-bold text-base-content leading-tight">
+                  {confirmDialog === "discard" ? "Discard Unsaved Draft?" : "Leave Without Saving?"}
+                </h2>
+                <p className="text-xs text-base-content/55 mt-0.5">
+                  {draftChangesCount > 0
+                    ? `${draftChangesCount} unsaved change(s) on this board`
+                    : "Unsaved draft changes"}
+                </p>
+              </div>
+
+              <div id="header-confirm-description" className="mt-4 text-xs leading-relaxed text-base-content/75">
+                {confirmDialog === "discard" ? (
+                  <p>
+                    All unsaved date moves and card ordering will be discarded and restored to the current saved plan.
+                  </p>
+                ) : (
+                  <p>
+                    You have unsaved changes on the Capacity Leveling board. Leaving now will discard your draft edits.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => setConfirmDialog(null)}
+                  className="btn btn-sm h-9 px-4 rounded-xl border border-base-300 bg-base-100 hover:bg-base-200 text-xs font-semibold text-base-content cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = confirmDialog;
+                    setConfirmDialog(null);
+                    if (action === "discard") {
+                      onDiscardDraft?.();
+                    } else {
+                      navigate("/planning/planning_summary_gate");
+                    }
+                  }}
+                  className="btn btn-sm h-9 px-4 rounded-xl border-0 bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-xs cursor-pointer"
+                >
+                  {confirmDialog === "discard" ? "Discard Draft" : "Leave Page"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

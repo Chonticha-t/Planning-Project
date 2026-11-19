@@ -275,9 +275,6 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
 
   const handleDiscardDraft = useCallback(() => {
     if (readOnly || !data || loading || saving) return;
-    if (!window.confirm("Discard all unsaved date moves and card ordering, and restore the saved plan?")) {
-      return;
-    }
     requiredResetRef.current = false;
     setRequiredReset(false);
     draftRef.current = new Map();
@@ -378,8 +375,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       const ids = new Set(lotsToStage.flatMap((lot) => lot.sourceIds || [lot.id]));
       const currentLots = expandBoardLots(lots, lotsToStage);
       if (currentLots.length !== ids.size || new Set(currentLots.map((lot) => lot.gate)).size > 1 ||
-        currentLots.some((lot) => lotKind(lot) === "unidentified" || lot.loadMin === null || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate) || moveWarning(lot, targetDate, plannedIndex, data) === "order")) {
-        toast.error("Choose an open arrival day with valid lead time and normal minutes, without overlapping the previous or next gate.");
+        currentLots.some((lot) => lotKind(lot) === "unidentified" || lot.loadMin === null || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate))) {
+        toast.error("Choose an open arrival day with valid lead time and normal minutes.");
         return;
       }
       const changedLots = lotsToStage.filter((lot) => lot.plannedDate !== targetDate);
@@ -387,7 +384,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       setSelectedLotId(null);
       setPendingMove({ lots: changedLots, targetDate });
     },
-    [lots, isValidMoveTarget, data, plannedIndex, readOnly]
+    [lots, isValidMoveTarget, data, readOnly]
   );
 
   const handleStageMoveLot = useCallback((lot: LotItem, targetDate: string) => {
@@ -449,7 +446,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       const stagedDates = new Map(lotsToMove.flatMap((lot) => (lot.sourceIds || [lot.id]).map((id) => [id, lot.plannedDate] as const)));
       const currentLots = expandBoardLots(lots, lotsToMove);
       if (currentLots.length !== ids.size || currentLots.some((lot) =>
-        lot.plannedDate !== stagedDates.get(lot.id) || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate) || moveWarning(lot, targetDate, plannedIndex, data) === "order")) {
+        lot.plannedDate !== stagedDates.get(lot.id) || !isValidMoveTarget(lot.gate, targetDate) || !data || !occupancyWindow(data, lot, targetDate))) {
         toast.error("The selected cards or target date are no longer available.");
         return;
       }
