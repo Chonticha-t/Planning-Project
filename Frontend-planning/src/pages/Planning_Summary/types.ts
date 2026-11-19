@@ -25,6 +25,13 @@ export interface PlanningSummaryRow {
   lot_problem: string;
   pending_reason: string;
   skipped_due_date?: string | null;
+  skipped_lot_no?: string | null;
+  skipped_lot_status?: string | null;
+  skipped_lot_net_wip_qty?: number | null;
+  skipped_lot_proc_disp?: string | null;
+  skipped_lot_gate_name?: string | null;
+  skipped_lot_problem?: string | null;
+  skipped_pending_reason?: string | null;
   assigned_due_date?: string | null;
   original_due_date?: string | null;
   updated_at: string;

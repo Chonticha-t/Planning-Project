@@ -202,7 +202,7 @@ export default function SavedPlanPage() {
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/55">
                 <strong className="text-base-content/75">Plan v{saved.plan.version}</strong><span>{saved.plan.savedAt} · {saved.plan.savedBy}</span>
-                <span>Status at save · Finished from next-gate SCAN IN · ETA unavailable</span>
+                <span>Status at save</span>
                 {scheduledDates.length > 0 && <select aria-label="Scheduled day" className="select select-xs select-bordered ml-auto" value={scheduledDates.includes(date) ? date : ""} onChange={event => event.target.value && setDate(event.target.value)}><option value="" disabled>Select a planned day</option>{scheduledDates.map(day => <option key={day} value={day}>{day}</option>)}</select>}
               </div>
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}

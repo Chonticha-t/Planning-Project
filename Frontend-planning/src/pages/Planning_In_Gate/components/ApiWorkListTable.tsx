@@ -69,13 +69,13 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
       </div>
     </div>
     {filter === "all" && <p className="text-xs text-base-content/60">Finished quantities, plan minutes and shift allocation are from the saved plan. They are not actual passed quantity or runtime. Unplanned or ambiguous matches have no plan values.</p>}
-    <div className="text-xs text-base-content/60" role={finished.error ? "alert" : "status"}>
-      {finished.loading ? "Loading next-gate SCAN IN evidence…"
-        : finished.error ? <>{finished.error}{finished.checkedAt && " Showing the last checked results."} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
-        : <>Finished = SCAN IN at the next gate, using its in_date calendar day. Latest WIP evidence only; not a complete scan history.
-          {finished.unresolved > 0 && <span> Some scans have unresolved routing or category and are excluded from the corresponding totals.</span>}
-          <button type="button" className="link ml-2" onClick={finished.reload}>Refresh finished</button></>}
-    </div>
+    {(finished.loading || finished.error || finished.unresolved > 0) && (
+      <div className="text-xs text-base-content/60" role={finished.error ? "alert" : "status"}>
+        {finished.loading ? "Loading next-gate SCAN IN evidence…"
+          : finished.error ? <>{finished.error}{finished.checkedAt && " Showing the last checked results."} <button type="button" className="link" onClick={finished.reload}>Retry finished</button></>
+          : <span>Some scans have unresolved routing or category and are excluded from the corresponding totals.</span>}
+      </div>
+    )}
     <div className="overflow-x-auto rounded-xl border border-base-300">
       <table className={`w-full ${compactFinished ? "min-w-[620px]" : "min-w-[980px]"} table-fixed text-sm text-base-content tabular-nums`}>
         <colgroup>{(compactFinished ? [7, 28, 18, 35, 12] : [5.5, 12.5, 9.5, 8.5, 8.5, 17, 7.5, 7.5, 13.5, 10]).map((width, i) => <col key={i} style={{ width: `${width}%` }} />)}</colgroup>

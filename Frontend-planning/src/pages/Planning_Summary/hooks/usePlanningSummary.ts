@@ -302,7 +302,8 @@ export const usePlanningSummary = () => {
   // กดปุ่ม Undo Skip เพื่อคืนค่า Lot กลับไป Due Date เดิมตามลำดับ FIFO
   const unskipLotDueDate = useCallback(
     async (row: PlanningSummaryRow) => {
-      const toastId = toast.loading(`Restoring Due Date for Lot ${row.lot_no}...`);
+      const targetLotNo = row.lot_no || row.skipped_lot_no || "";
+      const toastId = toast.loading(`Restoring Due Date for Lot ${targetLotNo}...`);
       try {
         const res = await axios.post<
           ApiResponse<{
@@ -314,7 +315,7 @@ export const usePlanningSummary = () => {
           PLANNING_SUMMARY_UNSKIP_DUE_API,
           {
             prd_name: row.prd_name,
-            lot_no: row.lot_no,
+            lot_no: targetLotNo,
           },
           { timeout: AJAX_TIMEOUT_MS }
         );
@@ -323,8 +324,8 @@ export const usePlanningSummary = () => {
           const restoredDue = res.data.data?.restored_due_date;
           toast.success(
             restoredDue
-              ? `Restored Lot ${row.lot_no} back to Due Date ${toDMY(restoredDue)}`
-              : `Restored Lot ${row.lot_no}`,
+              ? `Restored Lot ${targetLotNo} back to Due Date ${toDMY(restoredDue)}`
+              : `Restored Lot ${targetLotNo}`,
             { id: toastId, duration: 4000 }
           );
           await fetchData(activeFilterRef.current, { silent: true });

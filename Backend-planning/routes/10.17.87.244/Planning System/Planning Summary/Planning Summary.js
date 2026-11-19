@@ -57,7 +57,143 @@ const ensureAssignTable = async (clientOrQuery) => {
   if (typeof clientOrQuery === "function") isAssignTableReady = true;
 };
 
-const reallocateProductWithSkips = async (client, prdName) => {
+// เก็บ Snapshot ของ WIP Lot ที่ถูกถอดออกจาก planning_summary ชั่วคราว (เช่น Skip ที่ Due สุดท้าย)
+// เพื่อให้การ Undo Skip หรือการจัดสรรรอบถัดไปยังคืนข้อมูล Lot เดิมได้ครบถ้วน
+const unallocatedLotSnapshotsByPrd = new Map();
+
+const extractLotSnapshot = (r) => ({
+  lot_no: String(r.lot_no).trim(),
+  item: r.item ?? null,
+  proc_disp: r.proc_disp ?? r.process ?? null,
+  seq: r.seq !== null && r.seq !== undefined ? Number(r.seq) : null,
+  net_wip_qty: Number(r.net_wip_qty) || 0,
+  factory_desc: r.factory_desc ?? null,
+  prd_type: r.prd_type ?? null,
+  scan_in: r.scan_in || null,
+  gate_name: r.gate_name ?? null,
+  yield: r.yield !== null && r.yield !== undefined ? Number(r.yield) : null,
+  lot_status: r.lot_status || "PENDING",
+  lot_problem: r.lot_problem ?? null,
+  pending_reason: r.pending_reason ?? null,
+  last_due_date: r.due_date || r.skipped_due_date || null,
+});
+
+const getProductSnapshotMap = (prdName) => {
+  if (!unallocatedLotSnapshotsByPrd.has(prdName)) {
+    unallocatedLotSnapshotsByPrd.set(prdName, new Map());
+  }
+  return unallocatedLotSnapshotsByPrd.get(prdName);
+};
+
+let isSkipSnapshotTableReady = false;
+const ensureSkipSnapshotTable = async () => {
+  if (isSkipSnapshotTableReady) return;
+  await query(`
+    CREATE TABLE IF NOT EXISTS planning.planning_lot_skip_snapshot (
+      lot_no VARCHAR(100) PRIMARY KEY,
+      prd_name VARCHAR(100) NOT NULL,
+      snapshot JSONB NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  isSkipSnapshotTableReady = true;
+};
+
+const saveLotSnapshot = async (prdName, snapshot) => {
+  if (!prdName || !snapshot?.lot_no) return;
+  try {
+    await ensureSkipSnapshotTable();
+    await query(
+      `
+        INSERT INTO planning.planning_lot_skip_snapshot (lot_no, prd_name, snapshot, updated_at)
+        VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP)
+        ON CONFLICT (lot_no) DO UPDATE SET
+          prd_name = EXCLUDED.prd_name,
+          snapshot = EXCLUDED.snapshot,
+          updated_at = CURRENT_TIMESTAMP
+      `,
+      [snapshot.lot_no, prdName, JSON.stringify(snapshot)]
+    );
+  } catch {
+    // Best-effort DB snapshot; in-memory cache still preserves the lot.
+  }
+};
+
+const loadLotSnapshots = async (prdName) => {
+  if (!prdName) return [];
+  try {
+    await ensureSkipSnapshotTable();
+    const res = await query(
+      `
+        SELECT lot_no, snapshot
+        FROM planning.planning_lot_skip_snapshot
+        WHERE prd_name = $1
+      `,
+      [prdName]
+    );
+    return (res.rows || [])
+      .map((r) => {
+        const snap = typeof r.snapshot === "string" ? JSON.parse(r.snapshot) : r.snapshot;
+        return snap && snap.lot_no ? snap : null;
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+};
+
+const removeLotSnapshot = async (lotNo) => {
+  if (!lotNo) return;
+  try {
+    await ensureSkipSnapshotTable();
+    await query(`DELETE FROM planning.planning_lot_skip_snapshot WHERE lot_no = $1`, [lotNo]);
+  } catch {
+    // Best-effort DB snapshot cleanup.
+  }
+};
+
+const loadWipLotsFromSource = async (prdName) => {
+  if (!prdName) return [];
+  try {
+    const res = await query(
+      `
+        SELECT
+          lot AS lot_no,
+          proc_disp,
+          seq::int4 AS seq,
+          net_wip_qty::float8 AS net_wip_qty,
+          factory_desc,
+          proc_type AS prd_type,
+          to_char(scan_in, 'YYYY-MM-DD HH24:MI:SS') AS scan_in,
+          proc_disp AS gate_name,
+          yield::float8 AS yield,
+          lot_status,
+          lot_problem,
+          pending_reason
+        FROM planning.wip_in_process
+        WHERE prd_name = $1
+      `,
+      [prdName]
+    );
+    return (res.rows || [])
+      .filter((r) => r.lot_no)
+      .map((r) => extractLotSnapshot(r));
+  } catch {
+    return [];
+  }
+};
+
+const findCachedLotSnapshot = async (prdName, lotNo) => {
+  const memSnap = unallocatedLotSnapshotsByPrd.get(prdName)?.get(lotNo) || null;
+  if (memSnap) return memSnap;
+  const dbSnaps = await loadLotSnapshots(prdName);
+  const dbMatch = dbSnaps.find((s) => s.lot_no === lotNo);
+  if (dbMatch) return dbMatch;
+  const wipSnaps = await loadWipLotsFromSource(prdName);
+  return wipSnaps.find((s) => s.lot_no === lotNo) || null;
+};
+
+const reallocateProductWithSkips = async (client, prdName, options = {}) => {
   const summaryRes = await client.query(
     `
       SELECT
@@ -104,7 +240,9 @@ const reallocateProductWithSkips = async (client, prdName) => {
     `
       SELECT
         lot_no,
-        to_char(skipped_due_date, 'YYYY-MM-DD') AS skipped_due_date
+        to_char(skipped_due_date, 'YYYY-MM-DD') AS skipped_due_date,
+        seq::int4 AS seq,
+        process
       FROM planning.planning_lot_skip
       WHERE prd_name = $1
     `,
@@ -190,9 +328,14 @@ const reallocateProductWithSkips = async (client, prdName) => {
 
   // 2. รวบรวม WIP Lots ทั้งหมดของ prd_name นี้ แล้วเรียงตาม FIFO (seq DESC NULLS LAST, lot_no ASC)
   const lotMap = new Map();
+  const lastDueByLot = new Map();
   for (const r of currentRows) {
     const lotNo = r.lot_no ? String(r.lot_no).trim() : "";
     if (!lotNo) continue;
+
+    if (!lastDueByLot.has(lotNo)) {
+      lastDueByLot.set(lotNo, r.due_date || null);
+    }
 
     if (!lotMap.has(lotNo)) {
       lotMap.set(lotNo, {
@@ -222,6 +365,83 @@ const reallocateProductWithSkips = async (client, prdName) => {
         existing.scan_in = r.scan_in;
       }
     }
+  }
+
+  // กู้คืนข้อมูล WIP Lot ที่ถูกถอดออกจาก planning_summary ชั่วคราว (เช่น Skip แล้วรอ Due ถัดไป)
+  const restoredList = Array.isArray(options.restoredLots)
+    ? options.restoredLots.filter(Boolean)
+    : [];
+  const restoredLotNos = new Set(
+    restoredList
+      .map((s) => (s?.lot_no ? String(s.lot_no).trim() : ""))
+      .filter(Boolean)
+  );
+  const memorySnapshots = Array.from(
+    unallocatedLotSnapshotsByPrd.get(prdName)?.values() || []
+  );
+  const dbSnapshots = await loadLotSnapshots(prdName);
+  const sourceWipSnapshots = await loadWipLotsFromSource(prdName);
+  const baselineList = Array.isArray(options.baselineLots)
+    ? options.baselineLots.filter(Boolean)
+    : [];
+
+  for (const snap of [
+    ...restoredList,
+    ...memorySnapshots,
+    ...dbSnapshots,
+    ...sourceWipSnapshots,
+    ...baselineList,
+  ]) {
+    const lotNo = snap?.lot_no ? String(snap.lot_no).trim() : "";
+    if (!lotNo || lotMap.has(lotNo)) continue;
+
+    const isEligible =
+      (snap.last_due_date && poMap.has(snap.last_due_date)) ||
+      skipMap.has(lotNo) ||
+      assignMap.has(lotNo) ||
+      restoredLotNos.has(lotNo);
+    if (!isEligible) continue;
+
+    const wip = Number(snap.net_wip_qty) || 0;
+    lotMap.set(lotNo, {
+      lot_no: lotNo,
+      item: snap.item ?? null,
+      proc_disp: snap.proc_disp ?? null,
+      seq: snap.seq !== null && snap.seq !== undefined ? Number(snap.seq) : null,
+      net_wip_qty: wip,
+      remaining_wip: wip,
+      factory_desc: snap.factory_desc ?? null,
+      prd_type: snap.prd_type ?? null,
+      scan_in: snap.scan_in || null,
+      gate_name: snap.gate_name ?? null,
+      yield: snap.yield !== null && snap.yield !== undefined ? Number(snap.yield) : null,
+      lot_status: snap.lot_status || "PENDING",
+      lot_problem: snap.lot_problem ?? null,
+      pending_reason: snap.pending_reason ?? null,
+    });
+    lastDueByLot.set(lotNo, snap.last_due_date || null);
+  }
+
+  for (const s of skipRes.rows) {
+    const lotNo = s.lot_no ? String(s.lot_no).trim() : "";
+    if (!lotNo || lotMap.has(lotNo)) continue;
+    lotMap.set(lotNo, {
+      lot_no: lotNo,
+      item: null,
+      proc_disp: s.process ?? null,
+      seq: s.seq !== null && s.seq !== undefined ? Number(s.seq) : null,
+      net_wip_qty: 0,
+      remaining_wip: 0,
+      factory_desc: null,
+      prd_type: null,
+      scan_in: null,
+      gate_name: null,
+      yield: null,
+      lot_status: "PENDING",
+      lot_problem: null,
+      pending_reason: null,
+    });
+    lastDueByLot.set(lotNo, s.skipped_due_date || null);
   }
 
   const lotList = Array.from(lotMap.values()).sort((a, b) => {
@@ -492,6 +712,22 @@ const reallocateProductWithSkips = async (client, prdName) => {
     );
   }
 
+  // 6. อัปเดต Snapshot สำหรับ Lot ที่ยังไม่ถูกจัดสรร (เพื่อรองรับ Undo Skip / รอบจัดสรรถัดไป)
+  const prdSnapshots = getProductSnapshotMap(prdName);
+  for (const lot of lotList) {
+    if (assignedDueDateByLot.has(lot.lot_no)) {
+      prdSnapshots.delete(lot.lot_no);
+      await removeLotSnapshot(lot.lot_no);
+    } else {
+      const snapshot = extractLotSnapshot({
+        ...lot,
+        due_date: lastDueByLot.get(lot.lot_no) || skipMap.get(lot.lot_no) || null,
+      });
+      prdSnapshots.set(lot.lot_no, snapshot);
+      await saveLotSnapshot(prdName, snapshot);
+    }
+  }
+
   return { assignedDueDateByLot, newSummaryRows };
 };
 
@@ -674,14 +910,39 @@ const buildWhereClause = (queryParams) => {
   // ❌ ไม่นำ status = 'ready' มาแสดง
   conditions.push(`(status IS NULL OR LOWER(status) != 'ready')`);
 
-  // 🔍 ค้นหาคำค้นได้ทั้งจากชื่อ Product และ Lot No ในช่องเดียวกัน
+  // 🔍 ค้นหาคำค้นได้ทั้งจากชื่อ Product และ Lot No ในช่องเดียวกัน (รวม Lot ที่ Skip รอ Due ถัดไป)
   const searchTerm = prd_name || search;
   if (searchTerm !== "") {
     params.push(`%${escapeLike(searchTerm)}%`);
-    conditions.push(`(prd_name ILIKE $${params.length} ESCAPE '\\' OR lot_no ILIKE $${params.length} ESCAPE '\\')`);
+    const pIdx = params.length;
+    conditions.push(`(
+      prd_name ILIKE $${pIdx} ESCAPE '\\'
+      OR lot_no ILIKE $${pIdx} ESCAPE '\\'
+      OR (
+        lot_no IS NULL
+        AND EXISTS (
+          SELECT 1 FROM planning.planning_lot_skip ls
+          WHERE ls.prd_name = planning.planning_summary.prd_name
+            AND ls.due_date IS NULL
+            AND ls.lot_no ILIKE $${pIdx} ESCAPE '\\'
+        )
+      )
+    )`);
   } else if (lot_no !== "") {
     params.push(`%${escapeLike(lot_no)}%`);
-    conditions.push(`lot_no ILIKE $${params.length} ESCAPE '\\'`);
+    const pIdx = params.length;
+    conditions.push(`(
+      lot_no ILIKE $${pIdx} ESCAPE '\\'
+      OR (
+        lot_no IS NULL
+        AND EXISTS (
+          SELECT 1 FROM planning.planning_lot_skip ls
+          WHERE ls.prd_name = planning.planning_summary.prd_name
+            AND ls.due_date IS NULL
+            AND ls.lot_no ILIKE $${pIdx} ESCAPE '\\'
+        )
+      )
+    )`);
   }
 
   if (priority !== "") {
@@ -701,17 +962,53 @@ const buildWhereClause = (queryParams) => {
 
   if (proc_disp !== "") {
     params.push(proc_disp);
-    conditions.push(`proc_disp = $${params.length}`);
+    const pIdx = params.length;
+    conditions.push(`(
+      proc_disp = $${pIdx}
+      OR (
+        lot_no IS NULL
+        AND EXISTS (
+          SELECT 1 FROM planning.planning_lot_skip ls
+          WHERE ls.prd_name = planning.planning_summary.prd_name
+            AND ls.due_date IS NULL
+            AND ls.process = $${pIdx}
+        )
+      )
+    )`);
   }
 
   if (gate_name !== "") {
     params.push(gate_name);
-    conditions.push(`gate_name = $${params.length}`);
+    const pIdx = params.length;
+    conditions.push(`(
+      gate_name = $${pIdx}
+      OR (
+        lot_no IS NULL
+        AND EXISTS (
+          SELECT 1 FROM planning.planning_lot_skip ls
+          WHERE ls.prd_name = planning.planning_summary.prd_name
+            AND ls.due_date IS NULL
+            AND ls.process = $${pIdx}
+        )
+      )
+    )`);
   }
 
   if (lot_status !== "") {
     params.push(lot_status);
-    conditions.push(`lot_status = $${params.length}`);
+    const pIdx = params.length;
+    conditions.push(`(
+      lot_status = $${pIdx}
+      OR (
+        UPPER($${pIdx}) = 'PENDING'
+        AND lot_no IS NULL
+        AND EXISTS (
+          SELECT 1 FROM planning.planning_lot_skip ls
+          WHERE ls.prd_name = planning.planning_summary.prd_name
+            AND ls.due_date IS NULL
+        )
+      )
+    )`);
   }
 
   if (factory_desc !== "") {
@@ -801,6 +1098,211 @@ router.get("/table", async (req, res) => {
 
     const { rows } = await query(sql, params);
 
+    // Option A: แนบข้อมูล Lot ที่ถูก Skip แล้วกำลังรอ Due ถัดไปไว้กับแถว "need wip"
+    // หรือสร้างแถวรอแสดงผลหาก Due เดิมถูก Lot อื่นเติมเต็มแล้ว เพื่อให้มองเห็นและกด Undo Skip ได้เสมอ
+    let waitingSkips = [];
+    try {
+      const skipWaitRes = await query(
+        `
+          SELECT
+            prd_name,
+            lot_no,
+            to_char(skipped_due_date, 'YYYY-MM-DD') AS skipped_due_date,
+            to_char(due_date, 'YYYY-MM-DD') AS due_date,
+            seq::int4 AS seq,
+            process AS proc_disp
+          FROM planning.planning_lot_skip
+          WHERE due_date IS NULL
+          ORDER BY updated_at DESC NULLS LAST, seq DESC NULLS LAST, lot_no ASC
+        `
+      );
+      waitingSkips = skipWaitRes.rows || [];
+    } catch {
+      waitingSkips = [];
+    }
+
+    if (waitingSkips.length > 0) {
+      const presentLots = new Set(
+        rows.map((r) => (r.lot_no ? String(r.lot_no).trim() : "")).filter(Boolean)
+      );
+      const dbSnapshotsByPrd = new Map();
+      const sourceWipByPrd = new Map();
+      const poInfoByPrd = new Map();
+
+      const qSearchTerm = asStr(req.query.prd_name || req.query.search).toLowerCase();
+      const qLotNo = asStr(req.query.lot_no).toLowerCase();
+      const qStatus = asStr(req.query.status);
+      const qPriority = asStr(req.query.priority);
+      const qProcDisp = asStr(req.query.proc_disp || req.query.process);
+      const qGateName = asStr(req.query.gate_name);
+      const qLotStatus = asStr(req.query.lot_status);
+      const qFactoryDesc = asStr(req.query.factory_desc);
+      const qStartDate = asStr(req.query.startdate);
+      const qStopDate = asStr(req.query.stopdate);
+      const qItemPrefix = asStr(req.query.item_prefix || req.query.type);
+
+      const resolveSnapshotForSkip = async (prdName, lotNo) => {
+        let snap = unallocatedLotSnapshotsByPrd.get(prdName)?.get(lotNo) || null;
+        if (!snap) {
+          if (!dbSnapshotsByPrd.has(prdName)) {
+            dbSnapshotsByPrd.set(prdName, await loadLotSnapshots(prdName));
+          }
+          snap = dbSnapshotsByPrd.get(prdName).find((s) => s.lot_no === lotNo) || null;
+        }
+        if (!snap) {
+          if (!sourceWipByPrd.has(prdName)) {
+            sourceWipByPrd.set(prdName, await loadWipLotsFromSource(prdName));
+          }
+          snap = sourceWipByPrd.get(prdName).find((s) => s.lot_no === lotNo) || null;
+        }
+        return snap;
+      };
+
+      const resolvePoInfoForProduct = async (prdName) => {
+        if (poInfoByPrd.has(prdName)) return poInfoByPrd.get(prdName);
+        const existingRow = rows.find((r) => r.prd_name === prdName) || null;
+        if (existingRow) {
+          poInfoByPrd.set(prdName, { row: existingRow, hasActivePo: true });
+          return poInfoByPrd.get(prdName);
+        }
+        try {
+          const poRes = await query(
+            `
+              SELECT
+                prd_name,
+                item,
+                to_char(due_date, 'YYYY-MM-DD') AS due_date,
+                to_char(ship_to_p1, 'YYYY-MM-DD') AS ship_to_p1,
+                priority,
+                day_left::int4,
+                po_bal::float8,
+                inventory::float8,
+                net_required_pcs::float8,
+                factory_desc,
+                prd_type,
+                to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+              FROM planning.planning_summary
+              WHERE prd_name = $1
+                AND (status IS NULL OR LOWER(status) != 'ready')
+              ORDER BY due_date ASC
+              LIMIT 1
+            `,
+            [prdName]
+          );
+          const poRow = poRes.rows?.[0] || null;
+          poInfoByPrd.set(prdName, { row: poRow, hasActivePo: Boolean(poRow) });
+          return poInfoByPrd.get(prdName);
+        } catch {
+          poInfoByPrd.set(prdName, { row: null, hasActivePo: true });
+          return poInfoByPrd.get(prdName);
+        }
+      };
+
+      const applySkipFields = (target, skipLot, lotNo, snapshot) => {
+        target.skipped_due_date = skipLot.skipped_due_date;
+        target.skipped_lot_no = lotNo;
+        target.skipped_lot_status = snapshot?.lot_status || "PENDING";
+        target.skipped_lot_net_wip_qty = snapshot?.net_wip_qty ?? null;
+        target.skipped_lot_proc_disp =
+          snapshot?.proc_disp || skipLot.proc_disp || null;
+        target.skipped_lot_gate_name = snapshot?.gate_name || null;
+        target.skipped_lot_problem = snapshot?.lot_problem || null;
+        target.skipped_pending_reason = snapshot?.pending_reason || null;
+      };
+
+      for (const skipLot of waitingSkips) {
+        const prdName = skipLot.prd_name;
+        const lotNo = skipLot.lot_no ? String(skipLot.lot_no).trim() : "";
+        if (!prdName || !lotNo || presentLots.has(lotNo)) continue;
+
+        const targetRow =
+          rows.find(
+            (r) =>
+              r.prd_name === prdName &&
+              !r.lot_no &&
+              !r.skipped_lot_no &&
+              r.due_date === skipLot.skipped_due_date
+          ) ||
+          [...rows]
+            .reverse()
+            .find((r) => r.prd_name === prdName && !r.lot_no && !r.skipped_lot_no);
+
+        const snapshot = await resolveSnapshotForSkip(prdName, lotNo);
+
+        if (targetRow) {
+          applySkipFields(targetRow, skipLot, lotNo, snapshot);
+          continue;
+        }
+
+        // หากไม่มีแถว need wip (เช่น Lot อื่นเติมเต็มยอด Due Date เดิมแล้ว หรือ filter ตัดแถวออก)
+        // ให้ตรวจสอบ filter แล้วสร้างแถวรอเพื่อให้เห็นและกด Undo Skip ได้
+        if (qSearchTerm) {
+          const matchesSearch =
+            prdName.toLowerCase().includes(qSearchTerm) ||
+            lotNo.toLowerCase().includes(qSearchTerm);
+          if (!matchesSearch) continue;
+        } else if (qLotNo) {
+          if (!lotNo.toLowerCase().includes(qLotNo)) continue;
+        }
+        if (qStatus && qStatus.toLowerCase() !== "need wip") continue;
+        if (
+          qLotStatus &&
+          (snapshot?.lot_status || "PENDING").toUpperCase() !== qLotStatus.toUpperCase()
+        ) {
+          continue;
+        }
+        if (qProcDisp && (snapshot?.proc_disp || skipLot.proc_disp) !== qProcDisp) continue;
+        if (qGateName && (snapshot?.gate_name || skipLot.proc_disp) !== qGateName) continue;
+
+        const { row: poInfo, hasActivePo } = await resolvePoInfoForProduct(prdName);
+        if (!hasActivePo) continue;
+
+        const effectiveItem = poInfo?.item ?? snapshot?.item ?? "";
+        const effectiveFactory = poInfo?.factory_desc ?? snapshot?.factory_desc ?? "";
+        const effectiveDue = poInfo?.due_date || skipLot.skipped_due_date;
+
+        if (qItemPrefix && !String(effectiveItem).trim().startsWith(qItemPrefix)) continue;
+        if (qFactoryDesc && effectiveFactory !== qFactoryDesc) continue;
+        if (qPriority && poInfo?.priority !== qPriority) continue;
+        if (qStartDate && effectiveDue < qStartDate) continue;
+        if (qStopDate && effectiveDue > qStopDate) continue;
+
+        const waitingRow = {
+          id: rows.length + 1,
+          prd_name: prdName,
+          item: poInfo?.item ?? snapshot?.item ?? null,
+          due_date: effectiveDue,
+          ship_to_p1: poInfo?.ship_to_p1 ?? null,
+          scan_in: null,
+          priority: poInfo?.priority ?? null,
+          day_left: poInfo?.day_left ?? null,
+          po_bal: poInfo?.po_bal ?? null,
+          inventory: poInfo?.inventory ?? null,
+          net_required_pcs: poInfo?.net_required_pcs ?? null,
+          cal_net_required: 0,
+          status: "need wip",
+          lot_no: null,
+          proc_disp: null,
+          seq: null,
+          net_wip_qty: null,
+          rem_wip_qty: null,
+          factory_desc: null,
+          prd_type: poInfo?.prd_type ?? snapshot?.prd_type ?? null,
+          gate_name: null,
+          yield: null,
+          lot_status: null,
+          lot_problem: null,
+          pending_reason: null,
+          skipped_due_date: null,
+          assigned_due_date: null,
+          original_due_date: null,
+          updated_at: poInfo?.updated_at ?? null,
+        };
+        applySkipFields(waitingRow, skipLot, lotNo, snapshot);
+        rows.push(waitingRow);
+      }
+    }
+
     return res.json({
       status: "OK",
       data: rows,
@@ -887,13 +1389,19 @@ router.post("/skip_due", verifyPlanner, async (req, res) => {
     );
 
     // 3. คำนวณจับคู่ SO และเรียง FIFO ใหม่สำหรับ prd_name นี้ทันที
+    const baselineSnapshot = extractLotSnapshot({
+      lot_no,
+      due_date,
+      seq,
+      process,
+    });
     const { assignedDueDateByLot } = await reallocateProductWithSkips(
       client,
-      prd_name
+      prd_name,
+      { baselineLots: [baselineSnapshot] }
     );
 
-    const finalTargetDue =
-      assignedDueDateByLot.get(lot_no) || initialNextDue || null;
+    const finalTargetDue = assignedDueDateByLot.get(lot_no) || null;
 
     await client.query("COMMIT");
 
@@ -947,6 +1455,8 @@ router.post("/unskip_due", verifyPlanner, async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    const restoredSnapshot = await findCachedLotSnapshot(prd_name, lot_no);
+
     await client.query(
       `DELETE FROM planning.planning_lot_skip WHERE lot_no = $1`,
       [lot_no]
@@ -954,7 +1464,8 @@ router.post("/unskip_due", verifyPlanner, async (req, res) => {
 
     const { assignedDueDateByLot } = await reallocateProductWithSkips(
       client,
-      prd_name
+      prd_name,
+      { restoredLots: restoredSnapshot ? [restoredSnapshot] : [] }
     );
 
     const restoredDue = assignedDueDateByLot.get(lot_no) || null;
@@ -1100,6 +1611,8 @@ router.post("/unassign_wip_due", verifyPlanner, async (req, res) => {
     await client.query("BEGIN");
     await ensureAssignTable(client);
 
+    const restoredSnapshot = await findCachedLotSnapshot(prd_name, lot_no);
+
     await client.query(
       `DELETE FROM planning.planning_lot_assign WHERE lot_no = $1`,
       [lot_no]
@@ -1107,7 +1620,8 @@ router.post("/unassign_wip_due", verifyPlanner, async (req, res) => {
 
     const { assignedDueDateByLot } = await reallocateProductWithSkips(
       client,
-      prd_name
+      prd_name,
+      { restoredLots: restoredSnapshot ? [restoredSnapshot] : [] }
     );
 
     const restoredDue = assignedDueDateByLot.get(lot_no) || null;
@@ -1204,7 +1718,14 @@ router.get("/distinct_filters", async (req, res) => {
     const sql = `
       SELECT
         ARRAY(SELECT DISTINCT prd_name FROM planning.planning_summary WHERE prd_name IS NOT NULL AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY prd_name) AS products,
-        ARRAY(SELECT DISTINCT lot_no FROM planning.planning_summary WHERE lot_no IS NOT NULL AND lot_no <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY lot_no) AS lot_nos,
+        ARRAY(
+          SELECT DISTINCT lot_no FROM (
+            SELECT lot_no FROM planning.planning_summary WHERE lot_no IS NOT NULL AND lot_no <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition}
+            UNION
+            SELECT ls.lot_no FROM planning.planning_lot_skip ls WHERE ls.lot_no IS NOT NULL AND ls.lot_no <> ''${item_prefix !== "" ? ` AND EXISTS (SELECT 1 FROM planning.planning_summary ps WHERE ps.prd_name = ls.prd_name AND TRIM(ps.item) LIKE $1 ESCAPE '\\')` : ""}
+          ) all_lots
+          ORDER BY lot_no
+        ) AS lot_nos,
         ARRAY(SELECT DISTINCT status FROM planning.planning_summary WHERE status IS NOT NULL AND status <> '' AND LOWER(status) != 'ready' ORDER BY status) AS statuses,
         ARRAY(SELECT priority FROM planning.planning_summary WHERE priority IS NOT NULL AND priority <> '' AND (status IS NULL OR LOWER(status) != 'ready') GROUP BY priority ORDER BY CASE UPPER(TRIM(priority)) WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'TOP' THEN 3 WHEN 'NEXT WEEK' THEN 4 WHEN 'NEXT PLAN' THEN 5 WHEN 'NORMAL' THEN 6 ELSE 999 END, priority) AS priorities,
         ARRAY(SELECT DISTINCT proc_disp FROM planning.planning_summary WHERE proc_disp IS NOT NULL AND TRIM(proc_disp) <> '' AND (status IS NULL OR LOWER(status) != 'ready')${itemCondition} ORDER BY proc_disp) AS processes,

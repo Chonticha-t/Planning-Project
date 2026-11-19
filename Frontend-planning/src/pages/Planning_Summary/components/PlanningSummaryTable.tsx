@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { memo, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   DataGrid,
@@ -258,6 +258,57 @@ const PlanningSummaryTable = memo(
     const confirm = useConfirm();
     const { requirePlanner } = useAuth();
     const [selectedWipRow, setSelectedWipRow] = useState<PlanningSummaryRow | null>(null);
+    const [activeSkipNote, setActiveSkipNote] = useState<{
+      row: PlanningSummaryRow;
+      top: number;
+      left: number;
+    } | null>(null);
+    const skipNoteRef = useRef<HTMLDivElement | null>(null);
+    const skipNoteAnchorRef = useRef<HTMLElement | null>(null);
+
+    useEffect(() => {
+      if (!activeSkipNote) return;
+      const handleOutside = (e: MouseEvent) => {
+        const target = e.target as Node;
+        if (
+          skipNoteRef.current?.contains(target) ||
+          skipNoteAnchorRef.current?.contains(target)
+        ) {
+          return;
+        }
+        setActiveSkipNote(null);
+      };
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") setActiveSkipNote(null);
+      };
+      const handleScroll = () => setActiveSkipNote(null);
+
+      document.addEventListener("mousedown", handleOutside);
+      window.addEventListener("keydown", handleKeyDown);
+      window.addEventListener("scroll", handleScroll, true);
+      return () => {
+        document.removeEventListener("mousedown", handleOutside);
+        window.removeEventListener("keydown", handleKeyDown);
+        window.removeEventListener("scroll", handleScroll, true);
+      };
+    }, [activeSkipNote]);
+
+    const handleToggleSkipNote = useCallback(
+      (row: PlanningSummaryRow, buttonEl: HTMLElement) => {
+        if (activeSkipNote && activeSkipNote.row.id === row.id) {
+          setActiveSkipNote(null);
+          return;
+        }
+        const rect = buttonEl.getBoundingClientRect();
+        skipNoteAnchorRef.current = buttonEl;
+        setActiveSkipNote({
+          row,
+          top: rect.bottom + 6,
+          left: Math.min(Math.max(8, rect.left), window.innerWidth - 248),
+        });
+      },
+      [activeSkipNote]
+    );
 
     const handleOpenWipModal = useCallback((row: PlanningSummaryRow) => {
       setSelectedWipRow(row);
@@ -375,6 +426,14 @@ const PlanningSummaryTable = memo(
     const handleOpenPendingModal = useCallback(
       async (row: PlanningSummaryRow) => {
         let requestedUndo = false;
+        const effectiveLotNo = row.lot_no || row.skipped_lot_no || "";
+        const isWaitingSkippedLot = !row.lot_no && Boolean(row.skipped_lot_no);
+        const effectiveProcDisp = row.proc_disp || row.skipped_lot_proc_disp || "";
+        const effectiveGateName = row.gate_name || row.skipped_lot_gate_name || "";
+        const effectivePendingReason =
+          row.pending_reason || row.skipped_pending_reason || "";
+        const effectiveLotProblem =
+          row.lot_problem || row.skipped_lot_problem || "";
 
         const shouldSkip = await confirm({
           variant: "info",
@@ -388,17 +447,17 @@ const PlanningSummaryTable = memo(
                 </span>
                 <span className="text-base-content/40">•</span>
                 <span className="font-semibold text-base-content">
-                  Lot No: <span className="font-mono font-bold">{row.lot_no || "-"}</span>
+                  Lot No: <span className="font-mono font-bold">{effectiveLotNo || "-"}</span>
                 </span>
-                {(row.proc_disp || row.gate_name) && (
+                {(effectiveProcDisp || effectiveGateName) && (
                   <>
                     <span className="text-base-content/40">•</span>
                     <span className="inline-flex items-center gap-1.5 font-semibold text-base-content">
                       <span>Process:</span>
-                      {row.proc_disp && (
-                        <span className="font-bold">{row.proc_disp}</span>
+                      {effectiveProcDisp && (
+                        <span className="font-bold">{effectiveProcDisp}</span>
                       )}
-                      <GateBadge gate={row.gate_name} />
+                      <GateBadge gate={effectiveGateName} />
                     </span>
                   </>
                 )}
@@ -418,8 +477,8 @@ const PlanningSummaryTable = memo(
                   <span>Pending Reason</span>
                 </div>
                 <p className="text-[13px] text-base-content/90 font-medium whitespace-pre-wrap leading-relaxed">
-                  {row.pending_reason && row.pending_reason.trim() !== ""
-                    ? row.pending_reason
+                  {effectivePendingReason && effectivePendingReason.trim() !== ""
+                    ? effectivePendingReason
                     : "No pending reason specified"}
                 </p>
               </div>
@@ -430,8 +489,8 @@ const PlanningSummaryTable = memo(
                   <span>Lot Problem</span>
                 </div>
                 <p className="text-[13px] text-base-content/90 font-medium whitespace-pre-wrap leading-relaxed">
-                  {row.lot_problem && row.lot_problem.trim() !== ""
-                    ? row.lot_problem
+                  {effectiveLotProblem && effectiveLotProblem.trim() !== ""
+                    ? effectiveLotProblem
                     : "No lot problem specified"}
                 </p>
               </div>
@@ -444,13 +503,20 @@ const PlanningSummaryTable = memo(
                     <span className="font-bold tabular-nums">
                       {toDMY(row.skipped_due_date)}
                     </span>
+                    {isWaitingSkippedLot && (
+                      <span className="ml-1.5 text-rose-600 dark:text-rose-400">
+                        (Waiting for next Due Date)
+                      </span>
+                    )}
                   </span>
                 </div>
               )}
             </div>
           ),
           leftAction:
-            row.skipped_due_date && onUnskipDue ? (
+            (row.skipped_due_date || isWaitingSkippedLot) &&
+            effectiveLotNo &&
+            onUnskipDue ? (
               <button
                 type="button"
                 onClick={() => {
@@ -466,11 +532,11 @@ const PlanningSummaryTable = memo(
               </button>
             ) : undefined,
           cancelText: "Close",
-          confirmText: "Skip Due",
-          hideCancel: false,
+          confirmText: isWaitingSkippedLot ? "Close" : "Skip Due",
+          hideCancel: isWaitingSkippedLot,
         });
 
-        if (requestedUndo && onUnskipDue) {
+        if (requestedUndo && onUnskipDue && effectiveLotNo) {
           const isAuthorized = await requirePlanner();
           if (!isAuthorized) return;
 
@@ -491,7 +557,7 @@ const PlanningSummaryTable = memo(
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-base-content/60 font-medium">Lot No</span>
-                    <span className="font-mono font-bold text-[15px] text-base-content">{row.lot_no}</span>
+                    <span className="font-mono font-bold text-[15px] text-base-content">{effectiveLotNo}</span>
                   </div>
                   {row.skipped_due_date && (
                     <div className="flex items-center justify-between gap-2">
@@ -510,12 +576,12 @@ const PlanningSummaryTable = memo(
           });
 
           if (isUndoConfirmed) {
-            await onUnskipDue(row);
+            await onUnskipDue({ ...row, lot_no: effectiveLotNo });
           }
           return;
         }
 
-        if (shouldSkip && onSkipDue) {
+        if (shouldSkip && !isWaitingSkippedLot && onSkipDue) {
           const isAuthorized = await requirePlanner();
           if (!isAuthorized) return;
 
@@ -670,11 +736,30 @@ const PlanningSummaryTable = memo(
           align: "center",
           minWidth: 160,
           flex: 1.1,
-          renderCell: ({ value }) => (
-            <span className="font-mono font-bold text-[15px] text-base-content tracking-wide select-all">
-              {value || "-"}
-            </span>
-          ),
+          renderCell: ({ row, value }) =>
+            !value && row.skipped_lot_no ? (
+              <div className="inline-flex items-center justify-center gap-1.5 max-w-full">
+                <span className="font-mono font-bold text-[15px] text-base-content tracking-wide select-all truncate">
+                  {row.skipped_lot_no}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleSkipNote(row, e.currentTarget);
+                  }}
+                  title="Waiting for next Due Date (click to view note)"
+                  aria-label={`Skipped Lot ${row.skipped_lot_no} waiting for next Due Date`}
+                  className="inline-flex items-center justify-center w-[21px] h-[21px] rounded-md border bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/15 dark:border-rose-500/35 dark:text-rose-400 dark:hover:bg-rose-500/25 transition-colors cursor-pointer shrink-0"
+                >
+                  <AlertCircle size={12} />
+                </button>
+              </div>
+            ) : (
+              <span className="font-mono font-bold text-[15px] text-base-content tracking-wide select-all">
+                {value || "-"}
+              </span>
+            ),
         },
         {
           field: "net_wip_qty",
@@ -684,12 +769,18 @@ const PlanningSummaryTable = memo(
           type: "number",
           minWidth: 120,
           flex: 0.9,
-          renderCell: ({ value }) => (
-            <NumberCell
-              value={value}
-              colorClass="text-emerald-600 dark:text-emerald-400 font-semibold"
-            />
-          ),
+          renderCell: ({ row, value }) =>
+            value == null && row.skipped_lot_net_wip_qty != null ? (
+              <NumberCell
+                value={row.skipped_lot_net_wip_qty}
+                colorClass="text-amber-600/85 dark:text-amber-400/85 font-semibold"
+              />
+            ) : (
+              <NumberCell
+                value={value}
+                colorClass="text-emerald-600 dark:text-emerald-400 font-semibold"
+              />
+            ),
         },
         {
           field: "proc_disp",
@@ -698,8 +789,16 @@ const PlanningSummaryTable = memo(
           minWidth: 195,
           flex: 1.2,
           renderCell: ({ row, value }) => {
-            const proc = value ? String(value).trim() : "";
-            const gate = row.gate_name ? String(row.gate_name).trim() : "";
+            const proc = value
+              ? String(value).trim()
+              : row.skipped_lot_proc_disp
+              ? String(row.skipped_lot_proc_disp).trim()
+              : "";
+            const gate = row.gate_name
+              ? String(row.gate_name).trim()
+              : row.skipped_lot_gate_name
+              ? String(row.skipped_lot_gate_name).trim()
+              : "";
             if (!proc && !gate) {
               return <span className="text-base-content/25">-</span>;
             }
@@ -740,7 +839,7 @@ const PlanningSummaryTable = memo(
           flex: 0.9,
           renderCell: ({ row, value }) => (
             <LotStatusBadge
-              status={value}
+              status={value || row.skipped_lot_status || ""}
               row={row}
               onOpenPendingModal={handleOpenPendingModal}
               onOpenWipModal={handleOpenWipModal}
@@ -748,7 +847,7 @@ const PlanningSummaryTable = memo(
           ),
         },
       ],
-      [handleOpenPendingModal, handleOpenWipModal]
+      [handleOpenPendingModal, handleOpenWipModal, handleToggleSkipNote]
     );
 
     return (
@@ -958,6 +1057,40 @@ const PlanningSummaryTable = memo(
             }}
           />
         </div>
+        {activeSkipNote &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              ref={skipNoteRef}
+              onClick={(e) => e.stopPropagation()}
+              style={{ top: activeSkipNote.top, left: activeSkipNote.left }}
+              className="planning-summary-gate fixed z-[140] w-[236px] rounded-xl bg-base-100 border border-base-300 shadow-xl p-2.5 text-xs text-base-content tabular-nums space-y-1.5"
+            >
+              <div className="font-bold text-base-content border-b border-base-200 pb-1 flex items-center justify-between gap-2">
+                <span className="min-w-0 break-all font-mono">
+                  {activeSkipNote.row.skipped_lot_no}
+                </span>
+                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400">
+                  Skipped
+                </span>
+              </div>
+              <div className="text-[11.5px] font-semibold leading-snug text-rose-700 dark:text-rose-400">
+                Waiting for next Due Date
+              </div>
+              {activeSkipNote.row.skipped_due_date && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-base-content/55">Skipped from:</span>
+                  <span className="font-semibold text-base-content">
+                    {toDMY(activeSkipNote.row.skipped_due_date)}
+                  </span>
+                </div>
+              )}
+              <div className="text-[11px] leading-snug text-base-content/65">
+                No next Due Date available yet. Click the PENDING badge to Undo Skip.
+              </div>
+            </div>,
+            document.body
+          )}
         <WipAssignModal
           isOpen={Boolean(selectedWipRow)}
           row={selectedWipRow}
