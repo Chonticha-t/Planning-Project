@@ -115,25 +115,11 @@ export const CapacityModal: React.FC<CapacityModalProps> = ({
     }
   }, []);
 
-  // Preload capacity settings on mount so the modal opens immediately without a loading flash.
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadConfigs(controller.signal);
-    return () => controller.abort();
-  }, [loadConfigs]);
-
-  // Reset to stored settings and refresh in the background whenever the modal opens.
+  // Always start from the stored settings when the modal opens.
   useEffect(() => {
     if (!isOpen) return;
     const controller = new AbortController();
-    setOriginalConfigs((stored) => {
-      if (stored.length > 0) {
-        setConfigs(Object.fromEntries(stored.map((gate) => [gate.gate, gate])));
-      }
-      return stored;
-    });
-    setIsDirty(false);
-    setConflict(false);
+    setConfigs(null);
     setMonthOffset(0);
     void loadConfigs(controller.signal);
     return () => controller.abort();

@@ -73,14 +73,6 @@ interface WeekGroup {
   gateStatusDots: DayGateLoad["gateStatusDots"];
 }
 
-const STATUS_BAR: Record<string, string> = {
-  green: "bg-emerald-500",
-  yellow: "bg-amber-400",
-  red: "bg-rose-500",
-  off: "bg-slate-200",
-  unset: "bg-slate-300",
-};
-
 const SHIFT_THEMES = {
   day: {
     label: "Day Shift",
@@ -781,17 +773,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                       {colPct === null ? "—" : `${colPct}%`}
                     </span>
                   </div>
-
-                  {/* Status of every gate on this day; the board's gate is taller */}
-                  <div className="flex items-end gap-1 mt-2">
-                    {gates.map(({ gate }) => (
-                      <span
-                        key={gate}
-                        title={`${gate}: ${col.gateStatusDots[gate]}`}
-                        className={`flex-1 rounded-full ${gate === boardGate ? "h-[6px]" : "h-[4px] opacity-70"} ${STATUS_BAR[col.gateStatusDots[gate]]}`}
-                      />
-                    ))}
-                  </div>
                 </div>
 
                 {/* Internally Scrollable Column Cards Body */}
@@ -804,8 +785,8 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
 
                     return (
                       <React.Fragment key={lot.id}>
-                      {(index === 0 || lotKind(visibleLots[index - 1]) !== lotKind(lot)) && (
-                        <div className="text-[10px] font-bold text-base-content/60 uppercase">{lotKind(lot) === "lot" ? "Actual lots" : lotKind(lot) === "need" ? "Need WIP (no load)" : "Missing lot ID"}</div>
+                      {lotKind(lot) !== "lot" && (index === 0 || lotKind(visibleLots[index - 1]) !== lotKind(lot)) && (
+                        <div className="text-[10px] font-bold text-base-content/60 uppercase">{lotKind(lot) === "need" ? "Need WIP (no load)" : "Missing lot ID"}</div>
                       )}
                       <div className="relative shrink-0"
                         onDragOver={(e) => handleCardDragOver(e, lot)}
@@ -944,19 +925,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                           {boardCountLabel(weekLots)}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Worst status of every gate in this week */}
-                    <div className="flex gap-1.5 mt-2">
-                      {gates.map(({ gate }) => (
-                        <div key={gate} className="flex flex-1 flex-col gap-0.5">
-                          <span className={`h-[4px] rounded-full ${STATUS_BAR[wg.gateStatusDots[gate]]}`} />
-                          <span className={`text-[9.5px] font-semibold text-center ${
-                            gate === boardGate ? "text-primary" : "text-base-content/45"}`}>
-                            {gate}
-                          </span>
-                        </div>
-                      ))}
                     </div>
                   </div>
 
@@ -1359,15 +1327,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                               }`}>
                                 {item.colPct === null ? "—" : `${item.colPct}%`}
                               </span>
-                              <div className="flex items-center gap-1 w-20">
-                                {gates.map(({ gate }) => (
-                                  <span
-                                    key={gate}
-                                    title={`${gate}: ${item.col.gateStatusDots[gate]}`}
-                                    className={`flex-1 rounded-full ${gate === boardGate ? "h-[5px]" : "h-[3px] opacity-70"} ${STATUS_BAR[item.col.gateStatusDots[gate]]}`}
-                                  />
-                                ))}
-                              </div>
                             </div>
 
                             {isTargetDay && (

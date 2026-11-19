@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CheckCircle2, Save, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 import type { LevelingKpiData } from "../types";
 
 interface SavePlanModalProps {
@@ -65,18 +65,13 @@ export const SavePlanModal: React.FC<SavePlanModalProps> = ({
       >
         {/* 1. Header */}
         <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between bg-base-200/40">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#eef2ff] border border-indigo-200 flex items-center justify-center text-[#4f46e5] shrink-0">
-              <Save size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-base-content leading-tight">
-                Save Plan v{nextVersion}
-              </h3>
-              <p className="text-xs text-base-content/60 mt-0.5">
-                Saves arrival dates and card order as a new version; earlier versions are kept
-              </p>
-            </div>
+          <div>
+            <h3 className="text-base font-bold text-base-content leading-tight">
+              Save Plan v{nextVersion}
+            </h3>
+            <p className="text-xs text-base-content/60 mt-0.5">
+              Saves arrival dates and card order as a new version; earlier versions are kept
+            </p>
           </div>
           <button
             type="button"
