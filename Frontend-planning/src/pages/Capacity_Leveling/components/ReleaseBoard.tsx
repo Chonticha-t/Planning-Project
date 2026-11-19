@@ -462,10 +462,10 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           : "flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs"
       }
     >
-      {/* Persistent Header Bar with Board Controls, Search/Filter & Actions (Guaranteed Single Row) */}
-      <div className="flex flex-nowrap items-center justify-between gap-2 overflow-x-auto pb-0.5">
-        {/* Left: Title + Gate Switcher + Divider + Search + Status Dropdown */}
-        <div className="flex flex-nowrap items-center gap-2 shrink-0">
+      {/* ── ROW 1: Title, Gate Switcher, Total Badge & Primary Actions ── */}
+      <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-base-200/80">
+        {/* Left: Title + Gate Switcher + Count Badge */}
+        <div className="flex items-center gap-3 min-w-0 flex-wrap sm:flex-nowrap">
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase shrink-0">
             Gate Arrival Board
           </h3>
@@ -484,7 +484,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 onClick={() => onBoardGateChange(gate)}
                 className={`rounded-md px-2.5 py-1 text-xs font-bold transition-colors cursor-pointer shrink-0 ${
                   boardGate === gate
-                    ? "bg-primary text-primary-content shadow-xs"
+                    ? "bg-[#4f46e5] text-white shadow-xs"
                     : "text-base-content/70 hover:text-base-content hover:bg-base-100"
                 }`}
               >
@@ -492,50 +492,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               </button>
             ))}
           </div>
-
-          <div className="h-4 w-[1px] bg-base-300 shrink-0 mx-0.5" />
-
-          {/* Compact Search Input (w-36 sm:w-40) */}
-          <div className="relative w-36 sm:w-40 shrink-0">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-            />
-            <input
-              type="text"
-              placeholder="Search Lot / Product"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-7 text-xs bg-base-200/40 focus:bg-base-100 placeholder:text-base-content/40"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
-                title="Clear search"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          {/* Compact Status Dropdown (fixed width w-28) */}
-          <select
-            aria-label="Filter by status"
-            value={gateStateFilter}
-            onChange={(e) => setGateStateFilter(e.target.value as BoardGateStateFilter)}
-            className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
-              gateStateFilter !== "ALL"
-                ? "bg-[#eef2ff] border-primary text-primary"
-                : "bg-base-200/40 border-base-300 text-base-content/75"
-            }`}
-          >
-            <option value="ALL">All Status</option>
-            <option value="in_gate">In Gate</option>
-            <option value="coming">Coming</option>
-            <option value="need_wip">Need WIP</option>
-          </select>
 
           {/* Count Badge / Reset */}
           {isFiltered ? (
@@ -553,27 +509,16 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </button>
           ) : (
             <span
-              className="badge badge-sm bg-base-200 text-base-content/60 border-base-300 font-semibold tabular-nums text-[11px] shrink-0"
+              className="badge badge-sm bg-base-200 text-base-content/65 border-base-300 font-semibold tabular-nums text-[11px] shrink-0"
               title={`${pastArrivalCount > 0 ? `${pastArrivalCount} earlier arrivals. ` : ""}${beyondRangeCount > 0 ? `+${beyondRangeCount} after this period.` : ""}`}
             >
               {boardCountLabel(lots)}
             </span>
           )}
-
-          {isEditMode && (
-            <button
-              type="button"
-              onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
-              disabled={selectableLots.length === 0}
-              className="btn btn-xs btn-ghost text-xs text-primary font-semibold shrink-0"
-            >
-              Select all ({selectableLots.length})
-            </button>
-          )}
         </div>
 
-        {/* Right Switchers & Scroll Controls */}
-        <div className="flex flex-nowrap items-center gap-2 shrink-0">
+        {/* Right: View Mode (Board/Table) + Edit Mode + Maximize */}
+        <div className="flex items-center gap-2 shrink-0">
           {/* View Mode Switcher: Board vs Table */}
           <div
             role="group"
@@ -610,8 +555,108 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </button>
           </div>
 
+          <button
+            type="button"
+            disabled={readOnly}
+            aria-pressed={isEditMode}
+            onClick={() => {
+              if (isEditMode) {
+                onSelectionChange([]);
+                setBatchTargetDate("");
+              }
+              setIsEditMode((prev) => !prev);
+            }}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+              isEditMode
+                ? "border-primary bg-primary text-primary-content"
+                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+            }`}
+          >
+            <Pencil size={13} />
+            <span>Edit</span>
+          </button>
+
+          {/* Expand / Maximize Board Toggle */}
+          <button
+            type="button"
+            aria-pressed={isFullscreen}
+            onClick={() => setIsFullscreen((prev) => !prev)}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+              isFullscreen
+                ? "border-primary bg-primary text-primary-content shadow-xs"
+                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+            }`}
+            title={isFullscreen ? "Exit full view (Esc)" : "Expand board to full view"}
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span>{isFullscreen ? "Minimize" : "Maximize"}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── ROW 2: Search, Filters & Display Controls ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+        {/* Left: Search + Status Dropdown + Select All */}
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Search Input */}
+          <div className="relative w-44 sm:w-52 shrink-0">
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+            />
+            <input
+              type="text"
+              placeholder="Search Lot / Product..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-7 text-xs bg-base-200/40 focus:bg-base-100 placeholder:text-base-content/40"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Status Filter */}
+          <select
+            aria-label="Filter by status"
+            value={gateStateFilter}
+            onChange={(e) => setGateStateFilter(e.target.value as BoardGateStateFilter)}
+            className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
+              gateStateFilter !== "ALL"
+                ? "bg-[#eef2ff] border-primary text-primary"
+                : "bg-base-200/40 border-base-300 text-base-content/75"
+            }`}
+          >
+            <option value="ALL">All Status</option>
+            <option value="in_gate">In Gate</option>
+            <option value="coming">Coming</option>
+            <option value="need_wip">Need WIP</option>
+          </select>
+
+          {isEditMode && (
+            <button
+              type="button"
+              onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
+              disabled={selectableLots.length === 0}
+              className="btn btn-xs btn-ghost text-xs text-primary font-semibold shrink-0"
+            >
+              Select all ({selectableLots.length})
+            </button>
+          )}
+        </div>
+
+        {/* Right: Board Navigation & Display Settings */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Scroll Board Left/Right */}
           {activeViewMode === "board" && granularity === "days" && (
-            <div className="inline-flex items-center gap-1 mr-1 shrink-0">
+            <div className="inline-flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => scrollBoard("left")}
@@ -631,8 +676,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </div>
           )}
 
-
-
+          {/* Hide / Show Holidays */}
           {granularity === "days" && (
             <button
               type="button"
@@ -650,27 +694,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             </button>
           )}
 
-          <button
-            type="button"
-            disabled={readOnly}
-            aria-pressed={isEditMode}
-            onClick={() => {
-              if (isEditMode) {
-                onSelectionChange([]);
-                setBatchTargetDate("");
-              }
-              setIsEditMode((prev) => !prev);
-            }}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
-              isEditMode
-                ? "border-primary bg-primary text-primary-content"
-                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
-            }`}
-          >
-            <Pencil size={13} />
-            Edit
-          </button>
-
+          {/* Density: Normal vs Compact */}
           {activeViewMode === "board" && (
             <div
               role="group"
@@ -686,7 +710,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                   type="button"
                   aria-pressed={isCompact === option.compact}
                   onClick={() => setIsCompact(option.compact)}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                     isCompact === option.compact
                       ? "bg-primary text-primary-content shadow-xs"
                       : "text-base-content/70 hover:text-base-content hover:bg-base-100"
@@ -697,22 +721,6 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               ))}
             </div>
           )}
-
-          {/* Expand / Maximize Board Toggle */}
-          <button
-            type="button"
-            aria-pressed={isFullscreen}
-            onClick={() => setIsFullscreen((prev) => !prev)}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
-              isFullscreen
-                ? "border-primary bg-primary text-primary-content shadow-xs"
-                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
-            }`}
-            title={isFullscreen ? "Exit full view (Esc)" : "Expand board to full view"}
-          >
-            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            <span>{isFullscreen ? "Minimize" : "Maximize"}</span>
-          </button>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Undo2,
   ChevronRight,
+  MoreHorizontal,
 } from "lucide-react";
 import type { ProcessCategory } from "../types";
 
@@ -67,6 +68,8 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
 }) => {
   const navigate = useNavigate();
   const [confirmDialog, setConfirmDialog] = useState<"discard" | "leave" | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!confirmDialog) return;
@@ -76,6 +79,24 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [confirmDialog]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreMenuOpen]);
 
   const handleBackClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -93,10 +114,10 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         <button
           type="button"
           onClick={handleBackClick}
-          className="btn btn-xs h-8 px-3 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer"
+          className="btn btn-xs h-8 px-2.5 rounded-lg border border-base-300 bg-base-100 hover:bg-base-200 text-base-content/75 hover:text-base-content text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
           title="Back to Planning Summary Gate"
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={14} className="text-base-content/60" />
           <span>Summary Gate</span>
         </button>
 
@@ -198,75 +219,112 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
             type="button"
             onClick={onReload}
             disabled={isLoading || readOnly}
-            title="Reload work and capacity from Summary Gate. Unsaved moves are kept."
-            className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer"
+            title="Reload work and capacity from Summary Gate. Unsaved draft moves are kept."
+            aria-label="Reload data"
+            className="btn btn-xs h-8 w-8 p-0 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content flex items-center justify-center cursor-pointer shadow-2xs transition-colors"
           >
             <RefreshCw
               size={13}
               className={`text-base-content/70 ${isLoading ? "animate-spin" : ""}`}
             />
-            <span className="hidden md:inline">Reload</span>
           </button>
         </div>
 
-        {/* Destructive / Reset Actions (Separated from primary Save) */}
-        {!readOnly && (
-          <>
-            <div className="h-5 w-[1px] bg-base-300 hidden sm:block mx-0.5" />
+        <div className="h-5 w-[1px] bg-base-300 hidden sm:block mx-0.5" />
 
-            <div className="inline-flex items-center gap-1.5">
-              {isDraftModified && onDiscardDraft && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDialog("discard")}
-                  disabled={isLoading}
-                  title="Discard unsaved draft moves and restore the current saved plan"
-                  className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content/80 hover:text-base-content flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Undo2 size={13} />
-                  <span>Discard Draft</span>
-                </button>
-              )}
+        {/* Action Group: Discard Draft (if draft modified) + Save Plan (Primary) + More Options (···) */}
+        <div className="inline-flex items-center gap-1.5">
+          {/* Discard Draft button (paired directly with Save Plan) */}
+          {isDraftModified && onDiscardDraft && !readOnly && (
+            <button
+              type="button"
+              onClick={() => setConfirmDialog("discard")}
+              disabled={isLoading}
+              title="Discard unsaved draft moves and restore the current saved plan"
+              className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content/80 hover:text-base-content flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+            >
+              <Undo2 size={13} />
+              <span>Discard Draft</span>
+            </button>
+          )}
 
+          {/* Primary Action: Save Plan (with wrapper for disabled tooltip explanation) */}
+          <div
+            className="inline-flex"
+            title={
+              !canSave && saveDisabledReason
+                ? saveDisabledReason
+                : isDraftModified
+                ? "Save draft changes as a new plan version"
+                : "Save a new plan version"
+            }
+          >
+            <button
+              type="button"
+              onClick={onSavePlan}
+              disabled={!canSave}
+              className="btn btn-xs h-8 px-3.5 rounded-lg btn-primary text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer tabular-nums"
+            >
+              <Save size={13} />
+              <span>
+                Save Plan
+                {isDraftModified && draftChangesCount > 0
+                  ? ` (${draftChangesCount})`
+                  : ""}
+              </span>
+            </button>
+          </div>
+
+          {/* More Options Menu (···) with Reset to Required */}
+          {!readOnly && (
+            <div className="relative" ref={moreMenuRef}>
               <button
                 type="button"
-                onClick={onResetRequired}
-                disabled={!canReset || readOnly}
-                title="Reset arrival dates and card order for all process groups and gates back to source arrivals. Review before saving."
-                className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-rose-200 hover:bg-rose-50 text-rose-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                onClick={() => setMoreMenuOpen((prev) => !prev)}
+                title="More actions"
+                aria-expanded={moreMenuOpen}
+                aria-haspopup="true"
+                className={`btn btn-xs h-8 w-8 p-0 rounded-lg border text-base-content/70 hover:text-base-content flex items-center justify-center cursor-pointer shadow-2xs transition-colors ${
+                  moreMenuOpen
+                    ? "bg-base-200 border-base-content/30"
+                    : "bg-base-100 border-base-300 hover:bg-base-200"
+                }`}
               >
-                <RotateCcw size={13} />
-                <span>Reset to Required</span>
+                <MoreHorizontal size={15} />
               </button>
-            </div>
-          </>
-        )}
 
-        {/* Primary Action: Save Plan (with wrapper for disabled tooltip explanation) */}
-        <div
-          className="inline-flex"
-          title={
-            !canSave && saveDisabledReason
-              ? saveDisabledReason
-              : isDraftModified
-              ? "Save draft changes as a new plan version"
-              : "Save a new plan version"
-          }
-        >
-          <button
-            type="button"
-            onClick={onSavePlan}
-            disabled={!canSave}
-            className="btn btn-xs h-8 px-3.5 rounded-lg btn-primary text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer tabular-nums"
-          >
-            <Save size={13} />
-            <span>
-              Save Plan
-              {isDraftModified && draftChangesCount > 0
-                ? ` (${draftChangesCount})`
-                : ""}
-            </span>
-          </button>
+              {moreMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-base-300 bg-base-100 py-1 shadow-lg z-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onOpenPlanHistory();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs font-medium text-base-content hover:bg-base-200/70 transition-colors cursor-pointer"
+                  >
+                    <History size={14} className="text-base-content/60" />
+                    <span>Plan History</span>
+                  </button>
+
+                  <div className="my-1 border-t border-base-200" />
+
+                  <button
+                    type="button"
+                    disabled={!canReset}
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onResetRequired();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+                  >
+                    <RotateCcw size={14} />
+                    <span>Reset to Required</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
