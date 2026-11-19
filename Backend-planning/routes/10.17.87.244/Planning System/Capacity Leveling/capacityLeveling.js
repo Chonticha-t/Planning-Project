@@ -589,7 +589,7 @@ const parsePlanPayload = (body, today) => {
       }
       seenGroups.add(key);
       const cardIds = group.cardIds.map((id) => {
-        if (typeof id !== "string" || !id || id.length > 2048 || seenCards.has(id) || seenCards.size >= 5000) {
+        if (typeof id !== "string" || !id || id.length > 2048 || seenCards.has(id) || seenCards.size >= 50000) {
           throw new ValidationError("Board order contains an invalid or repeated card.");
         }
         seenCards.add(id);

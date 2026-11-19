@@ -249,6 +249,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   }, [data, activeMovingLots, activePreviewTargetDate, grid, lots, category]);
 
   const kpis = useMemo(() => calculateKpis(grid, requiredGrid, lots, data ?? undefined), [grid, requiredGrid, lots, data]);
+  const draftChangesCount = useMemo(() => {
+    const movedLots = lots.filter((lot) => lot.plannedDate !== (requiredReset ? lot.baseDate : lot.savedDate)).length;
+    return movedLots + boardCardOrder.size;
+  }, [lots, requiredReset, boardCardOrder]);
   const isDraftModified = useMemo(() => {
     if (requiredReset) return true;
     if (lots.some((lot) => lot.plannedDate !== lot.savedDate)) return true;
@@ -257,6 +261,37 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     const saved = applyBoardCardOrder(board, savedBoardCardOrder);
     return applyBoardCardOrder(board, effectiveBoardCardOrder).some((lot, index) => lot.id !== saved[index].id);
   }, [lots, data, boardCardOrder, savedBoardCardOrder, effectiveBoardCardOrder, requiredReset]);
+
+  // Warn before closing or reloading browser tab when there are unsaved draft edits
+  useEffect(() => {
+    if (readOnly || !isDraftModified) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [readOnly, isDraftModified]);
+
+  const handleDiscardDraft = useCallback(() => {
+    if (readOnly || !data || loading || saving) return;
+    if (!window.confirm("Discard all unsaved date moves and card ordering, and restore the saved plan?")) {
+      return;
+    }
+    requiredResetRef.current = false;
+    setRequiredReset(false);
+    draftRef.current = new Map();
+    draftHistoryRef.current = new Map();
+    setBoardCardOrder(new Map());
+    setLots(data.cards.map(toLotItem));
+    setSelectedLotId(null);
+    setSelectedLotIds(new Set());
+    setPendingMove(null);
+    setPendingReorder(null);
+    setDraggedLot(null);
+    setHoverTargetDate(null);
+    toast.success("Unsaved draft discarded. Restored to the current saved plan.");
+  }, [readOnly, data, loading, saving]);
 
   const editingScopes = useMemo(() => {
     const scopes: EditingScope[] = [...capacityEditingScopes];
@@ -555,6 +590,17 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           setSaveModalOpen(true);
         }}
         canSave={!readOnly && Boolean(data) && !loading && !saving && kpis.missingPlanningCards === 0}
+        saveDisabledReason={
+          readOnly
+            ? "Viewing a historical plan snapshot (read-only)"
+            : kpis.missingPlanningCards > 0
+            ? `Cannot save: ${kpis.missingPlanningCards} card(s) are missing valid gate lead time or normal shift minutes`
+            : loading || saving
+            ? "Please wait while loading or saving…"
+            : null
+        }
+        draftChangesCount={draftChangesCount}
+        onDiscardDraft={handleDiscardDraft}
         planVersion={data?.plan?.version ?? 0}
         planSavedAt={data?.plan?.savedAt ?? null}
         isDraftModified={isDraftModified}
