@@ -44,7 +44,7 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <BlueStatCard icon={Package} title="Total SO" value={fmt(totalRows)} unit="SO lines">
+      <BlueStatCard icon={Package} tone="blue" title="Total SO" value={fmt(totalRows)} unit="SO lines">
         <div className="grid grid-cols-2 gap-2">
           <CardStat label="SO Balance" value={`${fmt(totalPo)} pcs`} />
           <CardStat label="Products" value={fmt(totalProducts)} align="right" />
@@ -54,9 +54,8 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
       <BlueStatCard
         icon={CheckCircle2}
         tone="green"
-        filled
         title="Ready"
-        badge={<StatusBadge tone="green" inverted title="Share of SO lines that are Ready">{readyPct}%</StatusBadge>}
+        badge={<StatusBadge tone="green" title="Share of SO lines that are Ready">{readyPct}%</StatusBadge>}
         value={fmt(readyRows)}
         unit="SO lines"
       >
@@ -69,9 +68,8 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
       <BlueStatCard
         icon={Factory}
         tone="red"
-        filled
         title="Production Plan"
-        badge={<StatusBadge tone="red" inverted title="Share of SO lines that need production">{planPct}%</StatusBadge>}
+        badge={<StatusBadge tone="red" title="Share of SO lines that need production">{planPct}%</StatusBadge>}
         value={fmt(planRows)}
         unit="SO lines"
       >
@@ -81,7 +79,7 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
         </div>
       </BlueStatCard>
 
-      <BlueStatCard icon={Clock} title="Last Calculated" value={hasUpdated ? updatedAt.slice(11, 16) : "-"}>
+      <BlueStatCard icon={Clock} tone="blue" title="Last Calculated" value={hasUpdated ? updatedAt.slice(11, 16) : "-"}>
         <div className="grid grid-cols-2 gap-2">
           <CardStat label="Date" value={hasUpdated ? toDMY(updatedAt) : "No data yet"} />
           <CardStat label="Day" value={hasUpdated ? dayjs(updatedAt.slice(0, 10)).format("dddd") : "-"} align="right" />
