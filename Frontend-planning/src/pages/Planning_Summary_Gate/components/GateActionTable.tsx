@@ -273,7 +273,13 @@ const textCollator = new Intl.Collator("en", { numeric: true, sensitivity: "base
 
 // Match displayed values; missing values always sort last in either direction.
 const getSortValue = (row: PlanningSummaryGateRow, key: Exclude<SortKey, "default">): string | number | null => {
-  if (key === "cal_net_required" || key === "net_wip_qty") {
+  if (key === "cal_net_required") {
+    const raw = row[key];
+    if (raw == null || String(raw).trim() === "") return null;
+    const value = Math.abs(Number(raw));
+    return Number.isFinite(value) ? value : null;
+  }
+  if (key === "net_wip_qty") {
     const raw = row[key];
     if (raw == null || String(raw).trim() === "") return null;
     const value = Number(raw);

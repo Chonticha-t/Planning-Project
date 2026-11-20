@@ -214,7 +214,7 @@ export const LotCard: React.FC<LotCardProps> = ({
       onDragStart={(e) => onDragStart(e, lot)}
       onDragEnd={onDragEnd}
       onClick={() => onSelect(lot)}
-      className={`relative group rounded-xl ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} select-none ${borderClass}`}
+      className={`relative group rounded-xl overflow-hidden ${compact ? "p-2" : "p-2.5"} shadow-2xs transition-all ${readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} select-none ${borderClass}`}
     >
       {/* Top Row: Product & Lot ID & Drag Grip */}
       <div className="flex items-start justify-between gap-1">
@@ -253,79 +253,81 @@ export const LotCard: React.FC<LotCardProps> = ({
         />
       </div>
 
-      {/* Shift Badge & Date Chip in the same row - never wrap */}
-      <div className={`${compact ? "mt-1" : "mt-1.5"} flex items-center gap-1 min-w-0`}>
+      {/* Shift Badge & Date Chip - wrap gracefully when space is constrained */}
+      <div className={`${compact ? "mt-1" : "mt-1.5"} flex flex-wrap items-center gap-1 min-w-0`}>
         {shiftBadge}
 
-        <button
-          ref={chipBtnRef}
-          disabled={readOnly}
-          type="button"
-          title={`${lot.gate} date: ${releaseDisplay}`}
-          aria-label={`Change ${lot.gate} date for ${lot.label}, ${releaseDisplay}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!readOnly) setPopoverOpen((prev) => !prev);
-          }}
-          className={`inline-flex shrink-0 items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold tabular-nums border transition-colors cursor-pointer whitespace-nowrap min-w-0 ${
-            isSelected
-              ? "bg-white/20 text-white border-white/30 hover:bg-white/30"
-              : isLate
-              ? "bg-rose-50 text-rose-700 border-rose-200"
-              : isEarly
-              ? "bg-amber-50 text-amber-800 border-amber-200"
-              : isMoved
-              ? "bg-[#eef2ff] text-[#4f46e5] border-indigo-200"
-              : "bg-base-200/70 text-base-content border-base-300 hover:bg-base-200"
-          }`}
-        >
-          <CalendarIcon
-            size={10}
-            className={`shrink-0 ${isSelected ? "text-white" : "text-primary"}`}
-          />
-          <span>{dayjs(lot.plannedDate).format(compact ? "DD/MM" : "DD/MM/YY")}</span>
-        </button>
-
-        {/* Trailing note button: warning, moved, changed source or incomplete planning data */}
-        {hasNote && (
+        <div className="inline-flex items-center gap-1 shrink-0">
           <button
-            ref={noteBtnRef}
+            ref={chipBtnRef}
+            disabled={readOnly}
             type="button"
+            title={`${lot.gate} date: ${releaseDisplay}`}
+            aria-label={`Change ${lot.gate} date for ${lot.label}, ${releaseDisplay}`}
             onClick={(e) => {
               e.stopPropagation();
-              if (!noteOpen && noteBtnRef.current) {
-                const rect = noteBtnRef.current.getBoundingClientRect();
-                setNotePos({
-                  top: rect.bottom + 6,
-                  left: Math.min(rect.left, window.innerWidth - 220),
-                });
-              }
-              setNoteOpen((prev) => !prev);
+              if (!readOnly) setPopoverOpen((prev) => !prev);
             }}
-            title={
-              warning !== "none"
-                ? `${WARNING_TEXT[warning]} · Must out ${mustStartDisplay}`
-                : isMoved
-                ? `Moved from ${wasDisplay}`
-                : lot.sourceChanged
-                ? "Must-out changed after this move was saved"
-                : noLoad && lot.loadMin !== null && lot.leadDays
-                ? `${ZERO_LOAD_TEXT[noLoad].short}: no load counted`
-                : "Check gate lead time and normal shift minutes"
-            }
-            className={`inline-flex items-center justify-center w-[21px] h-[21px] rounded-md border transition-colors cursor-pointer shrink-0 ${
+            className={`inline-flex shrink-0 items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold tabular-nums border transition-colors cursor-pointer whitespace-nowrap min-w-0 ${
               isSelected
-                ? "bg-white/20 border-white/30 text-white hover:bg-white/30"
+                ? "bg-white/20 text-white border-white/30 hover:bg-white/30"
                 : isLate
-                ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
-                : isEarly || !isMoved
-                ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
-                : "bg-[#eef2ff] border-indigo-200 text-[#4f46e5] hover:bg-indigo-100"
+                ? "bg-rose-50 text-rose-700 border-rose-200"
+                : isEarly
+                ? "bg-amber-50 text-amber-800 border-amber-200"
+                : isMoved
+                ? "bg-[#eef2ff] text-[#4f46e5] border-indigo-200"
+                : "bg-base-200/70 text-base-content border-base-300 hover:bg-base-200"
             }`}
           >
-            {warning !== "none" ? <AlertCircle size={11} /> : <Info size={11} />}
+            <CalendarIcon
+              size={10}
+              className={`shrink-0 ${isSelected ? "text-white" : "text-primary"}`}
+            />
+            <span>{dayjs(lot.plannedDate).format(compact ? "DD/MM" : "DD/MM/YY")}</span>
           </button>
-        )}
+
+          {/* Trailing note button: warning, moved, changed source or incomplete planning data */}
+          {hasNote && (
+            <button
+              ref={noteBtnRef}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!noteOpen && noteBtnRef.current) {
+                  const rect = noteBtnRef.current.getBoundingClientRect();
+                  setNotePos({
+                    top: rect.bottom + 6,
+                    left: Math.min(rect.left, window.innerWidth - 220),
+                  });
+                }
+                setNoteOpen((prev) => !prev);
+              }}
+              title={
+                warning !== "none"
+                  ? `${WARNING_TEXT[warning]} · Must out ${mustStartDisplay}`
+                  : isMoved
+                  ? `Moved from ${wasDisplay}`
+                  : lot.sourceChanged
+                  ? "Must-out changed after this move was saved"
+                  : noLoad && lot.loadMin !== null && lot.leadDays
+                  ? `${ZERO_LOAD_TEXT[noLoad].short}: no load counted`
+                  : "Check gate lead time and normal shift minutes"
+              }
+              className={`inline-flex items-center justify-center w-[21px] h-[21px] rounded-md border transition-colors cursor-pointer shrink-0 ${
+                isSelected
+                  ? "bg-white/20 border-white/30 text-white hover:bg-white/30"
+                  : isLate
+                  ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                  : isEarly || !isMoved
+                  ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                  : "bg-[#eef2ff] border-indigo-200 text-[#4f46e5] hover:bg-indigo-100"
+              }`}
+            >
+              {warning !== "none" ? <AlertCircle size={11} /> : <Info size={11} />}
+            </button>
+          )}
+        </div>
 
         {popoverOpen && (
           <DatePickerPopover
