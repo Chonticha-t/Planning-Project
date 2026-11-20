@@ -82,9 +82,16 @@ export const routes_planning: AppRoute[] = [
   {
     path: `${BASE}/planning_summary_gate`,
     element: <Planning_Summary_Gate />,
-    label: "PLANNING SUMMARY GATE",
-    Title: "PLANNING SUMMARY GATE",
+    label: "GATE SUMMARY",
+    Title: "GATE SUMMARY",
     icon: DoorOpen,
+  },
+  {
+    path: `${BASE}/capacity_leveling`,
+    element: <Capacity_Leveling />,
+    label: "CAPACITY LEVELING",
+    Title: "CAPACITY LEVELING",
+    icon: SlidersHorizontal,
   },
   {
     path: `${BASE}/planning_in_gate`,
@@ -122,15 +129,15 @@ export const routes_hidden: AppRoute[] = [
     path: `${BASE}/planning_summary_gate/capacity_leveling`,
     element: <Capacity_Leveling />,
     label: "CAPACITY LEVELING",
-    Title: "PLANNING SUMMARY GATE",
+    Title: "CAPACITY LEVELING",
     icon: SlidersHorizontal,
   },
   {
-    path: `${BASE}/capacity_leveling`,
-    element: <Capacity_Leveling />,
-    label: "CAPACITY LEVELING",
-    Title: "PLANNING SUMMARY GATE",
-    icon: SlidersHorizontal,
+    path: `${BASE}/gate_summary`,
+    element: <Planning_Summary_Gate />,
+    label: "GATE SUMMARY",
+    Title: "GATE SUMMARY",
+    icon: DoorOpen,
   },
 ];
 

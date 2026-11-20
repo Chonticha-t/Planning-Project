@@ -1,5 +1,4 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import dayjs from "dayjs";
 import {
   Search,
@@ -8,7 +7,6 @@ import {
   ChevronDown,
   X,
   Check,
-  SlidersHorizontal,
 } from "lucide-react";
 import type { ProcessGroupFilter, PlanWindow } from "../types";
 
@@ -50,7 +48,6 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
   loading,
   onRefresh,
 }) => {
-  const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownQuery, setDropdownQuery] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -258,19 +255,8 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
         </div>
       </div>
 
-      {/* Right controls: updated timestamp, refresh, level workload */}
+      {/* Right controls: updated timestamp, refresh */}
       <div className="flex items-center gap-2.5 text-xs">
-        {/* Level workload navigation button */}
-        <button
-          type="button"
-          onClick={() => navigate("/planning/planning_summary_gate/capacity_leveling")}
-          className="btn btn-xs h-8 px-3 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer"
-          title="Navigate to Capacity Leveling Board"
-        >
-          <SlidersHorizontal size={13} />
-          <span>Level workload</span>
-        </button>
-
         {lastUpdated && (
           <span className="text-base-content/60 tabular-nums font-medium text-[11.5px] hidden sm:inline">
             Updated {lastUpdated}
