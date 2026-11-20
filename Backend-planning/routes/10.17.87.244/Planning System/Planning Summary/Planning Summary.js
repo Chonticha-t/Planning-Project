@@ -6,6 +6,12 @@ const { verifyPlanner } = require("../Auth/Auth");
 const { refreshPoCalendarFields } = require("../WorkingDayCalendar/workingCalendar");
 const query = (text, params) => pool_smart.query(text, params);
 
+/** Realtime change-poll interval: PLANNING_REALTIME_POLL_MS, default 2500, minimum 1000. */
+const realtimePollMs = () => {
+  const value = Number(process.env.PLANNING_REALTIME_POLL_MS);
+  return Number.isFinite(value) && value > 0 ? Math.max(1000, value) : 2500;
+};
+
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
 const setNoCache = (res) => {
   res.set({
@@ -729,6 +735,7 @@ let lastDbFingerprint = null;
 let isCheckingDb = false;
 
 // Backend ตรวจจับการเปลี่ยนแปลงใน Database ทุกๆ 2.5 วินาที (เฉพาะเมื่อมีหน้าเว็บเปิดค้างอยู่)
+// ปรับรอบได้ด้วย PLANNING_REALTIME_POLL_MS (ค่าเริ่มต้น 2500, ต่ำสุด 1000)
 setInterval(async () => {
   if (sseClients.size === 0 || isCheckingDb) return;
   isCheckingDb = true;
@@ -809,7 +816,7 @@ setInterval(async () => {
   } finally {
     isCheckingDb = false;
   }
-}, 2500);
+}, realtimePollMs());
 
 // GET /api_p1/planning/planning_summary/stream — ท่อเชื่อมต่อ SSE แบบ Real-time
 router.get("/stream", (req, res) => {

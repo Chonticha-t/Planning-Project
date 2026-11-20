@@ -5,6 +5,12 @@ const { pool_smart } = require("../../config");
 const { verifyPlanner } = require("../Auth/Auth");
 const query = (text, params) => pool_smart.query(text, params);
 
+/** Realtime change-poll interval: PLANNING_REALTIME_POLL_MS, default 2500, minimum 1000. */
+const realtimePollMs = () => {
+  const value = Number(process.env.PLANNING_REALTIME_POLL_MS);
+  return Number.isFinite(value) && value > 0 ? Math.max(1000, value) : 2500;
+};
+
 // ป้องกัน Browser หรือ Proxy จำค่าเก่าเวลาดึงข้อมูลผ่าน AJAX
 const setNoCache = (res) => {
   res.set({
@@ -34,30 +40,40 @@ let isCheckingDb = false;
 
 // Backend ตรวจจับการเปลี่ยนแปลงใน Database ทุกๆ 2.5 วินาที (เฉพาะเมื่อมีหน้าเว็บเปิดค้างอยู่)
 // ตรวจสอบทั้ง so_balance, so_price และ exchange_rate_monthly เพื่อ sync แบบ Real-time
+// ปรับรอบได้ด้วย PLANNING_REALTIME_POLL_MS (ค่าเริ่มต้น 2500, ต่ำสุด 1000)
 setInterval(async () => {
   if (sseClients.size === 0 || isCheckingDb) return;
   isCheckingDb = true;
 
   try {
+    // One scan per table (the previous form scanned so_balance 8 times and so_price 3 times every poll).
+    // Column names and values are unchanged, so the fingerprint is the same.
     const queryStr = `
-      SELECT
-        -- ตรวจสอบ so_balance
-        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.so_balance)          AS bal_updated_at,
-        (SELECT COUNT(*)::int FROM planning.so_balance)                                                   AS bal_total_rows,
-        (SELECT COALESCE(SUM(po_bal), 0)::float8 FROM planning.so_balance)                                AS total_po_bal,
-        (SELECT COALESCE(SUM(unmovement), 0)::float8 FROM planning.so_balance)                            AS total_unmovement,
-        (SELECT COALESCE(SUM(f_g), 0)::float8 FROM planning.so_balance)                                   AS total_fg,
-        (SELECT COALESCE(SUM(net_required_pcs), 0)::float8 FROM planning.so_balance)                      AS total_net_required,
-        (SELECT COUNT(*)::int FROM planning.so_balance WHERE status = 'ready')                            AS ready_rows,
-        (SELECT COUNT(*)::int FROM planning.so_balance WHERE TRIM(item) LIKE '94%')                       AS fpc_rows,
-
-        -- ตรวจสอบ so_price
-        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.so_price)              AS price_updated_at,
-        (SELECT COUNT(*)::int FROM planning.so_price)                                                     AS price_total_rows,
-        (SELECT COALESCE(SUM(price), 0)::float8 FROM planning.so_price)                                    AS total_price,
-
-        -- ตรวจสอบ exchange_rate_monthly
-        (SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US') FROM planning.exchange_rate_monthly) AS rate_updated_at
+      SELECT b.*, p.*, r.*
+      FROM (
+        SELECT
+          to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US')                AS bal_updated_at,
+          COUNT(*)::int                                                       AS bal_total_rows,
+          -- The table column is so_bal (po_bal exists only in the view); po_bal made every poll fail.
+          COALESCE(SUM(so_bal), 0)::float8                                    AS total_po_bal,
+          COALESCE(SUM(unmovement), 0)::float8                                AS total_unmovement,
+          COALESCE(SUM(f_g), 0)::float8                                       AS total_fg,
+          COALESCE(SUM(net_required_pcs), 0)::float8                          AS total_net_required,
+          COUNT(*) FILTER (WHERE status = 'ready')::int                       AS ready_rows,
+          COUNT(*) FILTER (WHERE TRIM(item) LIKE '94%')::int                  AS fpc_rows
+        FROM planning.so_balance
+      ) b
+      CROSS JOIN (
+        SELECT
+          to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US')                AS price_updated_at,
+          COUNT(*)::int                                                       AS price_total_rows,
+          COALESCE(SUM(price), 0)::float8                                     AS total_price
+        FROM planning.so_price
+      ) p
+      CROSS JOIN (
+        SELECT to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS.US')           AS rate_updated_at
+        FROM planning.exchange_rate_monthly
+      ) r
     `;
     const { rows } = await query(queryStr);
     const row = rows[0];
@@ -87,7 +103,7 @@ setInterval(async () => {
   } finally {
     isCheckingDb = false;
   }
-}, 2500);
+}, realtimePollMs());
 
 // GET /api_p1/planning/stream — ท่อเชื่อมต่อ SSE แบบ Real-time
 router.get("/stream", (req, res) => {
