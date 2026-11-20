@@ -22,7 +22,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       {/* 1. Net Required */}
-      <BlueStatCard icon={Target} title="Net Required" value={fmt(kpi.total_net_required)} unit="pcs">
+      <BlueStatCard icon={Target} tone="blue" title="Net Required" value={fmt(kpi.total_net_required)} unit="pcs">
         <CardStat label="Demand Plan" value={`${fmt(kpi.total_products)} products`} />
       </BlueStatCard>
 
@@ -30,9 +30,8 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       <BlueStatCard
         icon={Cpu}
         tone="green"
-        filled
         title="Total Net WIP"
-        badge={<StatusBadge tone="green" inverted title="Lots in process">{fmt(kpi.total_lots)} lots</StatusBadge>}
+        badge={<StatusBadge tone="green" title="Lots in process">{fmt(kpi.total_lots)} lots</StatusBadge>}
         value={fmt(kpi.total_net_wip)}
         unit="pcs"
       >
@@ -43,9 +42,8 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       <BlueStatCard
         icon={Flame}
         tone="red"
-        filled
         title="Priority Orders"
-        badge={<StatusBadge tone="red" inverted title="Urgent lines">{fmt(urgentCount)} urgent</StatusBadge>}
+        badge={<StatusBadge tone="red" title="Urgent lines">{fmt(urgentCount)} urgent</StatusBadge>}
         value={fmt(totalPriority)}
         unit="lines"
       >
