@@ -242,7 +242,6 @@ const SOBalanceTable = ({
         <div className="flex items-center gap-2">
           <ClipboardList size={15} className="text-primary" />
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">SO Balance</h3>
-          <span className="text-[11px] text-base-content/60">Click SO Bal to view calculation history</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="inline-flex h-7 items-center px-2.5 rounded-md bg-base-200/80 border border-base-300 text-[11px] font-bold text-base-content/70 tabular-nums">
