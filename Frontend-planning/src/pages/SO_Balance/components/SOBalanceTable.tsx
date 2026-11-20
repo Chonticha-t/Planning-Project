@@ -118,13 +118,13 @@ const StatusPill = ({ value }: { value: PlanningStatus }) => {
       <span
         className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-bold border-[1.5px] bg-transparent shrink-0 ${
           isReady
-            ? "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300"
-            : "border-rose-600 text-rose-700 dark:border-rose-400 dark:text-rose-300"
+            ? "border-[#15803d] text-[#15803d]"
+            : "border-[#dc2626] text-[#dc2626]"
         }`}
       >
         <span
           className={`size-2 rounded-full shrink-0 ${
-            isReady ? "bg-emerald-600 dark:bg-emerald-400" : "bg-rose-600 dark:bg-rose-400"
+            isReady ? "bg-[#15803d]" : "bg-[#dc2626]"
           }`}
         />
         <span>{isReady ? "Ready" : "Production Plan"}</span>
@@ -199,8 +199,8 @@ const getColumns = (
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true, undefined, true),
-  amountCol("wh_fg_amount", "W/H F/G", "text-emerald-700 dark:text-emerald-300"),
-  amountCol("output_amount", "Output Amt", "text-rose-700 dark:text-rose-300", true),
+  amountCol("wh_fg_amount", "W/H F/G", "text-[#15803d]"),
+  amountCol("output_amount", "Output Amt", "text-[#dc2626]", true),
   {
     field: "status",
     headerName: "Status",
