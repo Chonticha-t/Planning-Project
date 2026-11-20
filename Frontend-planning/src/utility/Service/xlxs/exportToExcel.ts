@@ -1,5 +1,5 @@
-import * as XLSX from "xlsx";
-import ExcelJS from "exceljs";
+// xlsx and exceljs are large; load them only when the user exports, not with the page.
+import type ExcelJS from "exceljs";
 import dayjs from "dayjs";
 import { formatDateTimeType, exportToExcelType } from "./type";
 
@@ -14,6 +14,7 @@ export const exportToExcel: exportToExcelType = async ({ data, fileName, columns
   const fullFileName = `${fileName}_${currentDateTime}.xlsx`;
 
   if (!columns || columns.length === 0) {
+    const XLSX = await import("xlsx");
     const ws = XLSX.utils.json_to_sheet(data);
 
     const wb = XLSX.utils.book_new();
@@ -23,7 +24,8 @@ export const exportToExcel: exportToExcelType = async ({ data, fileName, columns
     return;
   }
 
-  const workbook = new ExcelJS.Workbook();
+  const { default: ExcelJSRuntime } = await import("exceljs");
+  const workbook = new ExcelJSRuntime.Workbook();
   const worksheet = workbook.addWorksheet("Sheet1");
 
   const hasGroup = columns.some((c) => Boolean(c.group));

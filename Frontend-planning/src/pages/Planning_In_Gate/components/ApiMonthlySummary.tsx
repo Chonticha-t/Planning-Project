@@ -26,6 +26,12 @@ interface Props {
 /** Keep saved arrivals separate from observed output and unknown historical coverage. */
 export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, version, gate, category, output }: Props) {
   const [selected, setSelected] = useState<{ date: string; product?: string; mode: "actual" | "plan"; asOf?: string } | null>(null);
+  // A new search closes the open day details.
+  const [searchedFor, setSearchedFor] = useState(search);
+  if (searchedFor !== search) {
+    setSearchedFor(search);
+    setSelected(null);
+  }
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return rows.filter(row => !query || row.product.toLowerCase().includes(query) || row.label.toLowerCase().includes(query));

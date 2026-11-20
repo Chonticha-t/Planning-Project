@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useState, useMemo, useCallback, useDeferredValue, useEffect, useRef } from "react";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
 import { AlertTriangle, RefreshCw } from "lucide-react";
@@ -12,6 +12,8 @@ import type {
   LotItem,
   LevelingData,
   MoveHistoryEntry,
+  BoardShiftAllocation,
+  DayGateLoad,
 } from "../types";
 import {
   buildGrid,
@@ -26,6 +28,7 @@ import {
   plannedDateIndex,
   toLotItem,
   requiredLots,
+  requiredGridSignature,
 } from "../utils/levelingCalculations";
 import { allocateBoardShifts } from "../utils/boardShiftAllocation";
 import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, serializeBoardCardOrder, type BoardCardOrder } from "../utils/boardCardOrder";
@@ -98,7 +101,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     tab?: "standard" | "special" | "table";
     date?: string | null;
   }>({});
-  const handleOpenCapacity = (
+  const handleOpenCapacity = useCallback((
     gate?: string | null,
     tab?: "standard" | "special" | "table",
     date?: string | null
@@ -106,7 +109,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     setSelectedLotId(null);
     setCapacityModalTarget({ gate, tab, date });
     setCapacityModalOpen(true);
-  };
+  }, []);
   const [capacityEditingScopes, setCapacityEditingScopes] = useState<EditingScope[]>([]);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -208,7 +211,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
 
   // Count arrivals using Summary Gate's process filter and distinct physical-lot rules.
   const grid = useMemo(() => (data ? buildGrid(data, lots, false, category) : []), [data, lots, category]);
-  const requiredGrid = useMemo(() => (data ? buildGrid(data, lots, true, category) : []), [data, lots, category]);
+  // Moves change planned dates only; the Required grid is rebuilt when its own inputs change.
+  const requiredKey = useMemo(() => requiredGridSignature(lots), [lots]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `lots` is covered by requiredKey
+  const requiredGrid = useMemo(() => (data ? buildGrid(data, lots, true, category) : []), [data, requiredKey, category]);
   const plannedIndex = useMemo(() => plannedDateIndex(lots, data ?? undefined), [lots, data]);
 
   const rangeDates = useMemo(() => new Set(grid.map((day) => day.date)), [grid]);
@@ -243,24 +249,39 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   }, [draggedLot, selectedLotIds, boardLots, pendingMove]);
   const activePreviewTargetDate = hoverTargetDate || pendingMove?.targetDate || null;
 
-  const shiftAllocations = useMemo(() => {
-    if (!data) return new Map();
-    let projectedBoard = allBoardLots;
-    if (activeMovingLots.length && activePreviewTargetDate) {
-      const ids = new Set(activeMovingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
-      const projectedLots = lots.map((lot) => ids.has(lot.id) ? { ...lot, plannedDate: activePreviewTargetDate } : lot);
-      // Rebuild to merge physical lots and apply priority at the destination before allocating shifts.
-      projectedBoard = applyBoardCardOrder(buildBoardLots(data, projectedLots, category), effectiveBoardCardOrder);
-    }
-    return allocateBoardShifts(data, projectedBoard, { excludePassed: true });
-  }, [data, allBoardLots, lots, category, effectiveBoardCardOrder, activeMovingLots, activePreviewTargetDate]);
+  const baseShiftAllocations = useMemo(
+    () => data ? allocateBoardShifts(data, allBoardLots, { excludePassed: true }) : new Map<string, BoardShiftAllocation>(),
+    [data, allBoardLots]
+  );
 
-  const displayGrid = useMemo(() => {
-    if (data && activeMovingLots.length > 0 && activePreviewTargetDate) {
-      return computeMovePreview(data, grid, lots, activeMovingLots, activePreviewTargetDate, category).previewGrid;
-    }
-    return grid;
-  }, [data, activeMovingLots, activePreviewTargetDate, grid, lots, category]);
+  // Dragging across columns changes the target often; the heavy preview follows it at lower priority,
+  // and each target date is computed once per drag (dragging back to a date reuses its result).
+  const deferredPreviewTargetDate = useDeferredValue(activePreviewTargetDate);
+  const previewTarget = activeMovingLots.length > 0 ? deferredPreviewTargetDate : null;
+  const previewCache = useMemo(
+    () => new Map<string, { grid: DayGateLoad[]; shifts: Map<string, BoardShiftAllocation> }>(),
+    // A new, empty cache whenever anything except the target date changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, grid, lots, allBoardLots, category, effectiveBoardCardOrder, activeMovingLots]
+  );
+  const movePreview = useMemo(() => {
+    if (!data || !previewTarget) return null;
+    const cached = previewCache.get(previewTarget);
+    if (cached) return cached;
+    const ids = new Set(activeMovingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
+    const projectedLots = lots.map((lot) => ids.has(lot.id) ? { ...lot, plannedDate: previewTarget } : lot);
+    // Rebuild to merge physical lots and apply priority at the destination before allocating shifts.
+    const projectedBoard = applyBoardCardOrder(buildBoardLots(data, projectedLots, category), effectiveBoardCardOrder);
+    const entry = {
+      grid: computeMovePreview(data, grid, lots, activeMovingLots, previewTarget, category).previewGrid,
+      shifts: allocateBoardShifts(data, projectedBoard, { excludePassed: true }),
+    };
+    previewCache.set(previewTarget, entry);
+    return entry;
+  }, [previewCache, previewTarget, data, lots, grid, category, effectiveBoardCardOrder, activeMovingLots]);
+
+  const shiftAllocations = movePreview?.shifts ?? baseShiftAllocations;
+  const displayGrid = movePreview?.grid ?? grid;
 
   const kpis = useMemo(() => calculateKpis(grid, requiredGrid, lots, data ?? undefined), [grid, requiredGrid, lots, data]);
   const draftChangesCount = useMemo(() => {
@@ -544,6 +565,45 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     [data, saving, requirePlanner, lots, today, load, effectiveBoardCardOrder, readOnly]
   );
 
+  // Stable callbacks and values for the memoized grid, board, cards and side panel.
+  const handlePlanModeChange = useCallback((mode: PlanMode) => {
+    setPlanMode(mode);
+    if (mode === "required") {
+      setSelectedLotId(null);
+      setSelectedLotIds(new Set());
+      setPendingMove(null);
+      setDraggedLot(null);
+      setHoverTargetDate(null);
+    }
+  }, []);
+  const handleBoardGateChange = useCallback((gate: string) => {
+    setBoardGate(gate);
+    setSelectedLotIds(new Set());
+  }, []);
+  const handleSelectLot = useCallback((lot: LotItem) => setSelectedLotId((prev) => (prev === lot.id ? null : lot.id)), []);
+  const handleSelectionChange = useCallback((ids: string[]) => setSelectedLotIds(new Set(ids)), []);
+  const handleToggleSelection = useCallback((id: string) => setSelectedLotIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }), []);
+  const handleDragEnd = useCallback(() => setDraggedLot(null), []);
+  const handleCloseLotDetail = useCallback(() => setSelectedLotId(null), []);
+  const selectedLotGate = selectedLot?.gate;
+  const handleOpenLotCapacity = useCallback(() => handleOpenCapacity(selectedLotGate, "standard"), [handleOpenCapacity, selectedLotGate]);
+  const { beyondRangeCount, pastArrivalCount } = useMemo(() => {
+    const first = grid[0]?.date ?? today;
+    const last = grid[grid.length - 1]?.date ?? today;
+    let beyond = 0;
+    let past = 0;
+    for (const lot of gateLots) {
+      if (lot.plannedDate > last) beyond++;
+      else if (lot.plannedDate < first) past++;
+    }
+    return { beyondRangeCount: beyond, pastArrivalCount: past };
+  }, [gateLots, grid, today]);
+
   const dateRangeText = grid.length
     ? `${dayjs(grid[0].date).format("DD/MM")} - ${dayjs(grid[grid.length - 1].date).format("DD/MM/YYYY")}`
     : "-";
@@ -678,16 +738,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             gridData={displayGrid}
             requiredGridData={requiredGrid}
             planMode={planMode}
-            onPlanModeChange={(mode) => {
-              setPlanMode(mode);
-              if (mode === "required") {
-                setSelectedLotId(null);
-                setSelectedLotIds(new Set());
-                setPendingMove(null);
-                setDraggedLot(null);
-                setHoverTargetDate(null);
-              }
-            }}
+            onPlanModeChange={handlePlanModeChange}
             kpis={kpis}
             selectedGate={selectedGridGate}
             boardGate={boardGate}
@@ -702,15 +753,12 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 readOnly={readOnly}
                 gates={gates}
                 boardGate={boardGate}
-                onBoardGateChange={(gate) => {
-                  setBoardGate(gate);
-                  setSelectedLotIds(new Set());
-                }}
+                onBoardGateChange={handleBoardGateChange}
                 lots={boardLots}
                 shiftAllocations={shiftAllocations}
                 data={data}
-                beyondRangeCount={gateLots.filter((lot) => lot.plannedDate > (grid[grid.length - 1]?.date ?? today)).length}
-                pastArrivalCount={gateLots.filter((lot) => lot.plannedDate < (grid[0]?.date ?? today)).length}
+                beyondRangeCount={beyondRangeCount}
+                pastArrivalCount={pastArrivalCount}
                 gridData={grid}
                 today={today}
                 plannedIndex={plannedIndex}
@@ -718,15 +766,16 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 onViewModeChange={setViewMode}
                 granularity={granularity}
                 selectedLot={selectedLot}
-                onSelectLot={(lot) => setSelectedLotId((prev) => (prev === lot.id ? null : lot.id))}
+                onSelectLot={handleSelectLot}
                 onMoveLot={handleStageMoveLot}
                 selectedLotIds={selectedLotIds}
-                onSelectionChange={(ids) => setSelectedLotIds(new Set(ids))}
+                onSelectionChange={handleSelectionChange}
+                onToggleSelection={handleToggleSelection}
                 onMoveLots={handleStageMoveLots}
                 onReorderLots={handleStageReorder}
                 draggedLot={draggedLot}
                 onDragStart={setDraggedLot}
-                onDragEnd={() => setDraggedLot(null)}
+                onDragEnd={handleDragEnd}
                 onHoverTargetDate={setHoverTargetDate}
                 hoverTargetDate={hoverTargetDate}
                 activeMovingLots={activeMovingLots}
@@ -749,8 +798,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             plannedIndex={plannedIndex}
             planVersion={data.plan?.version ?? 0}
             onApply={handleStageMoveLot}
-            onCancel={() => setSelectedLotId(null)}
-            onOpenCapacityModal={() => handleOpenCapacity(selectedLot?.gate, "standard")}
+            onCancel={handleCloseLotDetail}
+            onOpenCapacityModal={handleOpenLotCapacity}
             isDraggingCard={Boolean(draggedLot)}
           />
 

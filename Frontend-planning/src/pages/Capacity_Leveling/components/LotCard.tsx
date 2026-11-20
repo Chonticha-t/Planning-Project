@@ -47,7 +47,7 @@ interface LotCardProps {
   onDateChange: (lot: LotItem, newDate: string) => void;
 }
 
-export const LotCard: React.FC<LotCardProps> = ({
+const LotCardView: React.FC<LotCardProps> = ({
   lot,
   shiftAllocation,
   isSelected,
@@ -421,3 +421,15 @@ export const LotCard: React.FC<LotCardProps> = ({
     </div>
   );
 };
+
+const sameShiftAllocation = (a?: BoardShiftAllocation, b?: BoardShiftAllocation) =>
+  a === b || (Boolean(a && b) && a!.status === b!.status && a!.dayMin === b!.dayMin &&
+    a!.nightMin === b!.nightMin && a!.overflowMin === b!.overflowMin && a!.reason === b!.reason);
+
+/** Move previews rebuild every shift allocation; a card re-renders only when its own values change. */
+export const LotCard = React.memo(LotCardView, (prev, next) => {
+  for (const key of Object.keys({ ...prev, ...next }) as (keyof LotCardProps)[]) {
+    if (key === "shiftAllocation" ? !sameShiftAllocation(prev.shiftAllocation, next.shiftAllocation) : prev[key] !== next[key]) return false;
+  }
+  return true;
+});

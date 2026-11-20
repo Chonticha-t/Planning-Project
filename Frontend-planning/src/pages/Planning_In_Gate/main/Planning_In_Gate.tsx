@@ -6,6 +6,7 @@ import { InGateHeader } from "../components/InGateHeader";
 import { ApiWorkListTable } from "../components/ApiWorkListTable";
 import { ApiMonthlySummary } from "../components/ApiMonthlySummary";
 import { HistoryPanel } from "../components/HistoryPanel";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 
 const Planning_In_Gate = () => {
   const {
@@ -17,6 +18,9 @@ const Planning_In_Gate = () => {
     changeCategory, changeView, countText, refresh, exportPlan,
   } = usePlanningInGate();
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Tables filter after typing pauses, so each keystroke does not re-filter or re-query routing.
+  // Search is not part of the table keys: a key change would remount the table and refetch routing.
+  const tableSearch = useDebouncedValue(search, 250);
 
   return <div className={`planning-summary-gate flex flex-col gap-4 w-full ${tvMode ? "fixed inset-0 z-[100] overflow-y-auto bg-base-200 p-4 sm:p-6" : ""}`}>
     <InGateHeader snapshotOnly busy={loading || exporting || finished.loading || monthly.loading} exportDisabled={!saved || Boolean(error) || !visible.length}
@@ -49,7 +53,7 @@ const Planning_In_Gate = () => {
               <div className="text-sm font-bold">{item.gate}</div><div className="text-xs">{countText(item.gate)}</div>
             </button>)}
           </div>
-          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month, search])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={search} version={saved?.plan.version} gate={gate} category={category} output={monthly} /> : saved ?
+          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={tableSearch} version={saved?.plan.version} gate={gate} category={category} output={monthly} /> : saved ?
             <div className="p-6 flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-sm font-extrabold uppercase tracking-wider mr-1">Queue</h2>
@@ -67,7 +71,7 @@ const Planning_In_Gate = () => {
                 {scheduledDates.length > 0 && <select aria-label="Scheduled day" className="select select-xs select-bordered ml-auto" value={scheduledDates.includes(date) ? date : ""} onChange={event => event.target.value && setDate(event.target.value)}><option value="" disabled>Select a planned day</option>{scheduledDates.map(day => <option key={day} value={day}>{day}</option>)}</select>}
               </div>
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}
-              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date, search])} planOrder={dayPlanLots} savedPlanLots={savedPlanLots} search={search} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
+              <ApiWorkListTable key={JSON.stringify([saved.plan.planId, category, gate, date])} planOrder={dayPlanLots} savedPlanLots={savedPlanLots} search={tableSearch} allocations={allocations} capacity={saved.snapshot.capacity?.[gate]?.[date]} finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }} />
             </div> : null}
         </div>
         {saved && <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}

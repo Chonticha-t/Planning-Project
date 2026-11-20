@@ -96,19 +96,29 @@ export default function usePlanningInGate() {
     else next.delete("view");
     setParams(next, { replace: true });
   };
-  const countText = (gateName: string) => {
+  // Tab counts for every gate, grouped in one pass over the rows.
+  const gateCountTexts = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const items = dayRows.filter(row => row.gate === gateName && (view !== "month" || !query
-      || row.product.toLowerCase().includes(query) || row.label.toLowerCase().includes(query)));
-    const needs = items.filter(row => row.kind === "need").length;
-    const unknown = items.filter(row => row.kind === "unidentified").length;
-    const value = unit === "lots" ? items.filter(row => row.kind === "lot").length
-      : items.reduce<number | null>((total, row) => {
-        const amount = unit === "pcs" ? row.qty : row.sheets;
-        return total === null || amount === null ? null : total + amount;
-      }, 0);
-    return `${formatGateQuantity(value, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet")} ${unit}${needs ? ` · ${needs} need` : ""}${unknown ? ` · ${unknown} no ID` : ""}`;
-  };
+    const byGate = new Map<string, typeof dayRows>();
+    for (const row of dayRows) {
+      if (view === "month" && query && !row.product.toLowerCase().includes(query) && !row.label.toLowerCase().includes(query)) continue;
+      const items = byGate.get(row.gate);
+      if (items) items.push(row);
+      else byGate.set(row.gate, [row]);
+    }
+    const format = (items: typeof dayRows) => {
+      const needs = items.filter(row => row.kind === "need").length;
+      const unknown = items.filter(row => row.kind === "unidentified").length;
+      const value = unit === "lots" ? items.filter(row => row.kind === "lot").length
+        : items.reduce<number | null>((total, row) => {
+          const amount = unit === "pcs" ? row.qty : row.sheets;
+          return total === null || amount === null ? null : total + amount;
+        }, 0);
+      return `${formatGateQuantity(value, unit === "lots" ? "lot" : unit === "pcs" ? "piece" : "sheet")} ${unit}${needs ? ` · ${needs} need` : ""}${unknown ? ` · ${unknown} no ID` : ""}`;
+    };
+    return { byGate: new Map([...byGate].map(([gateName, items]) => [gateName, format(items)])), empty: format([]) };
+  }, [dayRows, view, search, unit]);
+  const countText = (gateName: string) => gateCountTexts.byGate.get(gateName) ?? gateCountTexts.empty;
   const refresh = () => {
     reload();
     if (view === "day") finished.reload();

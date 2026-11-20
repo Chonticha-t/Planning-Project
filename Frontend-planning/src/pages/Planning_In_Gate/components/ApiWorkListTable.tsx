@@ -41,10 +41,17 @@ export function ApiWorkListTable({ planOrder, savedPlanLots, search, allocations
   const [page, setPage] = useState(0);
   const [routeLot, setRouteLot] = useState<LotItem | null>(null);
   const query = search.trim().toLowerCase();
+  // A new search starts on the first page with the route details closed.
+  const [searchedFor, setSearchedFor] = useState(query);
+  if (searchedFor !== query) {
+    setSearchedFor(query);
+    setPage(0);
+    setRouteLot(null);
+  }
   const compactFinished = filter === "finished";
   const work = useMemo(() => buildWorkRows(planOrder, savedPlanLots, finished.rows), [planOrder, savedPlanLots, finished.rows]);
-  const display = work[filter].filter(row => !query || [row.lot?.product, row.lot?.label, row.evidence?.product, row.evidence?.lotNo]
-    .some(value => value?.toLowerCase().includes(query)));
+  const display = useMemo(() => work[filter].filter(row => !query || [row.lot?.product, row.lot?.label, row.evidence?.product, row.evidence?.lotNo]
+    .some(value => value?.toLowerCase().includes(query))), [work, filter, query]);
   const summary = useMemo(() => summarizeActivePlan(planOrder, capacity?.capacityMin), [planOrder, capacity?.capacityMin]);
   const currentPage = Math.min(page, Math.max(0, Math.ceil(display.length / PAGE_SIZE) - 1));
   const visible = display.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect, useState } from "react";
+import React, { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import dayjs from "dayjs";
 import {
   AlertCircle,
@@ -54,6 +54,8 @@ interface ReleaseBoardProps {
   onMoveLot: (lot: LotItem, targetDate: string) => void;
   selectedLotIds: ReadonlySet<string>;
   onSelectionChange: (ids: string[]) => void;
+  /** Adds or removes one card from the batch selection; must be stable for memoized cards. */
+  onToggleSelection: (id: string) => void;
   onMoveLots: (lots: LotItem[], targetDate: string) => void;
   onReorderLots: (movingIds: string[], targetId: string, position: "before" | "after") => void;
   draggedLot: LotItem | null;
@@ -121,7 +123,9 @@ const SHIFT_THEMES = {
   },
 } as const;
 
-export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
+const EMPTY_LOTS: LotItem[] = [];
+
+const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   data,
   gates,
   boardGate,
@@ -141,6 +145,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   onMoveLot,
   selectedLotIds,
   onSelectionChange,
+  onToggleSelection,
   onMoveLots,
   onReorderLots,
   draggedLot,
@@ -274,8 +279,9 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
   // Columns shown on the daily board: optionally hide off days / holidays (unless lots are planned on them)
   const boardDays = useMemo(() => {
     if (!hideOffDays) return visibleDays;
+    const plannedDates = new Set(filteredLots.map((lot) => lot.plannedDate));
     return visibleDays.filter(
-      (col) => !col.gates[boardGate]?.off || filteredLots.some((l) => l.plannedDate === col.date)
+      (col) => !col.gates[boardGate]?.off || plannedDates.has(col.date)
     );
   }, [visibleDays, hideOffDays, boardGate, filteredLots]);
 
@@ -327,16 +333,43 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     });
   }, [visibleDays, boardGate, gates]);
 
-  const selectedLots = filteredLots.filter((lot) => selectedLotIds.has(lot.id));
-  const movingIds = new Set(activeMovingLots.map((lot) => lot.id));
-  const planningDates = new Set(planningDays.map((day) => day.date));
+  // Cards per day and per week, built once instead of filtering every column on each render.
+  const lotsByDate = useMemo(() => {
+    const byDate = new Map<string, LotItem[]>();
+    for (const lot of filteredLots) {
+      const list = byDate.get(lot.plannedDate);
+      if (list) list.push(lot);
+      else byDate.set(lot.plannedDate, [lot]);
+    }
+    return byDate;
+  }, [filteredLots]);
+  const lotsByWeek = useMemo(() => {
+    const weekOfDate = new Map(weekGroups.flatMap((wg) => wg.days.map((day) => [day.date, wg.id] as const)));
+    const byWeek = new Map<string, LotItem[]>();
+    for (const lot of filteredLots) {
+      const week = weekOfDate.get(lot.plannedDate);
+      if (!week) continue;
+      const list = byWeek.get(week);
+      if (list) list.push(lot);
+      else byWeek.set(week, [lot]);
+    }
+    return byWeek;
+  }, [filteredLots, weekGroups]);
+  const warnings = useMemo(
+    () => new Map(filteredLots.map((lot) => [lot.id, moveWarning(lot, lot.plannedDate, plannedIndex, data)])),
+    [filteredLots, plannedIndex, data]
+  );
+  // Days on which a moving card would finish after must-out or overlap another gate.
+  const afterMustStartDates = useMemo(() => new Set(activeMovingLots.length ? boardDays.filter((col) =>
+    activeMovingLots.some((lot) => ["late", "order"].includes(moveWarning(lot, col.date, plannedIndex, data)))
+  ).map((col) => col.date) : []), [activeMovingLots, boardDays, plannedIndex, data]);
+
+  const selectedLots = useMemo(() => filteredLots.filter((lot) => selectedLotIds.has(lot.id)), [filteredLots, selectedLotIds]);
+  const movingIds = useMemo(() => new Set(activeMovingLots.map((lot) => lot.id)), [activeMovingLots]);
+  const planningDates = useMemo(() => new Set(planningDays.map((day) => day.date)), [planningDays]);
   const selectableLots = filteredLots;
-  const toggleLotSelection = (lot: LotItem) => {
-    const next = new Set(selectedLotIds);
-    if (next.has(lot.id)) next.delete(lot.id);
-    else next.add(lot.id);
-    onSelectionChange([...next]);
-  };
+  // Stable across selection changes so memoized cards re-render only when their own state changes.
+  const toggleLotSelection = useCallback((lot: LotItem) => onToggleSelection(lot.id), [onToggleSelection]);
   const currentTargetDate = hoverTargetDate || activePreviewTargetDate;
 
   const scrollBoard = (dir: "left" | "right") => {
@@ -345,21 +378,21 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     scrollContainerRef.current.scrollBy({ left: offset, behavior: "smooth" });
   };
 
-  const handleCardDragStart = (
-    e: React.DragEvent<HTMLDivElement>,
+  const handleCardDragStart = useCallback((
+    e: React.DragEvent<HTMLElement>,
     lot: LotItem
   ) => {
     if (readOnly) { e.preventDefault(); return; }
     e.dataTransfer.setData("text/plain", lot.id);
     e.dataTransfer.effectAllowed = "move";
     onDragStart(lot);
-  };
+  }, [readOnly, onDragStart]);
 
-  const handleCardDragEnd = () => {
+  const handleCardDragEnd = useCallback(() => {
     setReorderTarget(null);
     onDragEnd();
     onHoverTargetDate(null);
-  };
+  }, [onDragEnd, onHoverTargetDate]);
 
   const getSameDayMovingLots = (target: LotItem) => {
     if (!draggedLot) return [];
@@ -837,7 +870,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
         >
           {/* Scrollable Day Columns for ALL planning days */}
           {boardDays.map((col) => {
-            const colLots = filteredLots.filter((l) => l.plannedDate === col.date);
+            const colLots = lotsByDate.get(col.date) ?? EMPTY_LOTS;
             const colPct = cellPct(col.gates[boardGate]);
             const colCap = data.capacity?.[boardGate]?.[col.date];
             const colHasOt = Boolean(colCap?.hasOt);
@@ -854,7 +887,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
               activeMovingLots.some((lot) => lot.plannedDate !== col.date) &&
               currentTargetDate === col.date &&
               activeMovingLots.length > 0;
-            const isAfterMustStart = activeMovingLots.some((lot) => ["late", "order"].includes(moveWarning(lot, col.date, plannedIndex, data)));
+            const isAfterMustStart = afterMustStartDates.has(col.date);
 
             const isFocusedCol = focusedDate === col.date;
 
@@ -948,7 +981,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         previewTargetDate={
                           isThisMovingPreview ? currentTargetDate : null
                         }
-                        warning={moveWarning(lot, lot.plannedDate, plannedIndex, data)}
+                        warning={warnings.get(lot.id) ?? "none"}
                         days={planningDays}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
@@ -1020,10 +1053,9 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
           {/* One column per calendar week */}
           <div className={`grid grid-cols-1 gap-3 flex-1 ${isCompact ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 xl:grid-cols-3"}`}>
             {weekGroups.map((wg) => {
-              const weekDates = new Set(wg.days.map((d) => d.date));
-              const weekLots = filteredLots.filter((l) => weekDates.has(l.plannedDate));
+              const weekLots = lotsByWeek.get(wg.id) ?? EMPTY_LOTS;
               const isWeekHovered =
-                hoverTargetDate !== null && weekDates.has(hoverTargetDate);
+                hoverTargetDate !== null && wg.days.some((day) => day.date === hoverTargetDate);
 
               return (
                 <div
@@ -1089,7 +1121,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                         isBeingDragged={Boolean(draggedLot) && movingIds.has(lot.id)}
                         isMovingPreview={movingIds.has(lot.id) && Boolean(currentTargetDate) && currentTargetDate !== lot.plannedDate}
                         previewTargetDate={movingIds.has(lot.id) ? currentTargetDate : null}
-                        warning={moveWarning(lot, lot.plannedDate, plannedIndex, data)}
+                        warning={warnings.get(lot.id) ?? "none"}
                         days={planningDays}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
@@ -1159,10 +1191,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
             <tbody className="tabular-nums">
               {(granularity === "weeks"
                 ? weekGroups.flatMap((wg) => {
-                    const weekDates = new Set(wg.days.map((d) => d.date));
-                    const weekLots = filteredLots.filter((l) =>
-                      weekDates.has(l.plannedDate)
-                    );
+                    const weekLots = lotsByWeek.get(wg.id) ?? EMPTY_LOTS;
                     if (weekLots.length === 0) return [];
                     const totalPcs = weekLots.some((lot) => lot.qty === null)
                       ? null
@@ -1183,7 +1212,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                     ];
                   })
                 : boardDays.flatMap((col) => {
-                    const colLots = filteredLots.filter((l) => l.plannedDate === col.date);
+                    const colLots = lotsByDate.get(col.date) ?? EMPTY_LOTS;
                     const colPct = cellPct(col.gates[boardGate]);
                     const totalPcs = colLots.some((lot) => lot.qty === null)
                       ? null
@@ -1742,3 +1771,5 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
     </div>
   );
 };
+
+export const ReleaseBoard = React.memo(ReleaseBoardView);

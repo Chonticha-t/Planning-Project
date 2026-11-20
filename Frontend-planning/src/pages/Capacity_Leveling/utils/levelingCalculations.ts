@@ -390,47 +390,163 @@ export const buildGrid = (
   const byDate = new Map(grid.map((day) => [day.date, day]));
 
   const cards = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
-  const buckets = new Map<GateCell, GateArrivalRow[]>();
+  const buckets = new Map<string, GridBucket>();
   for (const row of data.arrivalRows) {
     if (isPassedRow(row) || (category !== "ALL" && row.process_group !== category)) continue;
     const date = plannedArrivalDate(row.arrive_by, cards.get(siblingKey(row.workKey, row.gate_name)), useBaseDates);
-    const cell = date ? byDate.get(date)?.gates[row.gate_name] : undefined;
-    if (!cell) continue;
-    const rows = buckets.get(cell) ?? [];
-    rows.push(row);
-    buckets.set(cell, rows);
+    if (!date || !byDate.get(date)?.gates[row.gate_name]) continue;
+    const key = cellKey(date, row.gate_name);
+    const bucket = buckets.get(key) ?? { date, gate: row.gate_name, rows: [] };
+    bucket.rows.push(row);
+    buckets.set(key, bucket);
   }
-  const standardByGate = new Map(data.gates.map((gate) => [gate.gate, gate.standardShiftMin]));
-  for (const [cell, rows] of buckets) {
-    const summary = summarizeGateQuantities(rows);
-    cell.quantities = summary;
-    cell.lotCount = summary.total.lot;
-    cell.needCount = summary.needCount;
-    cell.unidentifiedCount = summary.unidentifiedCount;
-    cell.totalPcs = summary.total.piece;
-    cell.totalSheets = summary.total.sheet;
-    const standard = standardByGate.get(rows[0].gate_name);
-    if (!standard || !Number.isFinite(standard.day) || !Number.isFinite(standard.night) ||
-      standard.day < 0 || standard.night < 0 || standard.day + standard.night <= 0) {
-      cell.missingPlanning = cell.lotCount;
-    } else {
-      const totalLotDays = totalBucketLotDays(rows, cards);
-      cell.shiftLoadMin = { day: round2(totalLotDays * standard.day), night: round2(totalLotDays * standard.night) };
-      cell.loadMin = round2(totalLotDays * (standard.day + standard.night));
-    }
+  const standardByGate = standardShiftByGate(data);
+  for (const { date, gate, rows } of buckets.values()) {
+    fillCellLoad(byDate.get(date)!.gates[gate], rows, cards, standardByGate);
   }
 
   for (const day of grid) {
     for (const [gate, cell] of Object.entries(day.gates)) {
-      if (cell.configured && cell.capacityMin! > 0) {
-        cell.pct = Math.round((cell.loadMin / cell.capacityMin!) * 100);
-      }
-      day.gateStatusDots[gate] = cell.off ? "off" : !cell.configured || cell.missingPlanning > 0 ? "unset"
-        : cell.capacityMin === 0 && cell.loadMin > 0 ? "red" : loadStatus(cell.pct);
+      day.gateStatusDots[gate] = finishCell(cell);
     }
   }
+  gridSources.set(grid, { data, lots, category, useBaseDates, cards, buckets });
   return grid;
 };
+
+/** Arrival rows bucketed into one grid cell. */
+type GridBucket = { date: string; gate: string; rows: GateArrivalRow[] };
+
+/** What a grid was built from, so a move preview can rebuild only the cells it changes. */
+const gridSources = new WeakMap<DayGateLoad[], {
+  data: LevelingData;
+  lots: LotItem[];
+  category: ProcessCategory;
+  useBaseDates: boolean;
+  cards: Map<string, LotItem>;
+  buckets: Map<string, GridBucket>;
+}>();
+
+const cellKey = (date: string, gate: string) => JSON.stringify([date, gate]);
+
+const standardShiftByGate = (data: LevelingData) => new Map(data.gates.map((gate) => [gate.gate, gate.standardShiftMin]));
+
+const fillCellLoad = (
+  cell: GateCell,
+  rows: GateArrivalRow[],
+  cards: Map<string, LotItem>,
+  standardByGate: ReturnType<typeof standardShiftByGate>
+) => {
+  const summary = summarizeGateQuantities(rows);
+  cell.quantities = summary;
+  cell.lotCount = summary.total.lot;
+  cell.needCount = summary.needCount;
+  cell.unidentifiedCount = summary.unidentifiedCount;
+  cell.totalPcs = summary.total.piece;
+  cell.totalSheets = summary.total.sheet;
+  const standard = standardByGate.get(rows[0].gate_name);
+  if (!standard || !Number.isFinite(standard.day) || !Number.isFinite(standard.night) ||
+    standard.day < 0 || standard.night < 0 || standard.day + standard.night <= 0) {
+    cell.missingPlanning = cell.lotCount;
+  } else {
+    const totalLotDays = totalBucketLotDays(rows, cards);
+    cell.shiftLoadMin = { day: round2(totalLotDays * standard.day), night: round2(totalLotDays * standard.night) };
+    cell.loadMin = round2(totalLotDays * (standard.day + standard.night));
+  }
+};
+
+/** Sets the cell % and returns its status dot. */
+const finishCell = (cell: GateCell): DayGateLoad["gateStatusDots"][string] => {
+  if (cell.configured && cell.capacityMin! > 0) {
+    cell.pct = Math.round((cell.loadMin / cell.capacityMin!) * 100);
+  }
+  return cell.off ? "off" : !cell.configured || cell.missingPlanning > 0 ? "unset"
+    : cell.capacityMin === 0 && cell.loadMin > 0 ? "red" : loadStatus(cell.pct);
+};
+
+const rowIndexCache = new WeakMap<GateArrivalRow[], { index: Map<GateArrivalRow, number>; bySibling: Map<string, GateArrivalRow[]> }>();
+
+const arrivalRowIndex = (rows: GateArrivalRow[]) => {
+  let cached = rowIndexCache.get(rows);
+  if (!cached) {
+    const index = new Map<GateArrivalRow, number>();
+    const bySibling = new Map<string, GateArrivalRow[]>();
+    rows.forEach((row, position) => {
+      index.set(row, position);
+      const key = siblingKey(row.workKey, row.gate_name);
+      const list = bySibling.get(key);
+      if (list) list.push(row);
+      else bySibling.set(key, [row]);
+    });
+    cached = { index, bySibling };
+    rowIndexCache.set(rows, cached);
+  }
+  return cached;
+};
+
+/**
+ * The planned grid with the moving cards at the target date. Equal to rebuilding the grid from the
+ * projected lots, but only the cells that gain or lose rows are recomputed.
+ */
+const projectGrid = (
+  data: LevelingData,
+  currentGrid: DayGateLoad[],
+  allLots: LotItem[],
+  movingIds: Set<string>,
+  targetDate: string,
+  category: ProcessCategory
+): DayGateLoad[] => {
+  const source = gridSources.get(currentGrid);
+  if (!source || source.data !== data || source.lots !== allLots || source.category !== category || source.useBaseDates) {
+    return buildGrid(data, allLots.map((lot) => (movingIds.has(lot.id) ? { ...lot, plannedDate: targetDate } : lot)), false, category);
+  }
+  const byDate = new Map(currentGrid.map((day) => [day.date, day]));
+  const { index, bySibling } = arrivalRowIndex(data.arrivalRows);
+  const changes = new Map<string, { date: string; gate: string; removed: Set<GateArrivalRow>; added: GateArrivalRow[] }>();
+  const change = (date: string, gate: string) => {
+    const key = cellKey(date, gate);
+    let entry = changes.get(key);
+    if (!entry) changes.set(key, entry = { date, gate, removed: new Set(), added: [] });
+    return entry;
+  };
+  const siblings = new Set<string>();
+  for (const lot of allLots) if (movingIds.has(lot.id)) siblings.add(siblingKey(lot.workKey, lot.gate));
+  for (const key of siblings) {
+    // The grid uses the last card per workKey/gate, so only that card's rows can move.
+    const card = source.cards.get(key);
+    if (!card || !movingIds.has(card.id)) continue;
+    const projected = { ...card, plannedDate: targetDate };
+    for (const row of bySibling.get(key) ?? []) {
+      if (isPassedRow(row) || (category !== "ALL" && row.process_group !== category)) continue;
+      const from = plannedArrivalDate(row.arrive_by, card);
+      const to = plannedArrivalDate(row.arrive_by, projected);
+      if (from === to) continue;
+      if (from && byDate.get(from)?.gates[row.gate_name]) change(from, row.gate_name).removed.add(row);
+      if (to && byDate.get(to)?.gates[row.gate_name]) change(to, row.gate_name).added.push(row);
+    }
+  }
+  if (!changes.size) return currentGrid;
+
+  const standardByGate = standardShiftByGate(data);
+  const changedDays = new Map<string, DayGateLoad>();
+  for (const [key, { date, gate, removed, added }] of changes) {
+    const rows = (source.buckets.get(key)?.rows ?? []).filter((row) => !removed.has(row)).concat(added);
+    if (added.length) rows.sort((a, b) => index.get(a)! - index.get(b)!);
+    const cell = emptyCell(data.capacity[gate]?.[date]);
+    // Lead days are unchanged by a move, so the current cards give the same lot-days.
+    if (rows.length) fillCellLoad(cell, rows, source.cards, standardByGate);
+    const base = byDate.get(date)!;
+    const day = changedDays.get(date) ?? { ...base, gates: { ...base.gates }, gateStatusDots: { ...base.gateStatusDots } };
+    day.gates[gate] = cell;
+    day.gateStatusDots[gate] = finishCell(cell);
+    changedDays.set(date, day);
+  }
+  return currentGrid.map((day) => changedDays.get(day.date) ?? day);
+};
+
+/** Required dates ignore moves; a required grid changes only when one of these card fields changes. */
+export const requiredGridSignature = (lots: LotItem[]) =>
+  lots.map((lot) => `${lot.workKey}\u0000${lot.gate}\u0000${lot.leadDays}\u0000${lot.totalProcInGate}`).join("\u0001");
 
 /** Load % of a cell, or null when it is off or MC is not configured. */
 export const cellPct = (cell: GateCell | undefined, preview = false): number | null => {
@@ -448,12 +564,7 @@ export const computeMovePreview = (
   category: ProcessCategory = "ALL"
 ) => {
   const movingIds = new Set(movingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
-  const projected = buildGrid(
-    data,
-    allLots.map((lot) => (movingIds.has(lot.id) ? { ...lot, plannedDate: targetDate } : lot)),
-    false,
-    category
-  );
+  const projected = projectGrid(data, currentGrid, allLots, movingIds, targetDate, category);
   const projectedByDate = new Map(projected.map((day) => [day.date, day]));
   const previewGrid = currentGrid.map((day) => ({
     ...day,

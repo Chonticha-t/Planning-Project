@@ -52,7 +52,7 @@ interface GateLoadGridProps {
   onSelectCell?: (gateId: string | null, dateStr: string | null) => void;
 }
 
-export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
+const GateLoadGridView: React.FC<GateLoadGridProps> = ({
   gates,
   category,
   gridData,
@@ -725,3 +725,5 @@ export const GateLoadGrid: React.FC<GateLoadGridProps> = ({
     </div>
   );
 };
+
+export const GateLoadGrid = React.memo(GateLoadGridView);

@@ -39,7 +39,7 @@ const solidPctBadge = (val: number) => {
   return "bg-emerald-600 text-white font-bold";
 };
 
-export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
+const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
   data,
   allLots,
   category,
@@ -438,3 +438,5 @@ export const LotDetailSidePanel: React.FC<LotDetailSidePanelProps> = ({
     document.body
   );
 };
+
+export const LotDetailSidePanel = React.memo(LotDetailSidePanelView);

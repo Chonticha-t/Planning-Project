@@ -927,3 +927,39 @@ test("Required grid uses pre-OT requiredCapacity when provided while Planned use
   assert.equal(kpis.overloadCells, 0);
   assert.equal(kpis.overloadCellsRequired, 2); // 2026-11-16 (150%) + 2026-11-19 (OFF with arrival)
 });
+
+test("move preview recomputes only changed cells and equals a full rebuild of the projected lots", () => {
+  const source = data([
+    card({ id: "a", workKey: "a", lotNo: "SAME" }),
+    card({ id: "b", workKey: "b", lotNo: "SAME", arriveBy: "2026-11-17" }),
+    card({ id: "c", workKey: "c", lotNo: "C", arriveBy: "2026-11-17" }),
+    card({ id: "need", workKey: "need", lotNo: "NEED WIP", gateState: "need_wip", loadMin: 0 }),
+    card({ id: "fin", workKey: "a", gate: "FIN", lotNo: "SAME" }),
+    card({ id: "auto", workKey: "auto", lotNo: "AUTO", processGroup: "EFPC_AUTO", arriveBy: "2026-11-18" }),
+  ]);
+  const lots = source.cards.map(toLotItem);
+  const fullPreview = (current: ReturnType<typeof buildGrid>, moving: string[], target: string, category: "ALL" | "EFPC_GEN") => {
+    const projected = buildGrid(source, lots.map((lot) => moving.includes(lot.id) ? { ...lot, plannedDate: target } : lot), false, category);
+    return current.map((day, index) => ({
+      ...day,
+      gates: Object.fromEntries(Object.entries(day.gates).map(([gate, cell]) => {
+        const next = projected[index].gates[gate];
+        return [gate, { ...next, pct: cell.pct, previewPct: next.pct !== cell.pct ? next.pct : undefined }];
+      })),
+    }));
+  };
+  for (const category of ["ALL", "EFPC_GEN"] as const) {
+    const current = buildGrid(source, lots, false, category);
+    for (const moving of [["a"], ["a", "b"], ["c", "need"], ["fin"], ["auto"]]) {
+      for (const target of ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-12-01"]) {
+        const movingLots = lots.filter((lot) => moving.includes(lot.id));
+        const { previewGrid } = computeMovePreview(source, current, lots, movingLots, target, category);
+        assert.deepEqual(previewGrid, fullPreview(current, moving, target, category), `${category} ${moving} → ${target}`);
+      }
+    }
+  }
+  // A grid built from other lots falls back to a full rebuild.
+  const other = buildGrid(source, lots.map((lot) => ({ ...lot })));
+  const { previewGrid } = computeMovePreview(source, other, lots, [lots[2]], "2026-11-18");
+  assert.deepEqual(previewGrid, fullPreview(other, ["c"], "2026-11-18", "ALL"));
+});
