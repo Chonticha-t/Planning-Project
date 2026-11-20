@@ -19,14 +19,14 @@ const PROCESS_GROUP_OPTIONS: { value: InGateCategory; label: string }[] = [
   { value: "SMT", label: "SMT" },
 ];
 
-const VIEW_OPTIONS: { value: InGateView; label: string }[] = [
-  { value: "day", label: "Work list · Day" },
-  { value: "month", label: "Summary · Month" },
+const VIEW_OPTIONS: { value: InGateView; label: string; title: string }[] = [
+  { value: "day", label: "Day", title: "Work list · Day" },
+  { value: "month", label: "Month", title: "Summary · Month" },
 ];
 
-const MODE_OPTIONS: { value: WorkMode; label: string }[] = [
-  { value: "edit", label: "Planning · edit" },
-  { value: "view", label: "Production · view" },
+const MODE_OPTIONS: { value: WorkMode; label: string; title: string }[] = [
+  { value: "edit", label: "Planning", title: "Planning · edit" },
+  { value: "view", label: "Production", title: "Production · view" },
 ];
 
 const UNIT_OPTIONS: { value: CountUnit; label: string }[] = [
@@ -36,9 +36,9 @@ const UNIT_OPTIONS: { value: CountUnit; label: string }[] = [
 ];
 
 const PILL_GROUP =
-  "inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300";
+  "inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300 shrink-0";
 const pill = (active: boolean) =>
-  `btn btn-xs h-full min-h-0 rounded-md px-3 whitespace-nowrap font-bold transition-all ${
+  `btn btn-xs h-full min-h-0 rounded-md px-2.5 whitespace-nowrap font-bold transition-all ${
     active
       ? "btn-primary shadow-xs"
       : "btn-ghost text-base-content/70 hover:bg-base-300/50"
@@ -110,8 +110,8 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
   const dayLabel = `${isToday ? "Today · " : ""}${d.format("ddd DD/MM")}`;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs print:hidden">
-      <div className="flex flex-wrap items-center gap-2.5">
+    <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-base-100 border border-base-300 shadow-xs print:hidden">
+      <div className="flex flex-wrap items-center gap-2">
         {/* Process group pill switcher */}
         <div role="group" aria-label="Process group" className={PILL_GROUP}>
           {PROCESS_GROUP_OPTIONS.map(({ value, label }) => (
@@ -128,13 +128,14 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
         </div>
 
         {/* View switcher */}
-        <div className="flex items-center gap-1.5 text-xs text-base-content/70 pl-1">
-          <span className="font-semibold">View</span>
+        <div className="flex items-center gap-1 text-xs text-base-content/70 pl-0.5 shrink-0">
+          <span className="font-semibold text-base-content/60">View</span>
           <div role="group" aria-label="View" className={PILL_GROUP}>
-            {VIEW_OPTIONS.map(({ value, label }) => (
+            {VIEW_OPTIONS.map(({ value, label, title }) => (
               <button
                 key={value}
                 type="button"
+                title={title}
                 aria-pressed={view === value}
                 onClick={() => onViewChange(value)}
                 className={pill(view === value)}
@@ -224,8 +225,8 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
         )}
 
         {/* Count unit (Lots | Pcs | Sheets) */}
-        <div className="flex items-center gap-1.5 text-xs text-base-content/70 pl-1">
-          <span className="font-semibold">Count</span>
+        <div className="flex items-center gap-1 text-xs text-base-content/70 pl-0.5 shrink-0">
+          <span className="font-semibold text-base-content/60">Count</span>
           <div role="group" aria-label="Count unit" className={PILL_GROUP}>
             {UNIT_OPTIONS.map(({ value, label }) => (
               <button
@@ -242,17 +243,17 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
         </div>
 
         {/* Search product */}
-        <div className="relative min-w-[200px] sm:min-w-[230px]">
+        <div className="relative w-36 sm:w-44 lg:w-48 shrink-0">
           <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40"
+            size={13}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"
           />
           <input
             type="text"
-            placeholder="Search product or lot"
+            placeholder="Search product / lot"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input input-xs input-bordered w-full pl-8 pr-7 rounded-lg h-8 text-xs bg-base-200/40 focus:bg-base-100"
+            className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-8 text-xs bg-base-200/40 focus:bg-base-100"
           />
           {search && (
             <button
@@ -261,24 +262,25 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
               className="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
               title="Clear search"
             >
-              <X size={13} />
+              <X size={12} />
             </button>
           )}
         </div>
       </div>
 
       {/* Right controls */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 text-xs ml-auto shrink-0">
         {isMonth ? (
-          <span className="text-base-content/60 whitespace-nowrap">
+          <span className="text-base-content/60 whitespace-nowrap text-xs">
             {monthStatus ?? (snapshotOnly ? "Saved plan · Actual unavailable" : `Actual = scan out · updated ${dayjs().format("DD/MM HH:mm")}`)}
           </span>
         ) : (
           <div role="group" aria-label="Work mode" className={PILL_GROUP}>
-            {MODE_OPTIONS.map(({ value, label }) => (
+            {MODE_OPTIONS.map(({ value, label, title }) => (
               <button
                 key={value}
                 type="button"
+                title={title}
                 aria-pressed={workMode === value}
                 onClick={() => onWorkModeChange(value)}
                 className={pill(workMode === value)}
@@ -293,11 +295,12 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
           type="button"
           aria-pressed={tvMode}
           onClick={() => onTvModeChange(!tvMode)}
-          className={`btn btn-xs h-8 px-3 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+          className={`btn btn-xs h-8 px-2.5 rounded-lg font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
             tvMode
               ? "btn-primary shadow-xs"
               : "border border-base-300 bg-base-100 text-base-content/80 hover:bg-base-200"
           }`}
+          title="Toggle TV mode"
         >
           {tvMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           <span>TV mode</span>
@@ -307,7 +310,7 @@ export const InGateHeader: React.FC<InGateHeaderProps> = ({
           type="button"
           onClick={onExcel}
           disabled={exportDisabled || busy}
-          className="btn btn-xs h-8 px-3 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer"
+          className="btn btn-xs h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-xs flex items-center gap-1.5 cursor-pointer disabled:bg-base-300 disabled:text-base-content/40"
           title={isMonth ? snapshotOnly ? "Export saved arrivals to Excel" : "Export monthly summary to Excel" : "Export saved order to Excel"}
         >
           <Download size={13} />

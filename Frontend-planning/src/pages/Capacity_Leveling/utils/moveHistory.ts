@@ -25,7 +25,7 @@ export const reorderMoveHistory = (
   before: LotItem[],
   after: LotItem[],
   movingIds: readonly string[],
-  metadata: Pick<MoveHistoryEntry, "id" | "changedAt" | "changedBy">,
+  metadata: Pick<MoveHistoryEntry, "id" | "changedAt" | "changedBy"> & { note?: string },
 ): Map<string, MoveHistoryEntry> => {
   const ranks = (board: LotItem[]) => {
     const counts = new Map<string, number>();
@@ -46,7 +46,7 @@ export const reorderMoveHistory = (
     if (!moving.has(lot.id) || !fromPosition || !toPosition || fromPosition === toPosition) continue;
     const entry: MoveHistoryEntry = { ...metadata, id: `${metadata.id}-${lot.id}`, kind: "reorder",
       fromDate: lot.plannedDate, toDate: lot.plannedDate, fromPosition, toPosition,
-      note: "Reordered within the same day" };
+      note: metadata.note || "Reordered within the same day" };
     for (const id of lot.sourceIds ?? [lot.id]) events.set(id, entry);
   }
   return events;
