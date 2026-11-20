@@ -695,16 +695,27 @@ test("an existing occupancy plan is retained but never loaded into the arrival b
   assert.ok(!pool.log.some(entry => /work_plan_gate_item/.test(entry.sql)));
 });
 
-test("saving an arrival that overlaps the next gate rolls back before any insert", async () => {
-  const rows = [work({ next_arrive_by: "2026-11-19" })];
-  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, rows]]);
+// Gate overlap is a planner warning, not a save error: the server stores the move as requested.
+const saveOverlappingMove = async (row, plannedDate) => {
+  const stored = [];
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, [{ today: "2026-11-12" }]],
+    [/planning_summary_gate/, [row]],
+    [/INSERT INTO planning\.work_plan_gate_item/, params => {
+      for (let i = 0; i < params[2].length; i++) stored.push([params[2][i], params[3][i], params[11][i]]);
+      return [];
+    }],
+  ]);
   await withApi(pool, async api => {
-    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-18" }] } });
-    assert.equal(response.status, 400);
-    assert.match((await response.json()).message, /overlaps/);
+    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(row), gate: "FADL", plannedDate }] } });
+    assert.equal(response.status, 200);
   });
-  assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
-  assert.equal(pool.log.at(-1).sql, "ROLLBACK");
+  assert.deepEqual(stored, [[arrivalWorkKey(row), "FADL", plannedDate]]);
+  assert.equal(pool.log.at(-1).sql, "COMMIT");
+};
+
+test("saving an arrival that overlaps the next gate is allowed and stored as a warning-only move", async () => {
+  await saveOverlappingMove(work({ next_arrive_by: "2026-11-19" }), "2026-11-18");
 });
 
 test("arrival save and reload preserve source and planned arrival dates with the new plan method", async () => {
@@ -748,14 +759,8 @@ test("same-day handoff is valid when completion equals the next gate arrival", a
   assert.ok(pool.log.some(entry => entry.sql.startsWith("INSERT")));
 });
 
-test("arriving before the previous gate finishes is rejected atomically", async () => {
-  const rows = [work({ prev_must_out: "2026-11-18", next_arrive_by: "2026-11-25" })];
-  const pool = fakePool([[/CURRENT_DATE::text/, [{ today: "2026-11-12" }]], [/planning_summary_gate/, rows]]);
-  await withApi(pool, async api => {
-    const response = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [{ workKey: arrivalWorkKey(rows[0]), gate: "FADL", plannedDate: "2026-11-17" }] } });
-    assert.equal(response.status, 400);
-  });
-  assert.ok(!pool.log.some(entry => entry.sql.startsWith("INSERT")));
+test("arriving before the previous gate finishes is allowed and stored as a warning-only move", async () => {
+  await saveOverlappingMove(work({ prev_must_out: "2026-11-18", next_arrive_by: "2026-11-25" }), "2026-11-17");
 });
 
 const historyId = (version) => `00000000-0000-4000-8000-${String(version).padStart(12, "0")}`;
