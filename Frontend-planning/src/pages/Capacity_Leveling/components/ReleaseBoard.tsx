@@ -864,7 +864,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 data-day-col={col.date}
                 onDragOver={(e) => handleColDragOver(e, col.date)}
                 onDrop={(e) => handleColDrop(e, col.date)}
-                className={`shrink-0 flex flex-col ${isFullscreen ? "h-[calc(100vh-140px)]" : "max-h-[580px]"} rounded-xl transition-all ${isCompact ? "w-[156px] p-1.5" : "w-[184px] p-2"} ${
+                className={`shrink-0 flex flex-col ${isFullscreen ? "h-[calc(100vh-140px)]" : "max-h-[580px]"} rounded-xl transition-all ${isCompact ? "w-[160px] p-1.5" : "w-[196px] p-2"} ${
                   isTargetCol
                     ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
                     : isFocusedCol
@@ -918,7 +918,7 @@ export const ReleaseBoard: React.FC<ReleaseBoardProps> = ({
                 </div>
 
                 {/* Internally Scrollable Column Cards Body */}
-                <div className={`flex-1 flex flex-col overflow-y-auto pr-0.5 min-h-0 thin-scrollbar ${isCompact ? "gap-1.5" : "gap-2"}`}>
+                <div className={`flex-1 flex flex-col overflow-y-auto pr-1 min-h-0 thin-scrollbar ${isCompact ? "gap-1.5" : "gap-2"}`}>
                   {visibleLots.map((lot, index) => {
                     const isThisMovingPreview =
                       movingIds.has(lot.id) &&
