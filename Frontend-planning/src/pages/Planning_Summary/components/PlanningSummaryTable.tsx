@@ -803,12 +803,10 @@ const PlanningSummaryTable = memo(
               return <span className="text-base-content/25">-</span>;
             }
             return (
-              <div className="flex items-center gap-2 h-full overflow-hidden">
-                {proc && (
-                  <span className="font-semibold text-[13.5px] text-base-content truncate">
-                    {proc}
-                  </span>
-                )}
+              <div className="flex items-center gap-1.5 h-full overflow-hidden">
+                <span className="font-semibold text-[13.5px] text-base-content w-[52px] shrink-0 truncate">
+                  {proc || "-"}
+                </span>
                 <GateBadge gate={gate} />
               </div>
             );

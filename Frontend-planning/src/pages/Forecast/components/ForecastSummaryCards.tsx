@@ -20,12 +20,7 @@ export const ForecastSummaryCards: React.FC<ForecastSummaryCardsProps> = ({
   prdTypeDisplay,
 }) => {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-medium text-base-content/50 px-0.5">
-        Summary for selected forecast ({prdTypeDisplay})
-      </span>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Card 1: Total forecast */}
         <div className="rounded-xl p-4 bg-gradient-to-br from-[#1d5bd6] to-[#2563eb] text-white shadow-sm flex flex-col justify-between min-h-[96px]">
           <span className="text-xs font-medium text-white/85">
@@ -99,7 +94,6 @@ export const ForecastSummaryCards: React.FC<ForecastSummaryCardsProps> = ({
           </span>
         </div>
       </div>
-    </div>
   );
 };
 export default ForecastSummaryCards;

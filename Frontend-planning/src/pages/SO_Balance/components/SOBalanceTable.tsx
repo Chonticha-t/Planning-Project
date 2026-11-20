@@ -229,10 +229,10 @@ const columnGroupingModel: GridColumnGroupingModel = [
 
 const GROUP_HEADER_H = 28;
 
-const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
+const border = "color-mix(in oklab, var(--color-base-content) 11%, transparent)";
 
 const invBgGroup =
-  "color-mix(in oklab, var(--color-base-content) 5.5%, var(--color-base-200))";
+  "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
 
 const SOBalanceTable = ({
   rows,
@@ -323,22 +323,21 @@ const SOBalanceTable = ({
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": "var(--color-base-200)",
 
-            // ── Header Styling (โมเดิร์น คมชัด เรียบหรู) ────────
+            // ── Header Styling (คมชัด ไม่จืด) ────────
             "& .MuiDataGrid-columnHeaders": {
               backgroundColor: "var(--color-base-200)",
-              borderBottom: `1px solid ${border}`,
             },
             "& .MuiDataGrid-columnHeader": {
               backgroundColor: "var(--color-base-200)",
-              px: 1.5,
+              px: 1.25,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
-              fontSize: 12,
+              fontSize: 13.5,
               fontWeight: 700,
-              letterSpacing: "0.05em",
+              letterSpacing: "0.04em",
               textTransform: "uppercase",
               color:
-                "color-mix(in oklab, var(--color-base-content) 72%, transparent)",
+                "color-mix(in oklab, var(--color-base-content) 85%, transparent)",
             },
 
             // คอลัมน์ที่ไม่มีกลุ่ม: จัดข้อความให้อยู่กึ่งกลางความสูง 2 แถว พร้อมเส้นคั่นแนวตั้งยาวเต็ม
@@ -360,7 +359,7 @@ const SOBalanceTable = ({
                 },
               },
 
-            // ── Inventory Group Header ─
+            // ── Inventory Group Header (แถบเทาสวย ชัดเจน สไตล์ที่ชอบ) ─
             "& .MuiDataGrid-columnHeaderGroupCell": {
               backgroundColor: "var(--color-base-200)",
             },
@@ -370,9 +369,8 @@ const SOBalanceTable = ({
             },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitle":
               {
-                fontSize: 11,
                 fontWeight: 800,
-                letterSpacing: "0.08em",
+                letterSpacing: "0.06em",
                 color: "var(--color-base-content)",
               },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer":
