@@ -5,7 +5,7 @@ import {
   GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { CircleDollarSign, ClipboardList, FileSpreadsheet } from "lucide-react";
+import { CircleDollarSign, ClipboardList, FileSpreadsheet, Package } from "lucide-react";
 import { SORT_OPTIONS, type PlanningRow, type PlanningStatus } from "../types";
 import { toDMY } from "../utils";
 
@@ -218,6 +218,14 @@ const columnGroupingModel: GridColumnGroupingModel = [
     headerName: "INVENTORY",
     headerAlign: "center",
     headerClassName: "inv-group",
+    renderHeaderGroup: () => (
+      <div className="flex items-center justify-center w-full h-full">
+        <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10.5px] font-extrabold uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 shadow-2xs">
+          <Package size={11} className="shrink-0" />
+          <span>Inventory</span>
+        </span>
+      </div>
+    ),
     children: [
       { field: "unmovement" },
       { field: "rem_unmovement" },
@@ -231,8 +239,11 @@ const GROUP_HEADER_H = 28;
 
 const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
 
+const headerBg =
+  "color-mix(in oklab, var(--color-base-content) 3%, var(--color-base-100))";
+
 const invBgGroup =
-  "color-mix(in oklab, var(--color-base-content) 5.5%, var(--color-base-200))";
+  "color-mix(in oklab, var(--color-primary) 3.5%, var(--color-base-100))";
 
 const SOBalanceTable = ({
   rows,
@@ -325,59 +336,51 @@ const SOBalanceTable = ({
 
             // ── Header Styling (โมเดิร์น คมชัด เรียบหรู) ────────
             "& .MuiDataGrid-columnHeaders": {
-              backgroundColor: "var(--color-base-200)",
-              borderBottom: `1px solid ${border}`,
+              backgroundColor: headerBg,
+              borderBottom: `1.5px solid ${border}`,
             },
             "& .MuiDataGrid-columnHeader": {
-              backgroundColor: "var(--color-base-200)",
+              backgroundColor: headerBg,
               px: 1.5,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
               fontSize: 12,
               fontWeight: 700,
-              letterSpacing: "0.05em",
+              letterSpacing: "0.04em",
               textTransform: "uppercase",
               color:
-                "color-mix(in oklab, var(--color-base-content) 72%, transparent)",
+                "color-mix(in oklab, var(--color-base-content) 75%, transparent)",
             },
 
-            // คอลัมน์ที่ไม่มีกลุ่ม: จัดข้อความให้อยู่กึ่งกลางความสูง 2 แถว พร้อมเส้นคั่นแนวตั้งยาวเต็ม
+            // คอลัมน์ที่ไม่มีกลุ่ม: จัดข้อความให้อยู่กึ่งกลางความสูงทั้ง 2 แถว
             "& .MuiDataGrid-columnHeader:not(.inv-header):not(.MuiDataGrid-columnHeader--filledGroup):not(.MuiDataGrid-columnHeader--emptyGroup)":
               {
-                overflow: "visible",
                 "& .MuiDataGrid-columnHeaderTitleContainer": {
                   transform: `translateY(-${GROUP_HEADER_H / 2}px)`,
                 },
-                "&::after": {
-                  content: '""',
-                  position: "absolute",
-                  top: -GROUP_HEADER_H,
-                  right: -1,
-                  width: "1px",
-                  height: GROUP_HEADER_H,
-                  backgroundColor: border,
-                  pointerEvents: "none",
-                },
               },
 
-            // ── Inventory Group Header ─
+            // ── Inventory Group Header & Columns ─
             "& .MuiDataGrid-columnHeaderGroupCell": {
-              backgroundColor: "var(--color-base-200)",
+              backgroundColor: headerBg,
             },
             "& .MuiDataGrid-columnHeader.inv-group": {
               backgroundColor: invBgGroup,
               px: 0,
             },
-            "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitle":
-              {
-                fontSize: 11,
-                fontWeight: 800,
-                letterSpacing: "0.08em",
-                color: "var(--color-base-content)",
-              },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer":
               {
                 borderBottom: `1px solid ${border}`,
+              },
+            "& .MuiDataGrid-columnHeader.inv-header": {
+              backgroundColor: invBgGroup,
+            },
+            "& .MuiDataGrid-columnHeader.inv-header .MuiDataGrid-columnHeaderTitle":
+              {
+                fontSize: 11.5,
+                fontWeight: 700,
+                color:
+                  "color-mix(in oklab, var(--color-base-content) 75%, transparent)",
               },
 
             // เส้นคั่นแนวตั้งระหว่างคอลัมน์ (หัวตาราง + เนื้อหาข้อมูล)
