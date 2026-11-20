@@ -261,7 +261,7 @@ const SOBalanceTable = ({
             <button
               type="button"
               onClick={onOpenExchangeRate}
-              className="btn btn-xs h-7 px-3 bg-purple-600 hover:bg-purple-700 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-all cursor-pointer"
+              className="btn btn-xs h-7 px-3 btn-primary text-primary-content border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-all cursor-pointer"
               title="Exchange Rate"
             >
               <CircleDollarSign size={13} className="shrink-0" />
