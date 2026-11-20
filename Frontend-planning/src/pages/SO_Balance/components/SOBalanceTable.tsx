@@ -114,20 +114,22 @@ export const netDisplay = (v: number) => v;
 const StatusPill = ({ value }: { value: PlanningStatus }) => {
   const isReady = value === "ready";
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-tight shadow-2xs ${
-        isReady
-          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
-          : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30"
-      }`}
-    >
+    <div className="flex items-center justify-center w-full h-full">
       <span
-        className={`size-1.5 rounded-full shrink-0 ${
-          isReady ? "bg-emerald-500" : "bg-rose-500"
+        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11px] font-semibold border bg-transparent shrink-0 ${
+          isReady
+            ? "border-emerald-600/40 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400"
+            : "border-rose-600/40 text-rose-600 dark:border-rose-500/40 dark:text-rose-400"
         }`}
-      />
-      <span>{isReady ? "Ready" : "Production Plan"}</span>
-    </span>
+      >
+        <span
+          className={`size-1.5 rounded-full shrink-0 ${
+            isReady ? "bg-emerald-600 dark:bg-emerald-400" : "bg-rose-600 dark:bg-rose-400"
+          }`}
+        />
+        <span>{isReady ? "Ready" : "Production Plan"}</span>
+      </span>
+    </div>
   );
 };
 
