@@ -177,13 +177,13 @@ const getColumns = (
             e.stopPropagation();
             onViewHistory?.(row);
           }}
-          className="group inline-flex items-center justify-center gap-1.5 whitespace-nowrap px-2 py-0.5 rounded-lg text-[13.5px] tabular-nums font-semibold text-base-content hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
+          className="group inline-flex items-center justify-end w-[136px] gap-2 whitespace-nowrap px-2 py-0.5 rounded-lg text-[13.5px] tabular-nums font-semibold text-base-content hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
           title="ดูประวัติการคำนวณ (SO History)"
           aria-label={`View SO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
         >
-          <span>{val}</span>
+          <span className="flex-1 text-right">{val}</span>
           {/* Show current revision; click to open full history */}
-          <span className="inline-flex h-5 shrink-0 items-center justify-center rounded px-1.5 text-[10.5px] font-bold bg-primary/15 text-primary border border-primary/25 transition-colors group-hover:bg-primary group-hover:text-primary-content">
+          <span className="inline-flex h-5 w-11 shrink-0 items-center justify-center rounded text-[10.5px] font-bold bg-primary/15 text-primary border border-primary/25 transition-colors group-hover:bg-primary group-hover:text-primary-content">
             {row.source_rev == null ? "Rev -" : `Rev ${row.source_rev}`}
           </span>
         </button>
