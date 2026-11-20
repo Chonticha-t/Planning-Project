@@ -41,12 +41,12 @@ const NumberCell = ({
   colorClass?: string;
 }) => (
   <span
-    className={`tabular-nums text-[14px] ${
+    className={`tabular-nums text-[13.5px] ${
       !value
-        ? "text-base-content/30"
+        ? "text-base-content/50 font-medium"
         : strong
-          ? "font-bold text-error"
-          : colorClass
+          ? "font-bold text-rose-600 dark:text-rose-400"
+          : `font-bold ${colorClass}`
     }`}
   >
     {num(value, decimals)}
@@ -114,14 +114,22 @@ export const netDisplay = (v: number) => v;
 const StatusPill = ({ value }: { value: PlanningStatus }) => {
   const isReady = value === "ready";
   return (
-    <span
-      className={`status-pill inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
-        isReady ? "status-pill-ready" : "status-pill-plan"
-      }`}
-    >
-      <span className="status-dot size-2 rounded-full shrink-0" />
-      <span>{isReady ? "Ready" : "Production Plan"}</span>
-    </span>
+    <div className="flex items-center justify-center w-full h-full">
+      <span
+        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[11.5px] font-bold border-none shrink-0 ${
+          isReady
+            ? "text-[#059669] bg-[#059669]/12"
+            : "text-[#dc2626] bg-[#dc2626]/12"
+        }`}
+      >
+        <span
+          className={`size-2 rounded-full shrink-0 ${
+            isReady ? "bg-[#059669]" : "bg-[#dc2626]"
+          }`}
+        />
+        <span>{isReady ? "Ready" : "Production Plan"}</span>
+      </span>
+    </div>
   );
 };
 
@@ -135,7 +143,7 @@ const getColumns = (
     flex: 1,
     minWidth: 150,
     renderCell: ({ value }) => (
-      <span className="font-semibold text-base-content text-[14px]">{value}</span>
+      <span className="font-semibold text-base-content text-[13.5px] tracking-tight">{value}</span>
     ),
   },
   {
@@ -146,7 +154,7 @@ const getColumns = (
     flex: 1,
     minWidth: 115,
     renderCell: ({ value }) => (
-      <span className="font-medium tabular-nums text-base-content text-[14px] whitespace-nowrap">
+      <span className="font-bold tabular-nums text-base-content text-[13.5px] whitespace-nowrap">
         {toDMY(value)}
       </span>
     ),
@@ -162,25 +170,25 @@ const getColumns = (
     renderCell: ({ row, value }) => {
       const val = value == null ? "" : Number(value).toLocaleString("en-US");
       if (!val) {
-        return <span className="tabular-nums text-[14px] text-base-content/30">-</span>;
+        return <span className="tabular-nums text-[13.5px] text-base-content/25">-</span>;
       }
       return (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onViewHistory?.(row);
-          }}
-          className="group inline-flex items-center justify-center gap-1.5 whitespace-nowrap pl-2 pr-1 py-0.5 rounded-md text-[14px] tabular-nums font-semibold text-base-content/85 hover:bg-primary/10 hover:text-primary transition-all duration-150 cursor-pointer"
-          title="ดูประวัติการคำนวณ (SO History)"
-          aria-label={`View SO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
-        >
-          <span>{val}</span>
-          {/* Show current revision; click to open full history */}
-          <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md bg-primary/10 px-1.5 text-[11px] font-bold text-primary ring-1 ring-primary/20 transition-colors group-hover:bg-primary group-hover:text-primary-content">
+        <div className="inline-flex items-center justify-end w-[136px] gap-2 whitespace-nowrap px-2 py-0.5 text-[13.5px] tabular-nums font-semibold text-base-content">
+          <span className="flex-1 text-right">{val}</span>
+          {/* Click Rev button to view history */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewHistory?.(row);
+            }}
+            className="inline-flex h-5 w-11 shrink-0 items-center justify-center rounded text-[10.5px] font-bold bg-primary/15 text-primary border border-primary/25 hover:bg-primary hover:text-primary-content transition-all cursor-pointer shadow-2xs"
+            title="ดูประวัติการคำนวณ (SO History)"
+            aria-label={`View SO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
+          >
             {row.source_rev == null ? "Rev -" : `Rev ${row.source_rev}`}
-          </span>
-        </button>
+          </button>
+        </div>
       );
     },
   },
@@ -191,8 +199,8 @@ const getColumns = (
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true, undefined, true),
-  amountCol("wh_fg_amount", "W/H F/G", "text-emerald-500 font-semibold"),
-  amountCol("output_amount", "Output Amt", "text-red-500 font-semibold", true),
+  amountCol("wh_fg_amount", "W/H F/G", "text-[#059669]"),
+  amountCol("output_amount", "Output Amt", "text-[#dc2626]", true),
   {
     field: "status",
     headerName: "Status",
@@ -221,10 +229,10 @@ const columnGroupingModel: GridColumnGroupingModel = [
 
 const GROUP_HEADER_H = 28;
 
-const border = "color-mix(in oklab, var(--color-base-content) 11%, transparent)";
+const border = "color-mix(in oklab, var(--color-base-content) 8%, transparent)";
 
 const invBgGroup =
-  "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
+  "color-mix(in oklab, var(--color-base-content) 5.5%, var(--color-base-200))";
 
 const SOBalanceTable = ({
   rows,
@@ -237,22 +245,23 @@ const SOBalanceTable = ({
 }: SOBalanceTableProps) => {
   const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
-    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300/60 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <ClipboardList size={15} className="text-primary" />
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ClipboardList size={15} />
+          </span>
           <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">SO Balance</h3>
-          <span className="text-[11px] text-base-content/60">Click SO Bal to view calculation history</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-7 items-center px-2.5 rounded-md bg-base-200/80 border border-base-300 text-[11px] font-bold text-base-content/70 tabular-nums">
+          <span className="inline-flex h-7 items-center px-2.5 rounded-lg bg-base-200/60 border border-base-300/50 text-[11px] font-semibold text-base-content/70 tabular-nums">
             {rows.length.toLocaleString("en-US")} rows
           </span>
           {onOpenExchangeRate && (
             <button
               type="button"
               onClick={onOpenExchangeRate}
-              className="btn btn-xs h-7 px-2.5 btn-primary text-xs font-semibold rounded-lg normal-case shadow-xs gap-1.5 cursor-pointer"
+              className="btn btn-xs h-7 px-3 btn-primary text-primary-content border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-all cursor-pointer"
               title="Exchange Rate"
             >
               <CircleDollarSign size={13} className="shrink-0" />
@@ -263,7 +272,7 @@ const SOBalanceTable = ({
             <button
               type="button"
               onClick={onExport}
-              className="btn btn-xs h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-xs gap-1.5 cursor-pointer"
+              className="btn btn-xs h-7 px-3 bg-emerald-600 hover:bg-emerald-700 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-all cursor-pointer"
               title="Export Excel"
             >
               <FileSpreadsheet size={13} className="shrink-0" />
@@ -274,7 +283,7 @@ const SOBalanceTable = ({
       </div>
 
       <div
-        className="datagrid-outer rounded-xl border border-base-300 overflow-hidden"
+        className="datagrid-outer rounded-xl border border-base-300/70 overflow-hidden bg-base-100 shadow-2xs"
         style={{
           height: "calc(100vh - 300px)",
           minHeight: 520,
@@ -293,7 +302,7 @@ const SOBalanceTable = ({
           columnGroupingModel={columnGroupingModel}
           loading={false}
           getRowId={(r) => `${r.prd_name}|${r.due_date}`}
-          rowHeight={44}
+          rowHeight={43}
           resizeThrottleMs={0}
           columnHeaderHeight={36}
           columnGroupHeaderHeight={GROUP_HEADER_H}
@@ -309,26 +318,27 @@ const SOBalanceTable = ({
           sx={{
             border: 0,
             borderRadius: 0,
-            fontSize: 14,
+            fontSize: 13.5,
             color: "var(--color-base-content)",
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": "var(--color-base-200)",
 
-            // ── Header Styling (คมชัด ไม่จืด) ────────
+            // ── Header Styling (โมเดิร์น คมชัด เรียบหรู) ────────
             "& .MuiDataGrid-columnHeaders": {
               backgroundColor: "var(--color-base-200)",
+              borderBottom: `1px solid ${border}`,
             },
             "& .MuiDataGrid-columnHeader": {
               backgroundColor: "var(--color-base-200)",
-              px: 1.25,
+              px: 1.5,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
-              fontSize: 13.5,
+              fontSize: 12,
               fontWeight: 700,
-              letterSpacing: "0.04em",
+              letterSpacing: "0.05em",
               textTransform: "uppercase",
               color:
-                "color-mix(in oklab, var(--color-base-content) 85%, transparent)",
+                "color-mix(in oklab, var(--color-base-content) 72%, transparent)",
             },
 
             // คอลัมน์ที่ไม่มีกลุ่ม: จัดข้อความให้อยู่กึ่งกลางความสูง 2 แถว พร้อมเส้นคั่นแนวตั้งยาวเต็ม
@@ -350,7 +360,7 @@ const SOBalanceTable = ({
                 },
               },
 
-            // ── Inventory Group Header (แถบเทาสวย ชัดเจน สไตล์ที่ชอบ) ─
+            // ── Inventory Group Header ─
             "& .MuiDataGrid-columnHeaderGroupCell": {
               backgroundColor: "var(--color-base-200)",
             },
@@ -360,8 +370,9 @@ const SOBalanceTable = ({
             },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitle":
               {
+                fontSize: 11,
                 fontWeight: 800,
-                letterSpacing: "0.06em",
+                letterSpacing: "0.08em",
                 color: "var(--color-base-content)",
               },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer":
@@ -379,14 +390,19 @@ const SOBalanceTable = ({
               cursor: "default",
             },
 
-            // ── Cells / Rows (นิ่ง ไม่กระพริบ ไม่ Dim แสง) ──
+            // ── Cells / Rows (Subtle zebra + Smooth hover) ──
             "& .MuiDataGrid-cell": {
-              px: 1.25,
+              px: 1.5,
               borderColor: border,
+            },
+            "& .MuiDataGrid-row:nth-of-type(even)": {
+              backgroundColor:
+                "color-mix(in oklab, var(--color-base-content) 1.5%, transparent)",
             },
             "& .MuiDataGrid-row:hover": {
               backgroundColor:
-                "color-mix(in oklab, var(--color-base-content) 4.5%, transparent)",
+                "color-mix(in oklab, var(--color-primary) 5%, transparent) !important",
+              transition: "background-color 140ms ease",
             },
             "& .MuiDataGrid-virtualScroller": {
               opacity: "1 !important",
@@ -427,7 +443,8 @@ const SOBalanceTable = ({
             },
             "& .MuiTablePagination-root, & .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows":
               {
-                fontSize: 13,
+                fontSize: 12.5,
+                fontWeight: 500,
                 color:
                   "color-mix(in oklab, var(--color-base-content) 70%, transparent)",
               },
@@ -439,15 +456,15 @@ const SOBalanceTable = ({
             "& *": { scrollbarColor: "auto", scrollbarWidth: "auto" },
             // The pagination bar overflowed by a pixel and showed its own tiny scrollbar.
             "& .MuiTablePagination-root": { overflow: "hidden" },
-            "& *::-webkit-scrollbar": { width: 8, height: 8 },
+            "& *::-webkit-scrollbar": { width: 7, height: 7 },
             "& *::-webkit-scrollbar-button": { display: "none", width: 0, height: 0 },
             "& *::-webkit-scrollbar-track": { backgroundColor: "transparent" },
             "& *::-webkit-scrollbar-thumb": {
-              backgroundColor: "color-mix(in oklab, var(--color-base-content) 22%, transparent)",
+              backgroundColor: "color-mix(in oklab, var(--color-base-content) 18%, transparent)",
               borderRadius: 8,
             },
             "& *::-webkit-scrollbar-thumb:hover": {
-              backgroundColor: "color-mix(in oklab, var(--color-base-content) 35%, transparent)",
+              backgroundColor: "color-mix(in oklab, var(--color-base-content) 30%, transparent)",
             },
             "& *::-webkit-scrollbar-corner": { backgroundColor: "transparent" },
           }}

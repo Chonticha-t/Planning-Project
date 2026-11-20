@@ -85,7 +85,7 @@ export const BlueStatCard = ({
   children,
 }: {
   icon: LucideIcon;
-  /** Colours the big number, unit, and icon */
+  /** Colours the middle divider, big number, unit, and icon */
   tone?: BadgeTone;
   filled?: boolean;
   title: string;
@@ -127,8 +127,11 @@ export const BlueStatCard = ({
       )}
     </div>
 
-    {/* Footer stats with inherited tone */}
-    <div className="mt-auto border-t border-base-300 pt-2">
+    {/* Middle divider line - colored according to card tone */}
+    <div
+      className="mt-auto border-t-[1.5px] pt-2"
+      style={{ borderTopColor: tone ? TONES[tone] : "#cbd5e1" }}
+    >
       <CardToneContext.Provider value={tone}>
         {children}
       </CardToneContext.Provider>
