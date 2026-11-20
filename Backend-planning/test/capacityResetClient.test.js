@@ -31,6 +31,8 @@ function harness() {
       return slots[i].value;
     },
     useCallback(callback, deps) { return react.useMemo(() => callback, deps); },
+    // Synchronous rendering: the deferred value is always the current value.
+    useDeferredValue(value) { return value; },
     useEffect(callback, deps) {
       const i = cursor++;
       if (!effects[i] || !same(effects[i].deps, deps)) pending.push(() => {
@@ -47,7 +49,9 @@ function harness() {
     const source = ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React, esModuleInterop: true,
     } }).outputText;
-    vm.runInNewContext(source, { module, exports: module.exports, AbortController,
+    // The page registers beforeunload, keydown and mousedown listeners; the harness never dispatches them.
+    const events = { addEventListener() {}, removeEventListener() {} };
+    vm.runInNewContext(source, { module, exports: module.exports, AbortController, window: events, document: events,
       require(name) {
         if (name in custom) return custom[name];
         if (name.endsWith(".css")) return {};
