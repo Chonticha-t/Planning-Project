@@ -116,10 +116,10 @@ const StatusPill = ({ value }: { value: PlanningStatus }) => {
   return (
     <div className="flex items-center justify-center w-full h-full">
       <span
-        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-bold border-[1.5px] bg-transparent shrink-0 ${
+        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-bold border-[1.5px] shrink-0 ${
           isReady
-            ? "border-[#15803d] text-[#15803d]"
-            : "border-[#dc2626] text-[#dc2626]"
+            ? "border-[#15803d] text-[#15803d] bg-[#15803d]/10"
+            : "border-[#dc2626] text-[#dc2626] bg-[#dc2626]/10"
         }`}
       >
         <span
