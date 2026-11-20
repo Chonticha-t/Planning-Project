@@ -154,7 +154,7 @@ const getColumns = (
     flex: 1,
     minWidth: 115,
     renderCell: ({ value }) => (
-      <span className="font-medium tabular-nums text-base-content/85 text-[13px] whitespace-nowrap">
+      <span className="font-bold tabular-nums text-base-content text-[13.5px] whitespace-nowrap">
         {toDMY(value)}
       </span>
     ),
