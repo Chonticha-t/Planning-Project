@@ -43,10 +43,10 @@ const NumberCell = ({
   <span
     className={`tabular-nums text-[13.5px] ${
       !value
-        ? "text-base-content/25 font-normal"
+        ? "text-base-content/50 font-medium"
         : strong
           ? "font-bold text-rose-600 dark:text-rose-400"
-          : `font-semibold ${colorClass}`
+          : `font-bold ${colorClass}`
     }`}
   >
     {num(value, decimals)}
@@ -116,14 +116,14 @@ const StatusPill = ({ value }: { value: PlanningStatus }) => {
   return (
     <div className="flex items-center justify-center w-full h-full">
       <span
-        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11px] font-semibold border bg-transparent shrink-0 ${
+        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-bold border-[1.5px] bg-transparent shrink-0 ${
           isReady
-            ? "border-emerald-600/40 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400"
-            : "border-rose-600/40 text-rose-600 dark:border-rose-500/40 dark:text-rose-400"
+            ? "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300"
+            : "border-rose-600 text-rose-700 dark:border-rose-400 dark:text-rose-300"
         }`}
       >
         <span
-          className={`size-1.5 rounded-full shrink-0 ${
+          className={`size-2 rounded-full shrink-0 ${
             isReady ? "bg-emerald-600 dark:bg-emerald-400" : "bg-rose-600 dark:bg-rose-400"
           }`}
         />
@@ -199,8 +199,8 @@ const getColumns = (
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true, undefined, true),
-  amountCol("wh_fg_amount", "W/H F/G", "text-emerald-600 dark:text-emerald-400 font-semibold"),
-  amountCol("output_amount", "Output Amt", "text-rose-600 dark:text-rose-400 font-semibold", true),
+  amountCol("wh_fg_amount", "W/H F/G", "text-emerald-700 dark:text-emerald-300"),
+  amountCol("output_amount", "Output Amt", "text-rose-700 dark:text-rose-300", true),
   {
     field: "status",
     headerName: "Status",
