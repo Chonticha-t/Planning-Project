@@ -85,7 +85,7 @@ export const BlueStatCard = ({
   children,
 }: {
   icon: LucideIcon;
-  /** Colours the middle divider, big number, unit, and icon */
+  /** Colours the top accent bar, big number, unit, and icon */
   tone?: BadgeTone;
   filled?: boolean;
   title: string;
@@ -94,7 +94,10 @@ export const BlueStatCard = ({
   unit?: string;
   children: ReactNode;
 }) => (
-  <div className="flex flex-col gap-1.5 overflow-hidden rounded-xl bg-base-100 p-3 shadow-sm hover:shadow-md transition-all">
+  <div
+    className="flex flex-col gap-1.5 overflow-hidden rounded-xl bg-base-100 border border-base-300/70 border-t-[3px] p-3 shadow-xs hover:shadow-md transition-all"
+    style={{ borderTopColor: tone ? TONES[tone] : "#cbd5e1" }}
+  >
     {/* Header */}
     <div className="flex h-6 items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-2">
@@ -127,11 +130,8 @@ export const BlueStatCard = ({
       )}
     </div>
 
-    {/* Middle divider line - colored according to card tone */}
-    <div
-      className="mt-auto border-t-[1.5px] pt-2"
-      style={{ borderTopColor: tone ? TONES[tone] : "#cbd5e1" }}
-    >
+    {/* Footer */}
+    <div className="mt-auto pt-1.5">
       <CardToneContext.Provider value={tone}>
         {children}
       </CardToneContext.Provider>

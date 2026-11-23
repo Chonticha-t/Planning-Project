@@ -5,7 +5,7 @@ import {
   GridColumnGroupingModel,
   GridSortModel,
 } from "@mui/x-data-grid";
-import { CircleDollarSign, ClipboardList, FileSpreadsheet } from "lucide-react";
+import { CircleDollarSign, FileSpreadsheet } from "lucide-react";
 import { SORT_OPTIONS, type PlanningRow, type PlanningStatus } from "../types";
 import { toDMY } from "../utils";
 
@@ -33,20 +33,22 @@ const NumberCell = ({
   value,
   strong,
   decimals,
-  colorClass = "text-base-content/85",
+  colorClass = "text-base-content/80",
+  weightClass = "font-medium",
 }: {
   value: number;
   strong?: boolean;
   decimals?: number;
   colorClass?: string;
+  weightClass?: string;
 }) => (
   <span
     className={`tabular-nums text-[13.5px] ${
       !value
-        ? "text-base-content/50 font-medium"
+        ? "text-base-content/35 font-normal"
         : strong
           ? "font-bold text-rose-600 dark:text-rose-400"
-          : `font-bold ${colorClass}`
+          : `${weightClass} ${colorClass}`
     }`}
   >
     {num(value, decimals)}
@@ -105,7 +107,7 @@ const amountCol = (
   minWidth: 135,
   ...(ignoreSign && { sortComparator: absSortComparator }),
   renderCell: ({ value }) => (
-    <NumberCell value={value} decimals={2} colorClass={colorClass} />
+    <NumberCell value={value} decimals={2} colorClass={colorClass} weightClass="font-semibold" />
   ),
 });
 
@@ -116,15 +118,15 @@ const StatusPill = ({ value }: { value: PlanningStatus }) => {
   return (
     <div className="flex items-center justify-center w-full h-full">
       <span
-        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[11.5px] font-bold border-none shrink-0 ${
+        className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[11.5px] font-semibold border shrink-0 ${
           isReady
-            ? "text-[#059669] bg-[#059669]/12"
-            : "text-[#dc2626] bg-[#dc2626]/12"
+            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+            : "bg-rose-50 text-rose-700 border-rose-200"
         }`}
       >
         <span
           className={`size-2 rounded-full shrink-0 ${
-            isReady ? "bg-[#059669]" : "bg-[#dc2626]"
+            isReady ? "bg-emerald-500" : "bg-rose-500"
           }`}
         />
         <span>{isReady ? "Ready" : "Production Plan"}</span>
@@ -143,7 +145,7 @@ const getColumns = (
     flex: 1,
     minWidth: 150,
     renderCell: ({ value }) => (
-      <span className="font-semibold text-base-content text-[13.5px] tracking-tight">{value}</span>
+      <span className="font-bold text-base-content text-[13.5px] tracking-tight">{value}</span>
     ),
   },
   {
@@ -154,7 +156,7 @@ const getColumns = (
     flex: 1,
     minWidth: 115,
     renderCell: ({ value }) => (
-      <span className="font-bold tabular-nums text-base-content text-[13.5px] whitespace-nowrap">
+      <span className="font-semibold tabular-nums text-base-content/85 text-[13.5px] whitespace-nowrap">
         {toDMY(value)}
       </span>
     ),
@@ -170,10 +172,10 @@ const getColumns = (
     renderCell: ({ row, value }) => {
       const val = value == null ? "" : Number(value).toLocaleString("en-US");
       if (!val) {
-        return <span className="tabular-nums text-[13.5px] text-base-content/25">-</span>;
+        return <span className="tabular-nums text-[13.5px] text-base-content/30">-</span>;
       }
       return (
-        <div className="inline-flex items-center justify-end w-[136px] gap-2 whitespace-nowrap px-2 py-0.5 text-[13.5px] tabular-nums font-semibold text-base-content">
+        <div className="inline-flex items-center justify-end w-[136px] gap-2 whitespace-nowrap px-2 py-0.5 text-[13.5px] tabular-nums font-bold text-base-content">
           <span className="flex-1 text-right">{val}</span>
           {/* Click Rev button to view history */}
           <button
@@ -182,7 +184,7 @@ const getColumns = (
               e.stopPropagation();
               onViewHistory?.(row);
             }}
-            className="inline-flex h-5 w-11 shrink-0 items-center justify-center rounded text-[10.5px] font-bold bg-primary/15 text-primary border border-primary/25 hover:bg-primary hover:text-primary-content transition-all cursor-pointer shadow-2xs"
+            className="inline-flex h-5 w-11 shrink-0 items-center justify-center rounded-md text-[10.5px] font-bold bg-base-100 text-[#4f46e5] border border-base-300 hover:bg-[#4f46e5] hover:text-white hover:border-[#4f46e5] transition-colors cursor-pointer shadow-2xs"
             title="ดูประวัติการคำนวณ (SO History)"
             aria-label={`View SO history for ${row.prd_name} due ${toDMY(row.due_date)}`}
           >
@@ -199,8 +201,8 @@ const getColumns = (
   invCol("rem_fg", "Rem F/G", "inv-last"),
   // ─────────────────────────────────────────────
   numberCol("net_required_pcs", "Net Required", true, undefined, true),
-  amountCol("wh_fg_amount", "W/H F/G", "text-[#059669]"),
-  amountCol("output_amount", "Output Amt", "text-[#dc2626]", true),
+  amountCol("wh_fg_amount", "W/H F/G", "text-emerald-700"),
+  amountCol("output_amount", "Output Amt", "text-rose-600", true),
   {
     field: "status",
     headerName: "Status",
@@ -229,10 +231,10 @@ const columnGroupingModel: GridColumnGroupingModel = [
 
 const GROUP_HEADER_H = 28;
 
-const border = "color-mix(in oklab, var(--color-base-content) 11%, transparent)";
+const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
 
 const invBgGroup =
-  "color-mix(in oklab, var(--color-base-content) 7%, var(--color-base-200))";
+  "color-mix(in oklab, var(--color-primary) 6%, var(--color-base-200))";
 
 const SOBalanceTable = ({
   rows,
@@ -245,26 +247,26 @@ const SOBalanceTable = ({
 }: SOBalanceTableProps) => {
   const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300/60 shadow-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <ClipboardList size={15} />
-          </span>
-          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">SO Balance</h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-7 items-center px-2.5 rounded-lg bg-base-200/60 border border-base-300/50 text-[11px] font-semibold text-base-content/70 tabular-nums">
+    <section
+      aria-label="SO Balance table"
+      className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden"
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-base-300">
+        <div className="flex items-baseline gap-2.5">
+          <h3 className="text-[13.5px] font-extrabold tracking-wide text-base-content uppercase">SO Balance</h3>
+          <span className="text-xs font-medium text-base-content/55 tabular-nums">
             {rows.length.toLocaleString("en-US")} rows
           </span>
+        </div>
+        <div className="flex items-center gap-2">
           {onOpenExchangeRate && (
             <button
               type="button"
               onClick={onOpenExchangeRate}
-              className="btn btn-xs h-7 px-3 btn-primary text-primary-content border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-all cursor-pointer"
+              className="btn btn-sm h-8 min-h-0 px-3 btn-primary text-primary-content border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-colors cursor-pointer"
               title="Exchange Rate"
             >
-              <CircleDollarSign size={13} className="shrink-0" />
+              <CircleDollarSign size={14} className="shrink-0" />
               <span className="hidden sm:inline">Exchange Rate</span>
             </button>
           )}
@@ -272,18 +274,18 @@ const SOBalanceTable = ({
             <button
               type="button"
               onClick={onExport}
-              className="btn btn-xs h-7 px-3 bg-emerald-600 hover:bg-emerald-700 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-all cursor-pointer"
+              className="btn btn-sm h-8 min-h-0 px-3 bg-emerald-600 hover:bg-emerald-700 text-white border-none text-xs font-semibold rounded-lg normal-case shadow-2xs gap-1.5 transition-colors cursor-pointer"
               title="Export Excel"
             >
-              <FileSpreadsheet size={13} className="shrink-0" />
+              <FileSpreadsheet size={14} className="shrink-0" />
               <span className="hidden sm:inline">Export Excel</span>
             </button>
           )}
         </div>
-      </div>
+      </header>
 
       <div
-        className="datagrid-outer rounded-xl border border-base-300/70 overflow-hidden bg-base-100 shadow-2xs"
+        className="datagrid-outer bg-base-100"
         style={{
           height: "calc(100vh - 300px)",
           minHeight: 520,
@@ -468,7 +470,7 @@ const SOBalanceTable = ({
           }}
         />
       </div>
-    </div>
+    </section>
   );
 };
 
