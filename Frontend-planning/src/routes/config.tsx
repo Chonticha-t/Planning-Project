@@ -14,9 +14,6 @@ const Planning_In_Gate = React.lazy(
 const Planning_Summary = React.lazy(
   () => import("@/pages/Planning_Summary/main/Planning_Summary")
 );
-const Planning_Overview = React.lazy(
-  () => import("@/pages/Planning_Overview/main/Planning_Overview")
-);
 const Planning_Summary_Gate = React.lazy(
   () => import("@/pages/Planning_Summary_Gate/main/Planning_Summary_Gate")
 );
@@ -83,13 +80,6 @@ export const routes_planning: AppRoute[] = [
     icon: LayoutDashboard,
   },
   {
-    path: `${BASE}/planning_overview`,
-    element: <Planning_Overview />,
-    label: "PLANNING OVERVIEW",
-    Title: "PLANNING OVERVIEW",
-    icon: CalendarRange,
-  },
-  {
     path: `${BASE}/planning_summary_gate`,
     element: <Planning_Summary_Gate />,
     label: "GATE SUMMARY",
@@ -141,6 +131,13 @@ export const routes_hidden: AppRoute[] = [
     label: "CAPACITY LEVELING",
     Title: "CAPACITY LEVELING",
     icon: SlidersHorizontal,
+  },
+  {
+    path: `${BASE}/planning_overview`,
+    element: <Planning_Summary defaultTab="overview" />,
+    label: "PLANNING OVERVIEW",
+    Title: "PLANNING SUMMARY",
+    icon: CalendarRange,
   },
   {
     path: `${BASE}/gate_summary`,

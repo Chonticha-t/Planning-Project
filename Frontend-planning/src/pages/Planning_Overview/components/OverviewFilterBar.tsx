@@ -1,13 +1,12 @@
 import { memo } from "react";
 import { CalendarRange, FileSpreadsheet, RefreshCw, Search } from "lucide-react";
-import { HORIZON_OPTIONS, type Horizon, type ShowFilter, type UnitFilter } from "../types";
+import type { Horizon, ShowFilter, UnitFilter } from "../types";
 import { addDays, rangeLabel } from "../overviewView";
 
 interface OverviewFilterBarProps {
   unit: UnitFilter;
   onUnitChange: (unit: UnitFilter) => void;
   horizon: Horizon;
-  onHorizonChange: (horizon: Horizon) => void;
   startDate: string;
   show: ShowFilter;
   onShowChange: (show: ShowFilter) => void;
@@ -42,7 +41,7 @@ const PillGroup = <T extends string>({
           aria-pressed={active}
           onClick={() => onSelect(opt.value)}
           className={`btn btn-xs h-full min-h-0 rounded-md px-3 gap-1.5 whitespace-nowrap font-bold transition-all ${
-            active ? "btn-neutral shadow-xs" : "btn-ghost text-base-content/70 hover:bg-base-300/50"
+            active ? "btn-primary shadow-xs" : "btn-ghost text-base-content/70 hover:bg-base-300/50"
           }`}
         >
           {opt.label}
@@ -50,7 +49,7 @@ const PillGroup = <T extends string>({
             <span
               className={`inline-flex min-w-5 h-4 px-1 items-center justify-center rounded-full text-[10.5px] tabular-nums ${
                 active
-                  ? "bg-neutral-content/20 text-neutral-content"
+                  ? "bg-primary-content/20 text-primary-content"
                   : opt.countTone === "error"
                   ? "bg-error/15 text-error"
                   : "bg-base-300 text-base-content/70"
@@ -75,7 +74,6 @@ const OverviewFilterBar = ({
   unit,
   onUnitChange,
   horizon,
-  onHorizonChange,
   startDate,
   show,
   onShowChange,
@@ -91,28 +89,17 @@ const OverviewFilterBar = ({
   <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
     <PillGroup label="Item unit" value={unit} options={UNIT_OPTIONS} onSelect={onUnitChange} />
 
-    <label className="relative inline-flex items-center">
-      <span className="sr-only">Date range</span>
-      <CalendarRange size={14} className="pointer-events-none absolute left-2.5 text-base-content/60" aria-hidden="true" />
-      <select
-        className="select select-sm h-8 min-h-0 w-auto ps-8 pe-8 text-xs font-semibold rounded-lg bg-base-200/40 border-base-300 text-base-content/85 hover:bg-base-200/70 focus:border-primary focus:outline-none"
-        value={horizon}
-        onChange={(e) => onHorizonChange(Number(e.target.value) as Horizon)}
-      >
-        {HORIZON_OPTIONS.map((days) => (
-          <option key={days} value={days}>
-            {rangeLabel(startDate, addDays(startDate, days - 1))} · {days} days
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/40 border border-base-300 text-xs font-semibold text-base-content/85 tabular-nums">
+      <CalendarRange size={14} className="text-base-content/60 shrink-0" aria-hidden="true" />
+      <span>{rangeLabel(startDate, addDays(startDate, horizon - 1))}</span>
+    </div>
 
     <PillGroup
       label="Show products"
       value={show}
       options={[
         { value: "all", label: "All", count: counts.all },
-        { value: "short", label: "Short only", count: counts.short, countTone: "error" },
+        { value: "short", label: "Net Req", count: counts.short, countTone: "error" },
       ]}
       onSelect={onShowChange}
     />

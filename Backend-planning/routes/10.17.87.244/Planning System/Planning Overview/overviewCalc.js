@@ -76,7 +76,7 @@ const buildOverviewRows = ({ days, poLines = [], supply = [], wip = [] }) => {
     const unmovement = num(s.unmovement);
     const fgStock = fg + unmovement;
     const wipQty = num(w.wip_qty);
-    const available = fgStock + wipQty;
+    const available = fgStock;
 
     let cum = 0;
     let firstShort = -1;

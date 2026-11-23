@@ -1,11 +1,11 @@
-/* Flat status colors for the PO Balance vs B/L FG table, mixed from the active daisyUI theme. */
+/* Crisp status colors for the PO Balance vs B/L FG table */
 .planning-overview {
-  --po-open-bg: color-mix(in oklab, var(--color-warning) 18%, var(--color-base-100));
-  --po-open-fg: color-mix(in oklab, var(--color-warning) 30%, var(--color-base-content));
-  --bl-ok-bg: color-mix(in oklab, var(--color-success) 13%, var(--color-base-100));
-  --bl-ok-fg: color-mix(in oklab, var(--color-success) 40%, var(--color-base-content));
-  --bl-short-bg: color-mix(in oklab, var(--color-error) 16%, var(--color-base-100));
-  --bl-short-fg: color-mix(in oklab, var(--color-error) 55%, var(--color-base-content));
+  --po-open-bg: color-mix(in oklab, #facc15 36%, var(--color-base-100));
+  --po-open-fg: color-mix(in oklab, #854d0e 85%, var(--color-base-content));
+  --bl-ok-bg: color-mix(in oklab, #10b981 26%, var(--color-base-100));
+  --bl-ok-fg: color-mix(in oklab, #047857 88%, var(--color-base-content));
+  --bl-short-bg: color-mix(in oklab, #ef4444 26%, var(--color-base-100));
+  --bl-short-fg: color-mix(in oklab, #b91c1c 90%, var(--color-base-content));
 }
 
 .planning-overview .po-open {

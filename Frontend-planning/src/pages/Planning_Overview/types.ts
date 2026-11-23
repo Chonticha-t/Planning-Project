@@ -40,6 +40,6 @@ export interface ApiResponse<T> {
 export type UnitFilter = "ALL" | "FPC" | "SMT";
 export type ShowFilter = "all" | "short";
 
-export const HORIZON_OPTIONS = [7, 14, 21, 28] as const;
+export const HORIZON_OPTIONS = [30] as const;
 export type Horizon = (typeof HORIZON_OPTIONS)[number];
-export const DEFAULT_HORIZON: Horizon = 14;
+export const DEFAULT_HORIZON: Horizon = 30;

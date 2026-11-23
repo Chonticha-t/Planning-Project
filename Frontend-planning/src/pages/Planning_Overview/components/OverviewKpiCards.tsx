@@ -5,7 +5,7 @@ const Card = ({
   label,
   value,
   sub,
-  valueClass = "text-base-content",
+  valueClass = "text-[#2563eb]",
   dot,
 }: {
   label: string;
@@ -36,31 +36,31 @@ const OverviewKpiCards = ({ kpi, horizon, rangeText, endText }: OverviewKpiCards
     <Card
       label="Products"
       value={formatQty(kpi.products)}
-      sub={`${formatQty(kpi.lots)} lots in WIP${kpi.lotsNoYield ? ` · ${formatQty(kpi.lotsNoYield)} with yield 0` : ""}`}
+      sub="products with open SO"
     />
     <Card
-      label={`Ordered (PO) · ${horizon} days`}
+      label={`SO Balance · ${horizon} days`}
       value={formatQty(kpi.po)}
       sub={`pcs due ${rangeText}`}
     />
     <Card
-      label="Stock + WIP (after yield)"
-      value={formatQty(kpi.fgStock + kpi.wip)}
-      sub={`stock ${formatQty(kpi.fgStock)} · WIP ${formatQty(kpi.wip)}`}
+      label="Inventory (FG)"
+      value={formatQty(kpi.fgStock)}
+      sub="F/G + Unmovement"
     />
     <Card
-      label="Enough"
+      label="Ready"
       dot="bg-success"
       value={formatQty(kpi.enough)}
       valueClass="text-enough"
       sub={`products covered to ${endText}`}
     />
     <Card
-      label="Short"
+      label="Net Req"
       dot="bg-error"
       value={formatQty(kpi.short)}
       valueClass="text-short"
-      sub={`${formatQty(kpi.shortPcs)} pcs short in total`}
+      sub={`${formatQty(kpi.shortPcs)} pcs net req in total`}
     />
   </div>
 );

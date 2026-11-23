@@ -98,42 +98,23 @@ const createPlanningOverviewRouter = ({ query, loadWorkingCalendar, now = Date.n
       }
 
       // F/G and Unmovement are running balances per SO line, so the largest value is the stock on hand.
-      const [supplyRes, wipRes] = await Promise.all([
-        query(
-          `
-            SELECT prd_name,
-                   MAX(TRIM(item)) AS item,
-                   COALESCE(MAX(f_g), 0)::float8 AS f_g,
-                   COALESCE(MAX(unmovement), 0)::float8 AS unmovement,
-                   to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-            FROM planning.so_balance
-            WHERE prd_name = ANY($1::text[])
-            GROUP BY prd_name
-          `,
-          [names]
-        ),
-        query(
-          `
-            SELECT prd_name,
-                   COALESCE(SUM(net_wip_qty), 0)::float8 AS wip_qty,
-                   COUNT(DISTINCT lot)::int AS wip_lots,
-                   -- Lots whose yield is 0 have net_wip_qty 0, so they add nothing to WIP after yield.
-                   COUNT(DISTINCT lot) FILTER (
-                     WHERE COALESCE(net_wip_qty, 0) = 0 AND COALESCE(net_qty, 0) > 0
-                   )::int AS wip_lots_no_yield,
-                   to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
-            FROM planning.wip_in_process
-            WHERE prd_name = ANY($1::text[])
-            GROUP BY prd_name
-          `,
-          [names]
-        ),
-      ]);
+      const supplyRes = await query(
+        `
+          SELECT prd_name,
+                 MAX(TRIM(item)) AS item,
+                 COALESCE(MAX(f_g), 0)::float8 AS f_g,
+                 COALESCE(MAX(unmovement), 0)::float8 AS unmovement,
+                 to_char(MAX(updated_at), 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+          FROM planning.so_balance
+          WHERE prd_name = ANY($1::text[])
+          GROUP BY prd_name
+        `,
+        [names]
+      );
 
       const supply = supplyRes.rows || [];
-      const wip = wipRes.rows || [];
-      const products = buildOverviewRows({ days, poLines, supply, wip });
-      const updatedAt = latest(...supply.map((r) => r.updated_at), ...wip.map((r) => r.updated_at));
+      const products = buildOverviewRows({ days, poLines, supply, wip: [] });
+      const updatedAt = latest(...supply.map((r) => r.updated_at));
 
       return res.json({
         status: "OK",

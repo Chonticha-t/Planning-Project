@@ -21,11 +21,10 @@ import { DEFAULT_HORIZON, type Horizon, type ShowFilter, type UnitFilter } from 
 import "../planningOverview.css";
 
 const Planning_Overview: React.FC = () => {
-  const [horizon, setHorizon] = useState<Horizon>(DEFAULT_HORIZON);
+  const horizon: Horizon = DEFAULT_HORIZON;
   const [unit, setUnit] = useState<UnitFilter>("ALL");
   const [show, setShow] = useState<ShowFilter>("all");
   const [search, setSearch] = useState("");
-  const [windowStart, setWindowStart] = useState(0);
   const deferredSearch = useDeferredValue(search);
 
   const { data, loading, error, reload } = usePlanningOverview(horizon);
@@ -39,11 +38,6 @@ const Planning_Overview: React.FC = () => {
 
   const start = data?.start ?? localToday();
   const end = data?.end ?? addDays(start, horizon - 1);
-
-  const handleHorizonChange = useCallback((next: Horizon) => {
-    setHorizon(next);
-    setWindowStart(0);
-  }, []);
 
   const handleRefresh = useCallback(() => {
     reload();
@@ -60,13 +54,9 @@ const Planning_Overview: React.FC = () => {
       columns: [
         { header: "PRODUCT", key: "prd_name", align: "left" },
         { header: "TYPE", key: "type", align: "center" },
-        { header: "FG STOCK", key: "fg_stock", align: "right", numFmt: "#,##0" },
-        { header: "WIP (AFTER YIELD)", key: "wip_qty", align: "right", numFmt: "#,##0" },
+        { header: "INVENTORY", key: "fg_stock", align: "right", numFmt: "#,##0" },
         ...dayCols.map((c) => ({
-          header: c.header, key: `po_${c.i}`, group: "PO BALANCE (CUMULATIVE)", align: "right" as const, numFmt: "#,##0",
-        })),
-        ...dayCols.map((c) => ({
-          header: c.header, key: `bl_${c.i}`, group: "B/L FG (AFTER PO)", align: "right" as const, numFmt: "#,##0",
+          header: c.header, key: `bl_${c.i}`, group: "B/L FG (READY / NET REQ)", align: "right" as const, numFmt: "#,##0",
         })),
       ],
       data: rows.map((r) => {
@@ -74,10 +64,8 @@ const Planning_Overview: React.FC = () => {
           prd_name: r.prd_name,
           type: r.type,
           fg_stock: Math.round(r.fg_stock),
-          wip_qty: Math.round(r.wip_qty),
         };
         dayCols.forEach(({ i }) => {
-          out[`po_${i}`] = r.po_cum[i] ? -Math.round(r.po_cum[i]) : 0;
           out[`bl_${i}`] = Math.round(r.bl[i]) || 0;
         });
         return out;
@@ -91,7 +79,6 @@ const Planning_Overview: React.FC = () => {
         unit={unit}
         onUnitChange={setUnit}
         horizon={horizon}
-        onHorizonChange={handleHorizonChange}
         startDate={start}
         show={show}
         onShowChange={setShow}
@@ -119,8 +106,6 @@ const Planning_Overview: React.FC = () => {
       <BalanceTable
         rows={rows}
         days={data?.days ?? []}
-        windowStart={windowStart}
-        onWindowStartChange={setWindowStart}
         totalProducts={unitRows.length}
         loading={loading}
         calendarFallback={data?.calendar === "fallback"}
