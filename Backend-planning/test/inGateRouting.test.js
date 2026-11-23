@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
-const { createInGateRoutingRouter, resolveRoute, parseItems } = require("../routes/inGateRouting");
+const { createInGateRoutingRouter, resolveRoute, parseItems } = require("../routes/10.17.87.244/Planning System/Planning In Gate/inGateRouting");
 
 const item = { key: "card-1", product: "PRODUCT-A", lot: "LOT-A" };
 const route = (extra = {}) => ({ prd_name: "PRODUCT-A", factory_desc: "FACTORY-A", seq: 10,

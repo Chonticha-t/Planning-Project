@@ -1,8 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
-const { createInGateRoutingRouter, resolveRoute } = require("../routes/inGateRouting");
-const { inferFinished, categoryFor } = require("../routes/inGateFinished");
+const { createInGateRoutingRouter, resolveRoute } = require("../routes/10.17.87.244/Planning System/Planning In Gate/inGateRouting");
+const { inferFinished, categoryFor } = require("../routes/10.17.87.244/Planning System/Planning In Gate/inGateFinished");
 const date = "2026-11-12";
 const routes = ["GATE-A", "GATE-B", "GATE-B", "GATE-C"].map((gate, index) => ({
   prd_name: "PRODUCT-A", factory_desc: "FACTORY-A", seq: (index + 1) * 10, proc_id: `P${index}`,

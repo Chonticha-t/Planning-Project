@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import dayjs from "dayjs";
 import { AlertCircle, Clock, History } from "lucide-react";
 import "../../Planning_Summary_Gate/gateTheme.css";
 import { useAuth } from "@/context/AuthContext";
 import { ConfirmReorderModal } from "../../Capacity_Leveling/components/ConfirmReorderModal";
 import type { LotItem } from "../../Capacity_Leveling/types";
-import usePlanningInGate from "../hooks/usePlanningInGate";
+import usePlanningInGate, { type StagedReorder } from "../hooks/usePlanningInGate";
+import { useInGateOrderHistory } from "../hooks/useInGateOrderHistory";
 import { InGateHeader } from "../components/InGateHeader";
 import { ApiWorkListTable } from "../components/ApiWorkListTable";
 import { ApiMonthlySummary } from "../components/ApiMonthlySummary";
@@ -21,29 +23,25 @@ const Planning_In_Gate = () => {
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
     allocations, finishedRows,
     changeCategory, changeView, countText, refresh, exportPlan,
-    hasUnsavedChanges, saving, stageMoveLot, stageReorderById, confirmReorder, undoOrder, saveOrder,
+    hasUnsavedChanges, saving, currentOrder, pendingDiff, historyRefreshToken,
+    stageMoveLot, stageReorderById, confirmReorder, undoOrder, saveOrder,
   } = usePlanningInGate();
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [pendingReorder, setPendingReorder] = useState<{
-    before: LotItem[];
-    after: LotItem[];
-    movingIds: string[];
-    nextOrder: any;
-    historyEvents: Map<string, any>;
-  } | null>(null);
+  const [pendingReorder, setPendingReorder] = useState<StagedReorder | null>(null);
+  const orderHistory = useInGateOrderHistory(gate, date, historyOpen, historyRefreshToken);
 
-  const handleStageMove = (lot: LotItem, direction: "up" | "down" | "top") => {
+  const handleStageMove = (lot: LotItem, direction: "up" | "down" | "top", filter: "queue" | "all") => {
     void requirePlanner(() => {
-      const staged = stageMoveLot(lot, direction);
+      const staged = stageMoveLot(lot, direction, filter);
       if (staged) {
         setPendingReorder(staged);
       }
     });
   };
 
-  const handleDragReorder = (movingLotId: string, targetLotId: string, position: "before" | "after") => {
+  const handleDragReorder = (movingLotId: string, targetLotId: string, position: "before" | "after", filter: "queue" | "all") => {
     void requirePlanner(() => {
-      const staged = stageReorderById(movingLotId, targetLotId, position);
+      const staged = stageReorderById(movingLotId, targetLotId, position, filter);
       if (staged) {
         setPendingReorder(staged);
       }
@@ -98,12 +96,20 @@ const Planning_In_Gate = () => {
             <div className="p-4 sm:p-5 flex flex-col gap-3">
               {/* Clean Unified Queue Header */}
               <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-base-200">
-                {/* Left: Queue Title + Plan Badge + Save Timestamp + Hold indicator */}
+                {/* Left: Queue Title + Plan Badge + In Gate Order Revision + Save Timestamp + Hold indicator */}
                 <div className="flex flex-wrap items-center gap-2.5">
                   <h2 className="text-sm font-extrabold uppercase tracking-wider text-base-content">Queue</h2>
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#316be8]/10 text-[#316be8] border border-[#316be8]/20">
                     Plan v{saved.plan.version}
                   </span>
+                  {currentOrder && (
+                    <span
+                      title={`In Gate order r${currentOrder.revision} · saved by ${currentOrder.updatedBy} · ${dayjs(currentOrder.updatedAt).format("YYYY-MM-DD HH:mm")}`}
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20"
+                    >
+                      Order r{currentOrder.revision}
+                    </span>
+                  )}
                   <span className="inline-flex items-center gap-1.5 text-xs text-base-content/60 font-medium">
                     <Clock size={12} className="opacity-60" />
                     <span>{saved.plan.savedAt}</span>
@@ -155,7 +161,7 @@ const Planning_In_Gate = () => {
                         type="button"
                         disabled={!hasUnsavedChanges || saving}
                         onClick={() => void requirePlanner(() => void saveOrder())}
-                        title={hasUnsavedChanges ? "Save reordered queue to new plan version" : "No changes to save"}
+                        title={hasUnsavedChanges ? "Save queue order for Planning In Gate (independent of Capacity Leveling)" : "No changes to save"}
                         className="btn btn-xs h-8 rounded-lg btn-primary px-4 text-xs font-bold shadow-xs hover:opacity-90 transition-opacity disabled:opacity-30 cursor-pointer flex items-center gap-1.5"
                       >
                         {saving && <span className="loading loading-spinner loading-xs" />}
@@ -175,22 +181,42 @@ const Planning_In_Gate = () => {
                 capacity={saved.snapshot.capacity?.[gate]?.[date]}
                 finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }}
                 canEdit={workMode === "edit"}
-                onMoveUp={(lot) => handleStageMove(lot, "up")}
-                onMoveDown={(lot) => handleStageMove(lot, "down")}
-                onMoveToTop={(lot) => handleStageMove(lot, "top")}
+                onMoveUp={(lot, filter) => handleStageMove(lot, "up", filter)}
+                onMoveDown={(lot, filter) => handleStageMove(lot, "down", filter)}
+                onMoveToTop={(lot, filter) => handleStageMove(lot, "top", filter)}
                 onDragReorder={handleDragReorder}
               />
             </div> : null}
         </div>
-        {saved && <HistoryPanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`${gate} · ${date}`} entries={[]} pending={null}
-          snapshotLots={dayPlanLots} plan={{ version: saved.plan.version, savedAt: saved.plan.savedAt, savedBy: saved.plan.savedBy, reason: saved.plan.note ?? undefined, sourceCategory: category }} />}
+        {saved && (
+          <HistoryPanel
+            isOpen={historyOpen}
+            onClose={() => setHistoryOpen(false)}
+            title={`${gate} · ${date}`}
+            entries={orderHistory.entries}
+            pending={pendingDiff}
+            loading={orderHistory.loading}
+            error={orderHistory.error}
+            snapshotLots={dayPlanLots}
+            plan={{
+              version: saved.plan.version,
+              savedAt: saved.plan.savedAt,
+              savedBy: saved.plan.savedBy,
+              reason: saved.plan.note ?? undefined,
+              sourceCategory: category,
+            }}
+          />
+        )}
         {pendingReorder && (
           <ConfirmReorderModal
+            data={saved?.snapshot}
             before={pendingReorder.before}
             after={pendingReorder.after}
+            beforePositions={pendingReorder.beforePositions}
+            afterPositions={pendingReorder.afterPositions}
             movingIds={pendingReorder.movingIds}
             onConfirm={() => {
-              confirmReorder(pendingReorder.nextOrder, pendingReorder.historyEvents);
+              confirmReorder(pendingReorder.nextOrder, pendingReorder.scopeKey);
               setPendingReorder(null);
             }}
             onCancel={() => setPendingReorder(null)}

@@ -27,15 +27,13 @@ Planning-project/
 │   │   └── planning.js               # รวม Router ย่อยของระบบ Planning ทั้งหมด
 │   ├── routes/                       # Endpoints & Business Logic
 │   │   ├── index.js                  # Root router สำหรับ /api_p1
-│   │   ├── inGateFinished.js         # API & logic ตรวจสอบชิ้นงาน Finished วันนี้
-│   │   ├── inGateMonthly.js          # API & logic สรุปยอดผลผลิตรายเดือน
-│   │   ├── inGateRouting.js          # API & logic Routing Window ของงาน
 │   │   └── 10.17.87.244/             # Database connection & โมดูลหลัก
 │   │       ├── config.js             # PostgreSQL Connection Pool (`pool_smart`)
 │   │       └── Planning System/      # โมดูลฟังก์ชันหลัก:
 │   │           ├── Auth/             # สิทธิ์ผู้ใช้งาน & Planner Verification
 │   │           ├── Capacity Leveling/# เกลี่ยกำลังการผลิต (History, Presence, Save Plan)
 │   │           ├── Forecast/         # พยากรณ์ความต้องการผลิต
+│   │           ├── Planning In Gate/ # จัดลำดับคิว In Gate, Finished วันนี้, สรุปรายเดือน, Routing
 │   │           ├── Planning Summary/ # สรุปแผนภาพรวม
 │   │           ├── Planning Summary Gate/ # แผนระดับ Gate (Cache & Performance)
 │   │           ├── SO Balance/       # ตรวจสอบยอดคงค้าง Sales Order

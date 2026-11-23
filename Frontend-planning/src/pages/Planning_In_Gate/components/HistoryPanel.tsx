@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
-import { ArrowDown, ArrowRight, ArrowUp, History, Search, Send, X } from "lucide-react";
+import { ArrowRight, History, Search, Send, X } from "lucide-react";
 import type { OrderDiff, OrderHistoryEntry, SavedPlanInfo } from "../types";
 import { CapacityEffect, MoveLine } from "./HistoryParts";
 import type { LotItem } from "../../Capacity_Leveling/types";
@@ -16,6 +16,8 @@ interface HistoryPanelProps {
   plan: SavedPlanInfo | undefined;
   entries: OrderHistoryEntry[]; // newest first
   pending: OrderDiff | null; // unsaved moves
+  loading?: boolean;
+  error?: string;
 }
 
 /** Right-side drawer: who moved which lot, when, from → to, and why */
@@ -26,6 +28,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   plan,
   entries,
   pending,
+  loading,
+  error,
   snapshotLots,
 }) => {
   const [filter, setFilter] = useState<Filter>("all");
@@ -191,12 +195,81 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
         {/* Timeline Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 text-sm">
+          {error && (
+            <div role="alert" className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-content">
+              {error}
+            </div>
+          )}
+          {loading && entries.length === 0 && (
+            <div className="mb-3 text-center text-xs text-base-content/50">Loading order history…</div>
+          )}
           <ol className="relative space-y-5 border-l-2 border-base-200 ml-2.5 pl-5">
-            {/* Grouped Saved Moves */}
+            {/* Pending (Unsaved) */}
+            {pending && pendingShown.length > 0 && (
+              <li className="relative">
+                <span className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-base-100 bg-amber-500 shadow-xs" />
+                <div className="rounded-xl border border-amber-300/60 bg-amber-50/20 p-3 shadow-2xs">
+                  <div className="text-xs font-bold text-amber-700">Not saved yet</div>
+                  <ul className="mt-2 divide-y divide-base-200/50">
+                    {pendingShown.map((m) => (
+                      <MoveLine key={m.cardId ?? m.lotId} move={m} />
+                    ))}
+                  </ul>
+                  {!filtering && (pending.pushedOut.length > 0 || pending.nowFit.length > 0) && (
+                    <div className="mt-2 pt-2 border-t border-amber-200/60">
+                      <CapacityEffect diff={pending} />
+                    </div>
+                  )}
+                </div>
+              </li>
+            )}
+
+            {/* Planning In Gate Order History Entries (from in_gate_queue_order_history) */}
+            {visible.map((e) => (
+              <li key={e.id} className="relative">
+                <span className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-base-100 bg-[#316be8] shadow-xs" />
+                <div className="rounded-xl border border-base-300/80 bg-base-100 p-3.5 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {e.revision !== undefined && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                          Order r{e.revision}
+                        </span>
+                      )}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-[#316be8]/10 text-[#316be8]">
+                        Plan v{e.planVersion}
+                      </span>
+                      <span className="text-xs font-bold text-base-content">{e.savedBy}</span>
+                      <span className="text-xs text-base-content/50">· {dayjs(e.savedAt).format("DD/MM HH:mm")}</span>
+                      {e.reason && (
+                        <span className="text-xs text-base-content/60 font-medium">
+                          ({e.reason})
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-semibold text-base-content/50 tabular-nums">
+                      {e.shown.length} {e.shown.length === 1 ? "move" : "moves"}
+                    </span>
+                  </div>
+                  <ul className="divide-y divide-base-200/60 border-t border-base-200 pt-1">
+                    {e.shown.map((m) => (
+                      <MoveLine key={m.cardId ?? m.lotId} move={m} />
+                    ))}
+                  </ul>
+                  {!filtering && (e.pushedOut.length > 0 || e.nowFit.length > 0) && (
+                    <div className="mt-2 pt-2 border-t border-base-200">
+                      <CapacityEffect diff={e} />
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+
+            {/* Capacity Leveling Snapshot Moves (historical reorders saved in work_plan) */}
             {savedMoveGroups.map((group) => (
               <li key={group.key} className="relative">
                 {/* Timeline node */}
-                <span className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-base-100 bg-[#316be8] shadow-xs" />
+                <span className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-base-100 bg-base-content/35 shadow-xs" />
 
                 {/* Event Card */}
                 <div className="rounded-xl border border-base-300/80 bg-base-100 p-3.5 shadow-2xs">
@@ -279,54 +352,6 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       );
                     })}
                   </div>
-                </div>
-              </li>
-            ))}
-
-            {/* Pending (Unsaved) */}
-            {pending && pendingShown.length > 0 && (
-              <li className="relative">
-                <span className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-base-100 bg-amber-500 shadow-xs" />
-                <div className="rounded-xl border border-amber-300/60 bg-amber-50/20 p-3 shadow-2xs">
-                  <div className="text-xs font-bold text-amber-700">Not saved yet</div>
-                  <ul className="mt-2 divide-y divide-base-200/50">
-                    {pendingShown.map((m) => (
-                      <MoveLine key={m.lotId} move={m} />
-                    ))}
-                  </ul>
-                  {!filtering && <CapacityEffect diff={pending} />}
-                </div>
-              </li>
-            )}
-
-            {/* Visible Order History Entries */}
-            {visible.map((e) => (
-              <li key={e.id} className="relative">
-                <span className="absolute -left-[27px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-base-100 bg-[#316be8] shadow-xs" />
-                <div className="rounded-xl border border-base-300/80 bg-base-100 p-3.5 shadow-2xs">
-                  <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-[#316be8]/10 text-[#316be8]">
-                        Plan v{e.planVersion}
-                      </span>
-                      <span className="text-xs font-bold text-base-content">{e.savedBy}</span>
-                      <span className="text-xs text-base-content/50">· {dayjs(e.savedAt).format("DD/MM HH:mm")}</span>
-                      {e.reason && (
-                        <span className="text-xs text-base-content/60 font-medium">
-                          ({e.reason})
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] font-semibold text-base-content/50 tabular-nums">
-                      {e.shown.length} {e.shown.length === 1 ? "move" : "moves"}
-                    </span>
-                  </div>
-                  <ul className="divide-y divide-base-200/60 border-t border-base-200 pt-1">
-                    {e.shown.map((m) => (
-                      <MoveLine key={m.lotId} move={m} />
-                    ))}
-                  </ul>
-                  {!filtering && <div className="mt-2 pt-2 border-t border-base-200"><CapacityEffect diff={e} /></div>}
                 </div>
               </li>
             ))}

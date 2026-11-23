@@ -2,17 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
-import { useAuth } from "@/context/AuthContext";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { allocateBoardShifts } from "../../Capacity_Leveling/utils/boardShiftAllocation";
-import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, serializeBoardCardOrder, type BoardCardOrder } from "../../Capacity_Leveling/utils/boardCardOrder";
-import { appendMoveHistory, reorderMoveHistory } from "../../Capacity_Leveling/utils/moveHistory";
+import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, type BoardCardOrder } from "../../Capacity_Leveling/utils/boardCardOrder";
 import { buildBoardLots, toLotItem } from "../../Capacity_Leveling/utils/levelingCalculations";
-import type { BoardCardOrderGroup, LotItem, MoveHistoryEntry } from "../../Capacity_Leveling/types";
-import { savePlan } from "../../Capacity_Leveling/hooks/api";
+import type { LotItem } from "../../Capacity_Leveling/types";
 import type { CountUnit, InGateCategory, InGateView, WorkMode } from "../types";
-import { planStatus, savedPlanGates, savedPlanRows, savedViewRows } from "../savedPlan";
+import { planStatus, savedPlanGates, savedViewRows } from "../savedPlan";
+import { buildWorkRows } from "../finishedPlan";
+import {
+  buildSaveOrderItems,
+  computeOrderDiff,
+  findDirtyOrderScopes,
+  mergeInGateOrders,
+  orderScopeKey,
+} from "../inGateOrder";
+import { saveInGateOrder } from "./inGateOrderApi";
+import { useInGateOrders } from "./useInGateOrders";
 import { useSavedPlan } from "./useSavedPlan";
 import { useFinishedToday } from "./useFinishedToday";
 import { useMonthlyOutput } from "./useMonthlyOutput";
@@ -21,6 +28,16 @@ const CATEGORIES: InGateCategory[] = ["ALL", "EFPC_GEN", "EFPC_AUTO", "SMT"];
 const DEFAULT_FPC_GATES = ["FVAC", "FADL", "FIN"];
 const DEFAULT_SMT_GATES = ["MMOT", "MBLK", "MFIN"];
 const TV_REFRESH_MS = 60000;
+
+export interface StagedReorder {
+  scopeKey: string;
+  before: LotItem[];
+  after: LotItem[];
+  beforePositions: ReadonlyMap<string, number>;
+  afterPositions: ReadonlyMap<string, number>;
+  movingIds: string[];
+  nextOrder: BoardCardOrder;
+}
 
 export default function usePlanningInGate() {
   const [params, setParams] = useSearchParams();
@@ -37,6 +54,8 @@ export default function usePlanningInGate() {
   const [tvMode, setTvMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const { saved, loading, error, reload, revalidate: revalidatePlan } = useSavedPlan();
+  const inGateOrders = useInGateOrders(true);
+  const { revalidate: revalidateOrders } = inGateOrders;
   const finished = useFinishedToday(date, view === "day");
   const monthly = useMonthlyOutput(month, category, search, view === "month");
   const { loading: observedLoading, revalidate: revalidateObserved } = view === "day" ? finished : monthly;
@@ -53,6 +72,7 @@ export default function usePlanningInGate() {
       if (now >= dueAt) {
         dueAt = now + TV_REFRESH_MS;
         revalidatePlan();
+        revalidateOrders();
         revalidateObserved();
       }
       timer = window.setTimeout(schedule, dueAt - now);
@@ -68,37 +88,47 @@ export default function usePlanningInGate() {
       window.removeEventListener("online", schedule);
       window.removeEventListener("offline", schedule);
     };
-  }, [tvMode, loading, observedLoading, revalidatePlan, revalidateObserved]);
+  }, [tvMode, loading, observedLoading, revalidatePlan, revalidateOrders, revalidateObserved]);
 
-  const { user } = useAuth();
   const [draftCardOrder, setDraftCardOrder] = useState<BoardCardOrder>(new Map());
-  const [draftHistory, setDraftHistory] = useState<Map<string, MoveHistoryEntry>>(new Map());
   const [saving, setSaving] = useState(false);
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
 
   useEffect(() => {
     setDraftCardOrder(new Map());
-    setDraftHistory(new Map());
   }, [saved?.plan.planId, saved?.plan.version]);
 
-  const savedCardOrder = useMemo(() => readBoardCardOrder(saved?.snapshot.boardCardOrder), [saved]);
-  const effectiveCardOrder = useMemo(() => new Map([...savedCardOrder, ...draftCardOrder]), [savedCardOrder, draftCardOrder]);
+  const planCardOrder = useMemo(() => readBoardCardOrder(saved?.snapshot.boardCardOrder), [saved]);
+  const savedCardOrder = useMemo(
+    () => mergeInGateOrders(planCardOrder, inGateOrders.orders),
+    [planCardOrder, inGateOrders.orders],
+  );
+  const effectiveCardOrder = useMemo(
+    () => new Map([...savedCardOrder, ...draftCardOrder]),
+    [savedCardOrder, draftCardOrder],
+  );
 
-  const savedPlanLots = useMemo(() => {
+  const allBoardLots = useMemo(() => {
     if (!saved) return [];
-    return applyBoardCardOrder(
-      buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem), "ALL"),
-      effectiveCardOrder
-    );
-  }, [saved, effectiveCardOrder]);
+    return buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem), "ALL");
+  }, [saved]);
 
-  const rows = useMemo(() => {
+  const categoryBoardLots = useMemo(() => {
     if (!saved) return [];
-    const ordered = applyBoardCardOrder(
-      buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem), category),
-      effectiveCardOrder
-    );
-    return draftHistory.size > 0 ? appendMoveHistory(ordered, draftHistory) : ordered;
-  }, [saved, category, effectiveCardOrder, draftHistory]);
+    return category === "ALL"
+      ? allBoardLots
+      : buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem), category);
+  }, [saved, category, allBoardLots]);
+
+  const savedPlanLots = useMemo(
+    () => applyBoardCardOrder(allBoardLots, effectiveCardOrder),
+    [allBoardLots, effectiveCardOrder],
+  );
+
+  const rows = useMemo(
+    () => applyBoardCardOrder(categoryBoardLots, effectiveCardOrder),
+    [categoryBoardLots, effectiveCardOrder],
+  );
 
   const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows, { excludePassed: true }) : new Map(), [saved, rows]);
   const gates = useMemo(() => {
@@ -111,6 +141,10 @@ export default function usePlanningInGate() {
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
   const dayRows = useMemo(() => savedViewRows(rows, view, view === "month" ? month : date), [rows, date, month, view]);
   const dayPlanLots = useMemo(() => rows.filter(row => row.plannedDate === date && row.gate === gate), [rows, date, gate]);
+  const savedDayPlanLots = useMemo(
+    () => applyBoardCardOrder(categoryBoardLots, savedCardOrder).filter(row => row.plannedDate === date && row.gate === gate),
+    [categoryBoardLots, savedCardOrder, date, gate],
+  );
   const scheduledDates = useMemo(() => [...new Set(gateRows.map(row => row.plannedDate))].sort(), [gateRows]);
   const queue = useMemo(() => dayRows.filter(row => row.gate === gate).map((lot, index) => ({ lot, sequence: index + 1 })), [dayRows, gate]);
   const visible = useMemo(() => {
@@ -118,27 +152,58 @@ export default function usePlanningInGate() {
     return queue.filter(({ lot }) => !query || [lot.label, lot.product, lot.item].some(value => value?.toLowerCase().includes(query)));
   }, [queue, search]);
 
-  const hasUnsavedChanges = useMemo(() => {
-    if (!saved || draftCardOrder.size === 0) return false;
-    for (const [key, ids] of draftCardOrder.entries()) {
-      const savedIds = savedCardOrder.get(key);
-      if (!savedIds || savedIds.length !== ids.length || savedIds.some((id, i) => id !== ids[i])) {
-        return true;
-      }
-    }
-    return false;
-  }, [saved, draftCardOrder, savedCardOrder]);
+  const dayWork = useMemo(
+    () => buildWorkRows(dayPlanLots, savedPlanLots, finishedRows),
+    [dayPlanLots, savedPlanLots, finishedRows],
+  );
+  const activeQueueLots = useMemo(
+    () => dayWork.queue.map((row) => row.lot).filter((lot): lot is LotItem => Boolean(lot)),
+    [dayWork.queue],
+  );
+  const activeQueueIdSet = useMemo(
+    () => new Set(activeQueueLots.map((lot) => lot.id)),
+    [activeQueueLots],
+  );
+  const excludedFromDayQueueIds = useMemo(
+    () => new Set(dayPlanLots.filter((lot) => !activeQueueIdSet.has(lot.id)).map((lot) => lot.id)),
+    [dayPlanLots, activeQueueIdSet],
+  );
 
-  const stageMoveLot = (lot: LotItem, direction: "up" | "down" | "top"): {
-    before: LotItem[];
-    after: LotItem[];
-    movingIds: string[];
-    nextOrder: BoardCardOrder;
-    historyEvents: Map<string, MoveHistoryEntry>;
-  } | null => {
+  const buildDisplayPositions = (
+    lots: readonly LotItem[],
+    displayFilter: "queue" | "all",
+  ): Map<string, number> => {
+    if (displayFilter === "all") {
+      return new Map(lots.map((lot, idx) => [lot.id, idx + 1]));
+    }
+    const queued = lots.filter((lot) => activeQueueIdSet.has(lot.id));
+    return new Map(queued.map((lot, idx) => [lot.id, idx + 1]));
+  };
+
+  const dirtyScopes = useMemo(() => {
+    if (!saved || draftCardOrder.size === 0) return [];
+    return findDirtyOrderScopes(allBoardLots, savedCardOrder, effectiveCardOrder);
+  }, [saved, allBoardLots, savedCardOrder, effectiveCardOrder, draftCardOrder.size]);
+
+  const hasUnsavedChanges = dirtyScopes.length > 0;
+
+  const pendingDiff = useMemo(() => {
+    if (!saved || !hasUnsavedChanges) return null;
+    return computeOrderDiff(saved.snapshot, savedDayPlanLots, dayPlanLots, excludedFromDayQueueIds);
+  }, [saved, hasUnsavedChanges, savedDayPlanLots, dayPlanLots, excludedFromDayQueueIds]);
+
+  const currentOrder = useMemo(
+    () => inGateOrders.orders.find((order) => order.gate === gate && order.date === date) ?? null,
+    [inGateOrders.orders, gate, date],
+  );
+
+  const stageMoveLot = (
+    lot: LotItem,
+    direction: "up" | "down" | "top",
+    displayFilter: "queue" | "all" = "queue",
+  ): StagedReorder | null => {
     if (!saved) return null;
-    const activeLots = dayPlanLots.filter(l => !l.passedGate);
-    const index = activeLots.findIndex(l => l.id === lot.id);
+    const index = activeQueueLots.findIndex(l => l.id === lot.id);
     if (index === -1) return null;
 
     let targetId: string;
@@ -146,112 +211,136 @@ export default function usePlanningInGate() {
 
     if (direction === "up") {
       if (index === 0) return null;
-      targetId = activeLots[index - 1].id;
+      targetId = activeQueueLots[index - 1].id;
       position = "before";
     } else if (direction === "down") {
-      if (index >= activeLots.length - 1) return null;
-      targetId = activeLots[index + 1].id;
+      if (index >= activeQueueLots.length - 1) return null;
+      targetId = activeQueueLots[index + 1].id;
       position = "after";
     } else {
       if (index === 0) return null;
-      targetId = activeLots[0].id;
+      targetId = activeQueueLots[0].id;
       position = "before";
     }
 
-    const allLots = buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem));
-    const nextOrder = reorderBoardCards(allLots, effectiveCardOrder, [lot.id], targetId, position);
+    const nextOrder = reorderBoardCards(allBoardLots, effectiveCardOrder, [lot.id], targetId, position);
     if (nextOrder === effectiveCardOrder) return null;
     const after = applyBoardCardOrder(dayPlanLots, nextOrder);
-    const historyEvents = reorderMoveHistory(
-      dayPlanLots,
-      after,
-      [lot.id],
-      {
-        id: `mh-ingate-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        changedAt: new Date().toISOString(),
-        changedBy: user?.full_name || user?.username || "Planner",
-        note: `Reordered in Planning In Gate (${gate} · ${date})`,
-      }
-    );
     return {
+      scopeKey: orderScopeKey(lot.gate, lot.plannedDate),
       before: dayPlanLots,
       after,
+      beforePositions: buildDisplayPositions(dayPlanLots, displayFilter),
+      afterPositions: buildDisplayPositions(after, displayFilter),
       movingIds: [lot.id],
       nextOrder,
-      historyEvents,
     };
   };
 
   const stageReorderById = (
     movingLotId: string,
     targetLotId: string,
-    position: "before" | "after" = "before"
-  ): {
-    before: LotItem[];
-    after: LotItem[];
-    movingIds: string[];
-    nextOrder: BoardCardOrder;
-    historyEvents: Map<string, MoveHistoryEntry>;
-  } | null => {
+    position: "before" | "after" = "before",
+    displayFilter: "queue" | "all" = "queue",
+  ): StagedReorder | null => {
     if (!saved || !movingLotId || !targetLotId || movingLotId === targetLotId) return null;
-    const allLots = buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem));
-    const nextOrder = reorderBoardCards(allLots, effectiveCardOrder, [movingLotId], targetLotId, position);
+    const target = allBoardLots.find((lot) => lot.id === targetLotId);
+    if (!target) return null;
+    const nextOrder = reorderBoardCards(allBoardLots, effectiveCardOrder, [movingLotId], targetLotId, position);
     if (nextOrder === effectiveCardOrder) return null;
     const after = applyBoardCardOrder(dayPlanLots, nextOrder);
-    const historyEvents = reorderMoveHistory(
-      dayPlanLots,
-      after,
-      [movingLotId],
-      {
-        id: `mh-ingate-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        changedAt: new Date().toISOString(),
-        changedBy: user?.full_name || user?.username || "Planner",
-        note: `Reordered in Planning In Gate (${gate} · ${date})`,
-      }
-    );
     return {
+      scopeKey: orderScopeKey(target.gate, target.plannedDate),
       before: dayPlanLots,
       after,
+      beforePositions: buildDisplayPositions(dayPlanLots, displayFilter),
+      afterPositions: buildDisplayPositions(after, displayFilter),
       movingIds: [movingLotId],
       nextOrder,
-      historyEvents,
     };
   };
 
-  const confirmReorder = (nextOrder: BoardCardOrder, historyEvents?: Map<string, MoveHistoryEntry>) => {
-    setDraftCardOrder(nextOrder);
-    if (historyEvents && historyEvents.size > 0) {
-      setDraftHistory((prev) => new Map([...prev, ...historyEvents]));
+  const confirmReorder = (nextOrder: BoardCardOrder, scopeKey?: string) => {
+    if (scopeKey) {
+      const ids = nextOrder.get(scopeKey);
+      if (!ids) return;
+      setDraftCardOrder((prev) => {
+        const updated = new Map(prev);
+        updated.set(scopeKey, ids);
+        return updated;
+      });
+      return;
     }
+    setDraftCardOrder(nextOrder);
   };
 
   const moveLot = (lot: LotItem, direction: "up" | "down" | "top") => {
     const staged = stageMoveLot(lot, direction);
     if (staged) {
-      confirmReorder(staged.nextOrder, staged.historyEvents);
+      confirmReorder(staged.nextOrder, staged.scopeKey);
     }
   };
 
   const undoOrder = () => {
     setDraftCardOrder(new Map());
-    setDraftHistory(new Map());
   };
 
-  const saveOrder = async () => {
-    if (!saved || !hasUnsavedChanges || saving) return;
+  const saveOrder = async (reason?: string) => {
+    if (!saved || dirtyScopes.length === 0 || saving) return;
     setSaving(true);
+    const ordersByScope = new Map(inGateOrders.orders.map((order) => [orderScopeKey(order.gate, order.date), order]));
+    const savedKeys: string[] = [];
+    let lastRevision: number | null = null;
+    const currentScopeKey = orderScopeKey(gate, date);
     try {
-      const allLots = buildBoardLots(saved.snapshot, saved.snapshot.cards.map(toLotItem));
-      const groups = serializeBoardCardOrder(allLots, effectiveCardOrder, today);
-      const note = `Reordered in Planning In Gate (${gate} · ${date})`;
-      const result = await savePlan(saved.plan.version, [], note, groups);
-      toast.success(`Plan v${result.plan.version} saved successfully!`);
-      setDraftCardOrder(new Map());
-      setDraftHistory(new Map());
-      reload();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || err?.message || "Failed to save order");
+      for (const scope of dirtyScopes) {
+        const existing = ordersByScope.get(scope.key);
+        const inactiveSet = new Set(
+          scope.afterLots
+            .filter((lot) => lot.passedGate || (scope.key === currentScopeKey && !activeQueueIdSet.has(lot.id)))
+            .map((lot) => lot.id),
+        );
+        const diff = computeOrderDiff(saved.snapshot, scope.beforeLots, scope.afterLots, inactiveSet);
+        const result = await saveInGateOrder({
+          gate: scope.gate,
+          date: scope.date,
+          planId: saved.plan.planId,
+          planVersion: saved.plan.version,
+          baseRevision: existing?.revision ?? 0,
+          cardIdsBefore: scope.beforeIds,
+          cardIds: scope.afterIds,
+          inactiveCardIds: [...inactiveSet],
+          items: buildSaveOrderItems(scope.afterLots),
+          pushedOutLots: diff?.pushedOut ?? [],
+          nowFitLots: diff?.nowFit ?? [],
+          reason,
+        });
+        savedKeys.push(scope.key);
+        lastRevision = result.order.revision;
+      }
+      toast.success(
+        dirtyScopes.length === 1 && lastRevision !== null
+          ? `Queue order saved (Order r${lastRevision})`
+          : `Queue order saved for ${savedKeys.length} gates/days`,
+      );
+    } catch (err: unknown) {
+      const responseData = (err as { response?: { data?: { code?: string; message?: string } } })?.response?.data;
+      if (responseData?.code === "ORDER_VERSION_CONFLICT") {
+        inGateOrders.reload();
+      }
+      const message = responseData?.message || (err instanceof Error ? err.message : "Failed to save queue order");
+      toast.error(message);
     } finally {
+      if (savedKeys.length > 0) {
+        const savedSet = new Set(savedKeys);
+        setDraftCardOrder((prev) => {
+          const next = new Map(prev);
+          for (const key of savedSet) next.delete(key);
+          return next;
+        });
+        setHistoryRefreshToken((token) => token + 1);
+        inGateOrders.reload();
+      }
       setSaving(false);
     }
   };
@@ -293,6 +382,8 @@ export default function usePlanningInGate() {
   const countText = (gateName: string) => gateCountTexts.byGate.get(gateName) ?? gateCountTexts.empty;
   const refresh = () => {
     reload();
+    inGateOrders.reload();
+    setHistoryRefreshToken((token) => token + 1);
     if (view === "day") finished.reload();
     else monthly.reload();
   };
@@ -340,6 +431,7 @@ export default function usePlanningInGate() {
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
     allocations, finishedRows,
     changeCategory, changeView, countText, refresh, exportPlan,
-    hasUnsavedChanges, saving, moveLot, stageMoveLot, stageReorderById, confirmReorder, undoOrder, saveOrder,
+    hasUnsavedChanges, saving, currentOrder, pendingDiff, historyRefreshToken,
+    moveLot, stageMoveLot, stageReorderById, confirmReorder, undoOrder, saveOrder,
   };
 }
