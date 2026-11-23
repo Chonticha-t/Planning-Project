@@ -23,6 +23,8 @@ interface ConfirmReorderModalProps {
   before: LotItem[];
   after: LotItem[];
   movingIds: string[];
+  beforePositions?: ReadonlyMap<string, number>;
+  afterPositions?: ReadonlyMap<string, number>;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -58,6 +60,8 @@ export const ConfirmReorderModal: React.FC<ConfirmReorderModalProps> = ({
   before,
   after,
   movingIds,
+  beforePositions,
+  afterPositions,
   onConfirm,
   onCancel,
 }) => {
@@ -101,11 +105,12 @@ export const ConfirmReorderModal: React.FC<ConfirmReorderModalProps> = ({
   }, [data, before, after]);
 
   const rows = useMemo(() => {
-    const beforePos = new Map(before.map((lot, idx) => [lot.id, idx + 1]));
+    const beforePos = beforePositions ?? new Map(before.map((lot, idx) => [lot.id, idx + 1]));
     return after
       .map((lot, idx) => {
-        const fromPos = beforePos.get(lot.id) ?? idx + 1;
-        const toPos = idx + 1;
+        const fromPos = beforePos.get(lot.id);
+        const toPos = afterPositions ? afterPositions.get(lot.id) : idx + 1;
+        if (fromPos === undefined || toPos === undefined) return null;
         const shiftKey = lot.sourceIds?.[0] ?? lot.id;
         const fromShift = beforeShifts?.get(shiftKey)?.status;
         const toShift = afterShifts?.get(shiftKey)?.status;
@@ -113,8 +118,8 @@ export const ConfirmReorderModal: React.FC<ConfirmReorderModalProps> = ({
         const shiftChanged = Boolean(fromShift && toShift && fromShift !== toShift);
         return { lot, fromPos, toPos, fromShift, toShift, isMoved, shiftChanged };
       })
-      .filter((row) => row.isMoved || row.shiftChanged);
-  }, [before, after, beforeShifts, afterShifts, movingSet]);
+      .filter((row): row is NonNullable<typeof row> => Boolean(row && (row.isMoved || row.fromPos !== row.toPos || row.shiftChanged)));
+  }, [before, after, beforePositions, afterPositions, beforeShifts, afterShifts, movingSet]);
 
   if (!moving.length || typeof document === "undefined") return null;
 

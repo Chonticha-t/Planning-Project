@@ -1,8 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
-const { createInGateRoutingRouter } = require("../routes/inGateRouting");
-const { workDate } = require("../routes/inGateMonthly");
+const { createInGateRoutingRouter } = require("../routes/10.17.87.244/Planning System/Planning In Gate/inGateRouting");
+const { workDate } = require("../routes/10.17.87.244/Planning System/Planning In Gate/inGateMonthly");
 
 const rule = { timeZone: "Asia/Bangkok", dayStart: "08:00:00", nightStart: "20:00:00" };
 const group = { gate: "GATE_A", product: "PRODUCT_A", date: "2026-11-12", shift: "N/S", lots: 1, pcs: "100", sheets: "10.5" };

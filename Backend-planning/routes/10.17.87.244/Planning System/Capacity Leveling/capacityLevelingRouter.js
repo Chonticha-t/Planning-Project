@@ -1,5 +1,5 @@
 const express = require("express");
-const { createInGateRoutingRouter } = require("../../../inGateRouting");
+const { createInGateRoutingRouter } = require("../Planning In Gate/inGateRouting");
 const { randomUUID, createHash } = require("node:crypto");
 const { performance } = require("node:perf_hooks");
 const { createGateTableCache } = require("../Planning Summary Gate/gateTableCache");

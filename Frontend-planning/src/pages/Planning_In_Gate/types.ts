@@ -97,6 +97,20 @@ export interface SavedPlanInfo {
   sourceCategory: string; // Capacity Leveling category at save time
 }
 
+/** Persisted Planning In Gate queue order overlay per (gate, planned_date) (Option A). */
+export interface InGateQueueOrder {
+  orderId: string;
+  gate: string;
+  date: string; // YYYY-MM-DD
+  planId: string;
+  planVersion: number;
+  revision: number;
+  cardIds: string[];
+  note: string | null;
+  updatedBy: string;
+  updatedAt: string; // ISO
+}
+
 /** Work-list order saved on the In Gate page per group/gate/day */
 export interface SavedOrder {
   ids: string[];
@@ -112,6 +126,8 @@ export interface OrderMove {
   product: string;
   from: number;
   to: number;
+  cardId?: string;
+  itemKind?: "lot" | "need" | "unidentified";
 }
 
 /** Result of comparing the saved order with the new order */
@@ -124,6 +140,7 @@ export interface OrderDiff {
 /** One "Save order" in the In Gate history */
 export interface OrderHistoryEntry extends OrderDiff {
   id: string;
+  revision?: number;
   savedAt: string; // ISO
   savedBy: string;
   planVersion: number;

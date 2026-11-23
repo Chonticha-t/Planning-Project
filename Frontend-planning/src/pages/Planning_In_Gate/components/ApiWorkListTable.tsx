@@ -35,10 +35,10 @@ interface Props {
   capacity?: CapacityDay;
   finished: FinishedState;
   canEdit?: boolean;
-  onMoveUp?: (lot: LotItem) => void;
-  onMoveDown?: (lot: LotItem) => void;
-  onMoveToTop?: (lot: LotItem) => void;
-  onDragReorder?: (movingLotId: string, targetLotId: string, position: "before" | "after") => void;
+  onMoveUp?: (lot: LotItem, filter: "queue" | "all") => void;
+  onMoveDown?: (lot: LotItem, filter: "queue" | "all") => void;
+  onMoveToTop?: (lot: LotItem, filter: "queue" | "all") => void;
+  onDragReorder?: (movingLotId: string, targetLotId: string, position: "before" | "after", filter: "queue" | "all") => void;
 }
 
 /** Keep the original queue design; all quantities come from the saved API snapshot. */
@@ -80,7 +80,11 @@ export function ApiWorkListTable({
   const allLotCount = work.all.filter(row => !row.lot || row.lot.kind === "lot").length;
   const countAvailable = Boolean(finished.checkedAt);
   const finishedCount = countAvailable ? finished.rows.length : "—";
-  const activeQueueLots = useMemo(() => planOrder.filter(l => !l.passedGate), [planOrder]);
+  const activeQueueLots = useMemo(
+    () => work.queue.map((row) => row.lot).filter((lot): lot is LotItem => Boolean(lot)),
+    [work.queue],
+  );
+  const reorderFilter: "queue" | "all" = filter === "all" ? "all" : "queue";
 
   const handleDragStart = (lot: LotItem, e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", lot.id);
@@ -114,7 +118,7 @@ export function ApiWorkListTable({
     setDraggedLotId(null);
     setDropTarget(null);
     if (movingId && movingId !== targetLot.id && currentTarget?.lotId === targetLot.id) {
-      onDragReorder?.(movingId, targetLot.id, currentTarget.position);
+      onDragReorder?.(movingId, targetLot.id, currentTarget.position, reorderFilter);
     }
   };
 
@@ -194,7 +198,9 @@ export function ApiWorkListTable({
                 compactFinished={compactFinished} evidence={row.evidence} allocation={allocation} route={routing.routes.get(lot.id)} routeLoading={routing.loading}
                 routeUnavailable={Boolean(routing.error)} onRoute={() => setRouteLot(lot)}
                 activeQueueLots={activeQueueLots} canEdit={canEdit}
-                onMoveUp={onMoveUp} onMoveDown={onMoveDown} onMoveToTop={onMoveToTop}
+                onMoveUp={onMoveUp ? (item) => onMoveUp(item, reorderFilter) : undefined}
+                onMoveDown={onMoveDown ? (item) => onMoveDown(item, reorderFilter) : undefined}
+                onMoveToTop={onMoveToTop ? (item) => onMoveToTop(item, reorderFilter) : undefined}
                 isDragging={draggedLotId === lot.id}
                 isDropTarget={dropTarget?.lotId === lot.id}
                 dropPosition={dropTarget?.lotId === lot.id ? dropTarget.position : null}
