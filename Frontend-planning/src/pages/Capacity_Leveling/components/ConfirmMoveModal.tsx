@@ -2,7 +2,7 @@ import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
-import { ArrowRight, Calendar, AlertCircle, X, Package, Clock } from "lucide-react";
+import { ArrowRight, AlertCircle, X, Package, Clock } from "lucide-react";
 import type { LotItem, DayGateLoad, LevelingData, MoveWarning, ProcessCategory } from "../types";
 import { computeMovePreview, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT } from "../utils/levelingCalculations";
 
@@ -87,18 +87,13 @@ export const ConfirmMoveModal: React.FC<ConfirmMoveModalProps> = ({
       >
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-base-300 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#eef2ff] border border-indigo-100 flex items-center justify-center text-[#4f46e5] shrink-0">
-              <Calendar size={16} />
-            </div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-base-content">
-                {isBatch ? `Move ${lots.length} Cards` : "Confirm Move"}
-              </h3>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
-                {gate}
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-base-content">
+              {isBatch ? `Move ${lots.length} Cards` : "Confirm Move"}
+            </h3>
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#4f46e5] text-white">
+              {gate}
+            </span>
           </div>
           <button
             type="button"

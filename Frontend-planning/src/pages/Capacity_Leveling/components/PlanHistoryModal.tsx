@@ -173,12 +173,9 @@ export const PlanHistoryModal: React.FC<Props> = ({ onClose, onPreview }) => {
         onClick={(event) => event.stopPropagation()} onKeyDown={handleKey}
         className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-base-300 bg-base-100 text-base-content shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-base-300 bg-base-200/40 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <History size={22} className="text-primary" />
-            <div>
-              <h2 id="plan-history-title" className="text-base font-bold">Plan History{selected ? ` · v${selected.version}` : ""}</h2>
-              <p className="text-xs text-base-content/60">Capacity Leveling · All process groups</p>
-            </div>
+          <div>
+            <h2 id="plan-history-title" className="text-base font-bold">Plan History{selected ? ` · v${selected.version}` : ""}</h2>
+            <p className="text-xs text-base-content/60">Capacity Leveling · All process groups</p>
           </div>
           <button ref={closeRef} type="button" onClick={close} disabled={deleting} className={`${button} btn-ghost btn-square`} aria-label="Close plan history"><X size={18} /></button>
         </div>

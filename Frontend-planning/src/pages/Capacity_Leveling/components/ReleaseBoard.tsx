@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useEffect, useState } from "react"
 import dayjs from "dayjs";
 import {
   AlertCircle,
+  ArrowUpDown,
   CalendarOff,
   Check,
   CheckCircle2,
@@ -29,6 +30,7 @@ import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
 import { DatePickerPopover } from "./DatePickerPopover";
+import { MovePositionModal } from "./MovePositionModal";
 
 interface ReleaseBoardProps {
   readOnly?: boolean;
@@ -58,6 +60,8 @@ interface ReleaseBoardProps {
   onToggleSelection: (id: string) => void;
   onMoveLots: (lots: LotItem[], targetDate: string) => void;
   onReorderLots: (movingIds: string[], targetId: string, position: "before" | "after") => void;
+  dayPositions?: ReadonlyMap<string, { position: number; total: number }>;
+  onReorderToPosition?: (lot: LotItem, targetPosition: number) => void;
   draggedLot: LotItem | null;
   onDragStart: (lot: LotItem) => void;
   onDragEnd: () => void;
@@ -148,6 +152,8 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   onToggleSelection,
   onMoveLots,
   onReorderLots,
+  dayPositions,
+  onReorderToPosition,
   draggedLot,
   onDragStart,
   onDragEnd,
@@ -161,6 +167,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   const lots = useMemo(() => rawLots.filter((lot) => !lot.passedGate), [rawLots]);
   const [searchQuery, setSearchQuery] = useState("");
   const [gateStateFilter, setGateStateFilter] = useState<BoardGateStateFilter>("ALL");
+  const [shiftFilter, setShiftFilter] = useState<"ALL" | BoardShiftAllocation["status"]>("ALL");
 
   const filteredLots = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -172,25 +179,30 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
         if (!matchLotNo && !matchProduct && !matchItem) return false;
       }
 
-      if (gateStateFilter === "in_gate") {
-        return lot.gateState === "in_gate";
+      if (gateStateFilter === "in_gate" && lot.gateState !== "in_gate") {
+        return false;
       }
-      if (gateStateFilter === "coming") {
-        return lot.gateState === "coming";
+      if (gateStateFilter === "coming" && lot.gateState !== "coming") {
+        return false;
       }
       if (gateStateFilter === "need_wip") {
-        return (
+        const isNeed =
           lot.gateState === "need_wip" ||
           lot.label.trim().toUpperCase() === "NEED WIP" ||
-          lotKind(lot) === "need"
-        );
+          lotKind(lot) === "need";
+        if (!isNeed) return false;
+      }
+
+      if (shiftFilter !== "ALL") {
+        const shiftStatus = shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)?.status ?? "none";
+        if (shiftStatus !== shiftFilter) return false;
       }
 
       return true;
     });
-  }, [lots, searchQuery, gateStateFilter]);
+  }, [lots, searchQuery, gateStateFilter, shiftFilter, shiftAllocations]);
 
-  const isFiltered = searchQuery.trim() !== "" || gateStateFilter !== "ALL";
+  const isFiltered = searchQuery.trim() !== "" || gateStateFilter !== "ALL" || shiftFilter !== "ALL";
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCompact, setIsCompact] = useState(false);
@@ -247,6 +259,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
     lot: LotItem;
     anchorEl: HTMLElement;
   } | null>(null);
+  const [listPositionLot, setListPositionLot] = useState<LotItem | null>(null);
   const [expandedDayCols, setExpandedDayCols] = useState<
     Record<string, boolean>
   >({});
@@ -533,6 +546,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
               onClick={() => {
                 setSearchQuery("");
                 setGateStateFilter("ALL");
+                setShiftFilter("ALL");
               }}
               className="badge badge-sm bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 text-[11px] font-semibold gap-1 cursor-pointer shrink-0"
               title="Click to reset filters"
@@ -671,6 +685,23 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             <option value="in_gate">In Gate</option>
             <option value="coming">Coming</option>
             <option value="need_wip">Need WIP</option>
+          </select>
+
+          {/* Shift Filter */}
+          <select
+            aria-label="Filter by shift"
+            value={shiftFilter}
+            onChange={(e) => setShiftFilter(e.target.value as "ALL" | BoardShiftAllocation["status"])}
+            className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
+              shiftFilter !== "ALL"
+                ? "bg-[#eef2ff] border-primary text-primary"
+                : "bg-base-200/40 border-base-300 text-base-content/75"
+            }`}
+          >
+            <option value="ALL">All Shift</option>
+            <option value="day">D/S (Day)</option>
+            <option value="night">N/S (Night)</option>
+            <option value="over">Over</option>
           </select>
 
           {isEditMode && (
@@ -983,6 +1014,10 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                         }
                         warning={warnings.get(lot.id) ?? "none"}
                         days={planningDays}
+                        data={data}
+                        plannedIndex={plannedIndex}
+                        queuePosition={dayPositions?.get(lot.id)}
+                        onReorderToPosition={onReorderToPosition}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
                         onDragEnd={handleCardDragEnd}
@@ -1123,6 +1158,10 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                         previewTargetDate={movingIds.has(lot.id) ? currentTargetDate : null}
                         warning={warnings.get(lot.id) ?? "none"}
                         days={planningDays}
+                        data={data}
+                        plannedIndex={plannedIndex}
+                        queuePosition={dayPositions?.get(lot.id)}
+                        onReorderToPosition={onReorderToPosition}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
                         onDragEnd={handleCardDragEnd}
@@ -1155,6 +1194,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
               <col style={{ width: "110px" }} />
               <col style={{ width: "135px" }} />
               <col style={{ width: "110px" }} />
+              <col style={{ width: "72px" }} />
             </colgroup>
             <thead>
               <tr className="bg-base-200/80 border-b border-base-300 text-[11.5px] font-bold tracking-[0.03em] text-base-content">
@@ -1186,6 +1226,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                 <th>MUST OUT</th>
                 <th>{boardGate} DATE</th>
                 <th>SO DUE</th>
+                <th className="text-center">ORDER</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -1387,7 +1428,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                       key={`hdr-${item.wg.id}`}
                       className="bg-base-200/50 border-b border-base-300"
                     >
-                      <td colSpan={10} className="!text-left px-3 py-2">
+                      <td colSpan={11} className="!text-left px-3 py-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-primary/10 text-primary font-bold text-xs tracking-wide">
@@ -1441,7 +1482,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                           : "bg-base-200/70 hover:bg-base-200"
                       }`}
                     >
-                      <td colSpan={10} className="!text-left px-3 py-2">
+                      <td colSpan={11} className="!text-left px-3 py-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2.5">
                             <button
@@ -1521,7 +1562,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                       onDrop={(e) => handleColDrop(e, item.col.date)}
                       className="bg-base-200/40 border-b border-base-300/80"
                     >
-                      <td colSpan={10} className="!text-left px-4 py-1.5">
+                      <td colSpan={11} className="!text-left px-4 py-1.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span
@@ -1565,7 +1606,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                       onDrop={(e) => handleColDrop(e, item.col.date)}
                       className={`transition-colors ${isTargetDay ? "bg-[#eef2ff]/50" : ""}`}
                     >
-                      <td colSpan={10} className="py-2.5 px-4 text-center">
+                      <td colSpan={11} className="py-2.5 px-4 text-center">
                         <div className={`py-2 px-3 rounded-lg border-2 border-dashed text-xs text-base-content/50 transition-colors ${
                           isTargetDay ? "border-primary bg-primary/10 text-primary font-semibold" : "border-base-300/80 bg-base-100/40"
                         }`}>
@@ -1600,7 +1641,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                     onDragOver={(e) => handleRowDragOver(e, lot)}
                     onDrop={(e) => handleRowDrop(e, lot)}
                     onClick={() => onSelectLot(lot)}
-                    className={`border-b border-base-300/50 hover:bg-base-200/40 text-[13px] leading-5 cursor-pointer transition-colors relative ${
+                    className={`group border-b border-base-300/50 hover:bg-base-200/40 text-[13px] leading-5 cursor-pointer transition-colors relative ${
                       isSelected ? "bg-[#eef2ff]/80 ring-1 ring-inset ring-[#4f46e5]/40" : ""
                     } ${isDragging ? "opacity-35" : ""} ${
                       isReorderTargetBefore ? "!border-t-2 !border-t-primary" : ""
@@ -1748,6 +1789,23 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                     <td className="font-medium text-[12.5px] text-base-content/80">
                       {dayjs(lot.dueDate).format("DD/MM/YYYY")}
                     </td>
+
+                    {/* ORDER */}
+                    <td className="text-center" onClick={(e) => e.stopPropagation()}>
+                      {!readOnly && onReorderToPosition && (dayPositions?.get(lot.id)?.total ?? 0) > 1 ? (
+                        <button
+                          type="button"
+                          title={`Move position (${dayPositions?.get(lot.id)?.position}/${dayPositions?.get(lot.id)?.total})`}
+                          aria-label={`Change queue position for ${lot.label}`}
+                          onClick={() => setListPositionLot(lot)}
+                          className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-base-300 bg-base-100 text-base-content shadow-2xs hover:border-[#4f46e5] hover:bg-[#eef2ff] hover:text-[#4f46e5] transition-colors cursor-pointer"
+                        >
+                          <ArrowUpDown size={12} strokeWidth={2.25} />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-base-content/35">-</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -1758,12 +1816,24 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             <DatePickerPopover
               lot={listDatePicker.lot}
               days={planningDays}
+              data={data}
+              plannedIndex={plannedIndex}
               anchorEl={listDatePicker.anchorEl}
               onSelectDate={(newDate) => {
                 onMoveLot(listDatePicker.lot, newDate);
                 setListDatePicker(null);
               }}
               onClose={() => setListDatePicker(null)}
+            />
+          )}
+
+          {listPositionLot && onReorderToPosition && dayPositions?.get(listPositionLot.id) && (
+            <MovePositionModal
+              lot={listPositionLot}
+              position={dayPositions.get(listPositionLot.id)!.position}
+              total={dayPositions.get(listPositionLot.id)!.total}
+              onMove={onReorderToPosition}
+              onClose={() => setListPositionLot(null)}
             />
           )}
         </div>

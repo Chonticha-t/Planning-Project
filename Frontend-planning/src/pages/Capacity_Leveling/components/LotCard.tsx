@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import {
+  ArrowUpDown,
   GripVertical,
   Calendar as CalendarIcon,
   Info,
@@ -12,9 +13,10 @@ import {
   Clock3,
   CircleSlash,
 } from "lucide-react";
-import type { BoardShiftAllocation, DayGateLoad, LotItem, MoveWarning } from "../types";
+import type { BoardShiftAllocation, DayGateLoad, LevelingData, LotItem, MoveWarning } from "../types";
 import { formatMinutes, isMoved as cardIsMoved, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
 import { DatePickerPopover } from "./DatePickerPopover";
+import { MovePositionModal } from "./MovePositionModal";
 
 const SHIFT_THEMES = {
   day: { label: "D/S", fullLabel: "Day Shift", Icon: Sun, badge: "bg-yellow-100 text-yellow-950 border-yellow-300", background: undefined },
@@ -41,6 +43,10 @@ interface LotCardProps {
   warning: MoveWarning;
   /** Days on which this card's gate is open */
   days: DayGateLoad[];
+  data?: LevelingData;
+  plannedIndex?: Map<string, string>;
+  queuePosition?: { position: number; total: number };
+  onReorderToPosition?: (lot: LotItem, targetPosition: number) => void;
   onSelect: (lot: LotItem) => void;
   onDragStart: (e: React.DragEvent<HTMLDivElement>, lot: LotItem) => void;
   onDragEnd: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -61,6 +67,10 @@ const LotCardView: React.FC<LotCardProps> = ({
   previewTargetDate,
   warning,
   days,
+  data,
+  plannedIndex,
+  queuePosition,
+  onReorderToPosition,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -71,6 +81,7 @@ const LotCardView: React.FC<LotCardProps> = ({
   const [notePos, setNotePos] = useState<{ top: number; left: number } | null>(
     null
   );
+  const [posOpen, setPosOpen] = useState(false);
   const chipBtnRef = useRef<HTMLButtonElement>(null);
   const noteBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -243,14 +254,34 @@ const LotCardView: React.FC<LotCardProps> = ({
             {lot.label}
           </div>
         </div>
-        <GripVertical
-          size={13}
-          className={`shrink-0 mt-0.5 ${
-            isSelected
-              ? "text-white/70 group-hover:text-white"
-              : "text-base-content/30 group-hover:text-base-content/60"
-          }`}
-        />
+        <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
+          {!readOnly && queuePosition && queuePosition.total > 1 && onReorderToPosition && (
+            <button
+              type="button"
+              title={`Move position (${queuePosition.position}/${queuePosition.total})`}
+              aria-label={`Change queue position for ${lot.label}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPosOpen(true);
+              }}
+              className={`inline-flex items-center justify-center w-5 h-5 rounded-md border shadow-2xs transition-colors cursor-pointer ${
+                isSelected
+                  ? "bg-white border-white text-[#4f46e5] hover:bg-indigo-50"
+                  : "bg-base-100 border-base-300 text-base-content hover:border-[#4f46e5] hover:bg-[#eef2ff] hover:text-[#4f46e5]"
+              }`}
+            >
+              <ArrowUpDown size={11} strokeWidth={2.25} />
+            </button>
+          )}
+          <GripVertical
+            size={13}
+            className={`shrink-0 ${
+              isSelected
+                ? "text-white/70 group-hover:text-white"
+                : "text-base-content/30 group-hover:text-base-content/60"
+            }`}
+          />
+        </div>
       </div>
 
       {/* Shift Badge & Date Chip - wrap gracefully when space is constrained */}
@@ -329,10 +360,22 @@ const LotCardView: React.FC<LotCardProps> = ({
           )}
         </div>
 
+        {posOpen && queuePosition && onReorderToPosition && (
+          <MovePositionModal
+            lot={lot}
+            position={queuePosition.position}
+            total={queuePosition.total}
+            onMove={onReorderToPosition}
+            onClose={() => setPosOpen(false)}
+          />
+        )}
+
         {popoverOpen && (
           <DatePickerPopover
             lot={lot}
             days={days}
+            data={data}
+            plannedIndex={plannedIndex}
             anchorEl={chipBtnRef.current}
             onSelectDate={(newDate) => {
               onDateChange(lot, newDate);
@@ -361,10 +404,10 @@ const LotCardView: React.FC<LotCardProps> = ({
                       ? "bg-rose-50 text-rose-700"
                       : isEarly
                       ? "bg-amber-50 text-amber-800"
-                      : "bg-[#eef2ff] text-[#4f46e5]"
+                      : "bg-emerald-50 text-emerald-700"
                   }`}
                 >
-                  {warning === "order" ? "Gate order" : isLate ? "Late" : isEarly ? "Early" : isMoved ? "Moved" : "Note"}
+                  {isLate ? "Late" : isEarly ? "Early" : "On time"}
                 </span>
               </div>
               {warning !== "none" && (
@@ -372,7 +415,7 @@ const LotCardView: React.FC<LotCardProps> = ({
                   {WARNING_TEXT[warning]}
                 </div>
               )}
-              {isMoved && (
+              {isMoved && lot.arriveBy && lot.baseDate !== lot.arriveBy && (
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-base-content/55">Was date:</span>
                   <span className="font-semibold text-[#4f46e5]">
@@ -380,11 +423,11 @@ const LotCardView: React.FC<LotCardProps> = ({
                   </span>
                 </div>
               )}
-              {lot.arriveBy && (
+              {(lot.arriveBy || isMoved) && (
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-base-content/55">Arrive by:</span>
-                  <span className="font-semibold text-base-content">
-                    {dayjs(lot.arriveBy).format("DD/MM/YYYY")}
+                  <span className={`font-semibold ${isMoved ? "text-[#4f46e5]" : "text-base-content"}`}>
+                    {dayjs(lot.arriveBy || lot.baseDate).format("DD/MM/YYYY")}
                   </span>
                 </div>
               )}
