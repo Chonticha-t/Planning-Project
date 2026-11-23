@@ -62,7 +62,7 @@ export const CardStat = ({
       className={`flex min-w-0 flex-col ${align === "right" ? "items-end text-right" : ""}`}
       title={`${label} ${value}`}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-base-content/55">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-base-content/65">
         {label}
       </span>
       <span
@@ -95,46 +95,51 @@ export const BlueStatCard = ({
   children: ReactNode;
 }) => (
   <div
-    className="flex flex-col gap-1.5 overflow-hidden rounded-xl bg-base-100 border border-base-300/70 border-t-[3px] p-3 shadow-xs hover:shadow-md transition-all"
-    style={{ borderTopColor: tone ? TONES[tone] : "#cbd5e1" }}
+    className="flex flex-col overflow-hidden rounded-xl bg-base-100 border border-base-300/80 shadow-xs hover:shadow-md transition-all"
+    style={{
+      boxShadow: `inset 0 4px 0 0 ${tone ? TONES[tone] : "#cbd5e1"}`,
+    }}
   >
-    {/* Header */}
-    <div className="flex h-6 items-center justify-between gap-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="inline-flex size-6 shrink-0 items-center justify-center rounded-lg bg-base-200 text-base-content/70"
-          style={tone ? { color: TONES[tone] } : undefined}
-        >
-          <Icon size={13} />
-        </span>
-        <h4 className="truncate text-xs font-semibold text-base-content/70">{title}</h4>
+    <div className="flex flex-1 flex-col gap-2.5 px-3 pb-3 pt-4">
+      {/* Top: Title + Big Value (left) | Badge + Icon (right) */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex flex-col gap-0.5">
+          <h4 className="truncate text-xs font-bold text-base-content/75">{title}</h4>
+          <div className="flex items-baseline gap-1.5 mt-0.5">
+            <span
+              className="text-[26px] font-black leading-tight tracking-tight tabular-nums text-base-content"
+              style={tone ? { color: TONES[tone] } : undefined}
+            >
+              {value}
+            </span>
+            {unit && (
+              <span
+                className="text-xs font-bold text-base-content/75"
+                style={tone ? { color: TONES[tone] } : undefined}
+              >
+                {unit}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {badge}
+          <span
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-white shadow-2xs"
+            style={{ backgroundColor: tone ? TONES[tone] : "#475569" }}
+          >
+            <Icon size={15} />
+          </span>
+        </div>
       </div>
-      {badge}
-    </div>
 
-    {/* Big Value - ใส่สีที่ตัวเลขและหน่วย */}
-    <div className="flex items-baseline gap-1.5 my-0.5">
-      <span
-        className="text-[26px] font-black leading-tight tracking-tight tabular-nums text-base-content"
-        style={tone ? { color: TONES[tone] } : undefined}
-      >
-        {value}
-      </span>
-      {unit && (
-        <span
-          className="text-xs font-bold text-base-content/70"
-          style={tone ? { color: TONES[tone] } : undefined}
-        >
-          {unit}
-        </span>
-      )}
-    </div>
-
-    {/* Footer */}
-    <div className="mt-auto pt-1.5">
-      <CardToneContext.Provider value={tone}>
-        {children}
-      </CardToneContext.Provider>
+      {/* Footer in crisp solid container */}
+      <div className="mt-auto rounded-lg bg-base-200 border border-base-300 px-2.5 py-1.5">
+        <CardToneContext.Provider value={tone}>
+          {children}
+        </CardToneContext.Provider>
+      </div>
     </div>
   </div>
 );

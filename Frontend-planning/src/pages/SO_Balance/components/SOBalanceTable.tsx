@@ -232,9 +232,7 @@ const columnGroupingModel: GridColumnGroupingModel = [
 const GROUP_HEADER_H = 28;
 
 const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
-
-const invBgGroup =
-  "color-mix(in oklab, var(--color-primary) 6%, var(--color-base-200))";
+const invBgGroup = "#2563eb";
 
 const SOBalanceTable = ({
   rows,
@@ -325,7 +323,7 @@ const SOBalanceTable = ({
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": "var(--color-base-200)",
 
-            // ── Header Styling (คมชัด ไม่จืด) ────────
+            // ── Header Styling ────────────────────────
             "& .MuiDataGrid-columnHeaders": {
               backgroundColor: "var(--color-base-200)",
             },
@@ -361,7 +359,7 @@ const SOBalanceTable = ({
                 },
               },
 
-            // ── Inventory Group Header (แถบเทาสวย ชัดเจน สไตล์ที่ชอบ) ─
+            // ── Inventory Group Header (เฉพาะ INVENTORY เป็นสีน้ำเงินทึบ) ──
             "& .MuiDataGrid-columnHeaderGroupCell": {
               backgroundColor: "var(--color-base-200)",
             },
@@ -373,7 +371,7 @@ const SOBalanceTable = ({
               {
                 fontWeight: 800,
                 letterSpacing: "0.06em",
-                color: "var(--color-base-content)",
+                color: "#ffffff",
               },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer":
               {
