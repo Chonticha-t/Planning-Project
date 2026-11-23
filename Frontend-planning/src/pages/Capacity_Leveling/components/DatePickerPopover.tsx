@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
-import type { DayGateLoad, LotItem } from "../types";
+import type { DayGateLoad, LevelingData, LotItem } from "../types";
+import { moveWarning } from "../utils/levelingCalculations";
 
 interface DatePickerPopoverProps {
   lot: LotItem;
   /** Days on which this card's gate is open (today onward) */
   days: DayGateLoad[];
+  data?: LevelingData;
+  plannedIndex?: Map<string, string>;
   anchorEl: HTMLElement | null;
   onSelectDate: (targetDate: string) => void;
   onClose: () => void;
@@ -35,6 +38,8 @@ const computePopoverCoords = (anchorEl: HTMLElement | null) => {
 export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
   lot,
   days,
+  data,
+  plannedIndex,
   anchorEl,
   onSelectDate,
   onClose,
@@ -90,14 +95,17 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
   const calendarDays = Array.from({ length: gridEnd.diff(gridStart, "day") + 1 }, (_, idx) => {
     const d = gridStart.add(idx, "day");
     const dateStr = d.format("YYYY-MM-DD");
+    const isDisabled = !openDates.has(dateStr);
+    const dayWarning = !isDisabled && data
+      ? moveWarning(lot, dateStr, plannedIndex, data)
+      : null;
     return {
       dayNum: d.date(),
       monthStart: d.date() === 1 || idx === 0,
       monthLabel: d.format("MMM"),
       dateStr,
-      isDisabled: !openDates.has(dateStr),
-      isAfterMustOut: dateStr > lot.mustOut,
-      isBeforeArrive: Boolean(lot.arriveBy) && dateStr < lot.arriveBy!,
+      isDisabled,
+      isAfterMustOut: dayWarning ? dayWarning === "late" || dayWarning === "order" : dateStr > lot.mustOut,
       isCurrent: dateStr === lot.plannedDate,
       isSelected: dateStr === selectedDate,
     };
@@ -144,9 +152,6 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
             } else if (day.isAfterMustOut) {
               cellStyle =
                 "bg-[#fee2e2] text-[#991b1b] font-semibold hover:brightness-95 cursor-pointer";
-            } else if (day.isBeforeArrive) {
-              cellStyle =
-                "bg-[#fef3c7] text-[#92400e] font-semibold hover:brightness-95 cursor-pointer";
             } else {
               cellStyle =
                 "bg-[#d1fae5] text-[#065f46] font-semibold hover:brightness-95 cursor-pointer";
@@ -175,14 +180,10 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10.5px] text-base-content/60 mt-2.5">
+      <div className="flex items-center justify-between gap-2 text-[10.5px] text-base-content/60 mt-2.5 whitespace-nowrap">
         <span className="inline-flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-[3px] bg-emerald-500 inline-block" />
-          fits
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-[3px] bg-amber-400 inline-block" />
-          before arrive-by
+          on time
         </span>
         <span className="inline-flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-[3px] bg-rose-500 inline-block" />
@@ -190,7 +191,7 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
         </span>
         <span className="inline-flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-[3px] border border-slate-300 bg-slate-100 inline-block" />
-          past / gate off
+          off
         </span>
       </div>
 
