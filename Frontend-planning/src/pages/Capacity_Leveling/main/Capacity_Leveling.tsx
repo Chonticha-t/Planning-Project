@@ -805,6 +805,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
 
           {/* Confirm popup when a card is dropped on another date */}
           {pendingReorder && <ConfirmReorderModal
+            data={data}
             before={pendingReorder.before}
             after={pendingReorder.after}
             movingIds={pendingReorder.movingIds}
