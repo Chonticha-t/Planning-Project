@@ -1,0 +1,39 @@
+/* Flat status colors for the PO Balance vs B/L FG table, mixed from the active daisyUI theme. */
+.planning-overview {
+  --po-open-bg: color-mix(in oklab, var(--color-warning) 18%, var(--color-base-100));
+  --po-open-fg: color-mix(in oklab, var(--color-warning) 30%, var(--color-base-content));
+  --bl-ok-bg: color-mix(in oklab, var(--color-success) 13%, var(--color-base-100));
+  --bl-ok-fg: color-mix(in oklab, var(--color-success) 40%, var(--color-base-content));
+  --bl-short-bg: color-mix(in oklab, var(--color-error) 16%, var(--color-base-100));
+  --bl-short-fg: color-mix(in oklab, var(--color-error) 55%, var(--color-base-content));
+}
+
+.planning-overview .po-open {
+  background-color: var(--po-open-bg);
+  color: var(--po-open-fg);
+}
+
+.planning-overview .bl-ok {
+  background-color: var(--bl-ok-bg);
+  color: var(--bl-ok-fg);
+}
+
+.planning-overview .bl-short {
+  background-color: var(--bl-short-bg);
+  color: var(--bl-short-fg);
+}
+
+/* Opaque so rows scrolling under the sticky header stay hidden. */
+.planning-overview .today-head {
+  background-color: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-200));
+  color: color-mix(in oklab, var(--color-primary) 75%, var(--color-base-content));
+  box-shadow: inset 0 -2px 0 var(--color-primary);
+}
+
+.planning-overview .text-short {
+  color: var(--bl-short-fg);
+}
+
+.planning-overview .text-enough {
+  color: var(--bl-ok-fg);
+}
