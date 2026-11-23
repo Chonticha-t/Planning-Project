@@ -90,13 +90,13 @@ export const moveWarning = (
     if (row.must_out && end && end > row.must_out) late = true;
   }
   if (late) return "late";
-  return date < lot.baseDate ? "early" : "none";
+  return "none";
 };
 
 export const WARNING_TEXT: Record<Exclude<MoveWarning, "none">, string> = {
-  early: "Before the source arrival: confirm upstream availability",
-  late: "Projected completion is after must-out",
-  order: "Arrival or completion overlaps an adjacent gate",
+  early: "Earlier than arrive-by date",
+  late: "Finishes after must-out",
+  order: "Overlaps adjacent gate",
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;

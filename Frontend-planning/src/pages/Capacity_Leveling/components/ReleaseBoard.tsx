@@ -983,6 +983,8 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                         }
                         warning={warnings.get(lot.id) ?? "none"}
                         days={planningDays}
+                        data={data}
+                        plannedIndex={plannedIndex}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
                         onDragEnd={handleCardDragEnd}
@@ -1123,6 +1125,8 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                         previewTargetDate={movingIds.has(lot.id) ? currentTargetDate : null}
                         warning={warnings.get(lot.id) ?? "none"}
                         days={planningDays}
+                        data={data}
+                        plannedIndex={plannedIndex}
                         onSelect={onSelectLot}
                         onDragStart={handleCardDragStart}
                         onDragEnd={handleCardDragEnd}
@@ -1758,6 +1762,8 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             <DatePickerPopover
               lot={listDatePicker.lot}
               days={planningDays}
+              data={data}
+              plannedIndex={plannedIndex}
               anchorEl={listDatePicker.anchorEl}
               onSelectDate={(newDate) => {
                 onMoveLot(listDatePicker.lot, newDate);

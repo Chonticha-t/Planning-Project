@@ -105,6 +105,7 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
   const withoutCell = arrivalDate ? buildGrid({ ...data, arrivalRows: withoutRows }, allLots, false, category)
     .find((day) => day.date === arrivalDate)?.gates[activeLot.gate] : undefined;
   const pctWithout = cellPct(withoutCell);
+  const lotPct = pctWithout !== null ? Math.max(0, pct - pctWithout) : null;
   const { previous: prevPlanned, next: nextPlanned } = adjacentGateDates(activeLot, plannedIndex);
 
   const savedOrderId = JSON.stringify([activeLot.gate, activeLot.savedDate, lotKind(activeLot),
@@ -261,7 +262,7 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
                     : "bg-emerald-600"
                 }`}
               >
-                {diffDays === null ? "Check completion" : warning === "order" ? "gate order" : isLate ? `late · ${diffDays}d` : warning === "early" ? "early" : `fits · +${diffDays}d slack`}
+                {diffDays === null ? "Check completion" : warning === "order" ? "gate order" : isLate ? `late · ${diffDays}d` : warning === "early" ? "early" : `on time · +${diffDays}d slack`}
               </span>
             </div>
             {warning !== "none" && (
@@ -279,6 +280,8 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
               <DatePickerPopover
                 lot={activeLot}
                 days={openDays}
+                data={data}
+                plannedIndex={plannedIndex}
                 anchorEl={releaseBoxRef.current}
                 onSelectDate={(newDate) => {
                   setPopoverOpen(false);
@@ -329,18 +332,10 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between py-1 border-b border-base-200">
-                  <span className="text-base-content/70">Load %</span>
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    {pctWithout !== null && (
-                      <span className={`px-2 py-0.5 rounded text-[10.5px] text-white font-bold ${solidPctBadge(pctWithout)}`}>
-                        {pctWithout}%
-                      </span>
-                    )}
-                    <ArrowRight size={10} className="text-base-content/40" />
-                    <span className={`px-2 py-0.5 rounded text-[10.5px] text-white font-bold ${solidPctBadge(pct)}`}>
-                      {pct}%
-                    </span>
-                  </div>
+                  <span className="text-base-content/70">Lot Load %</span>
+                  <span className={`px-2 py-0.5 rounded text-[10.5px] text-white font-bold ${solidPctBadge(lotPct ?? 0)}`}>
+                    {lotPct !== null ? `${lotPct}%` : "-"}
+                  </span>
                 </div>
 
                 {/* Shift Breakdown */}
@@ -369,7 +364,7 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
               <table className="w-full text-left text-[11px] tabular-nums">
                 <thead className="text-base-content/50 border-b border-base-200">
                   <tr>
-                    <th className="py-1">SO / Item</th>
+                    <th className="py-1">Item</th>
                     <th className="py-1">Due</th>
                     <th className="py-1 text-right">Qty</th>
                   </tr>
@@ -377,7 +372,7 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
                 <tbody className="divide-y divide-base-200/50">
                   {activeLot.allocations?.map((row, index) => (
                     <tr key={`${row.workKey}-${index}`}>
-                      <td className="py-1.5 font-medium">{row.po_no || "-"} · {row.item || "-"}</td>
+                      <td className="py-1.5 font-medium">{row.item || "-"}</td>
                       <td className="py-1.5 text-base-content/70">{formatDate(row.due_date)}</td>
                       <td className="py-1.5 text-right font-semibold">{formatGateQuantity(row.qty ?? null, "piece")}</td>
                     </tr>
