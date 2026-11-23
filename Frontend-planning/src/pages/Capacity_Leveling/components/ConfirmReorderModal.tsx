@@ -5,7 +5,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
-  ArrowUpDown,
   CheckCircle2,
   CircleSlash,
   Clock,
@@ -114,7 +113,7 @@ export const ConfirmReorderModal: React.FC<ConfirmReorderModalProps> = ({
         const shiftChanged = Boolean(fromShift && toShift && fromShift !== toShift);
         return { lot, fromPos, toPos, fromShift, toShift, isMoved, shiftChanged };
       })
-      .filter((row) => row.isMoved || row.fromPos !== row.toPos || row.shiftChanged);
+      .filter((row) => row.isMoved || row.shiftChanged);
   }, [before, after, beforeShifts, afterShifts, movingSet]);
 
   if (!moving.length || typeof document === "undefined") return null;
@@ -132,21 +131,16 @@ export const ConfirmReorderModal: React.FC<ConfirmReorderModalProps> = ({
       >
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-base-300 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[#eef2ff] border border-indigo-100 flex items-center justify-center text-[#4f46e5] shrink-0">
-              <ArrowUpDown size={15} />
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 id="confirm-reorder-title" className="text-sm font-bold text-base-content">
-                Confirm Reorder
-              </h3>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#eef2ff] text-[#4f46e5] border border-indigo-200">
-                {gate}
-              </span>
-              <span className="text-xs font-semibold text-base-content/55 tabular-nums">
-                {dayjs(plannedDate).format("ddd DD/MM/YYYY")}
-              </span>
-            </div>
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <h3 id="confirm-reorder-title" className="text-sm font-bold text-base-content">
+              Confirm Reorder
+            </h3>
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#4f46e5] text-white">
+              {gate}
+            </span>
+            <span className="text-xs font-semibold text-base-content/55 tabular-nums">
+              {dayjs(plannedDate).format("ddd DD/MM/YYYY")}
+            </span>
           </div>
           <button
             type="button"

@@ -376,6 +376,34 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     });
   }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder, requirePlanner]);
 
+  const dayPositions = useMemo(() => {
+    const groups = new Map<string, LotItem[]>();
+    for (const lot of allBoardLots) {
+      if (lot.passedGate) continue;
+      const key = `${lot.gate}|${lot.plannedDate}`;
+      const list = groups.get(key) ?? [];
+      list.push(lot);
+      groups.set(key, list);
+    }
+    const map = new Map<string, { position: number; total: number }>();
+    for (const list of groups.values()) {
+      list.forEach((lot, idx) => map.set(lot.id, { position: idx + 1, total: list.length }));
+    }
+    return map;
+  }, [allBoardLots]);
+
+  const handleStageReorderToPosition = useCallback((lot: LotItem, targetPosition: number) => {
+    const sameDay = allBoardLots.filter(
+      (item) => !item.passedGate && item.gate === lot.gate && item.plannedDate === lot.plannedDate
+    );
+    const currentIndex = sameDay.findIndex((item) => item.id === lot.id);
+    if (currentIndex < 0 || sameDay.length < 2) return;
+    const clampedIndex = Math.max(0, Math.min(sameDay.length - 1, Math.trunc(targetPosition) - 1));
+    if (clampedIndex === currentIndex) return;
+    const target = sameDay[clampedIndex];
+    handleStageReorder([lot.id], target.id, clampedIndex < currentIndex ? "before" : "after");
+  }, [allBoardLots, handleStageReorder]);
+
   const handleConfirmReorder = useCallback(() => {
     if (saving || loading || readOnly || !data || !pendingReorder) return;
     if (!canEditPlanning) {
@@ -773,6 +801,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 onToggleSelection={handleToggleSelection}
                 onMoveLots={handleStageMoveLots}
                 onReorderLots={handleStageReorder}
+                dayPositions={dayPositions}
+                onReorderToPosition={handleStageReorderToPosition}
                 draggedLot={draggedLot}
                 onDragStart={setDraggedLot}
                 onDragEnd={handleDragEnd}
@@ -800,6 +830,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             onApply={handleStageMoveLot}
             onCancel={handleCloseLotDetail}
             onOpenCapacityModal={handleOpenLotCapacity}
+            queuePosition={selectedLot ? dayPositions.get(selectedLot.id) : undefined}
+            onReorderToPosition={handleStageReorderToPosition}
             isDraggingCard={Boolean(draggedLot)}
           />
 

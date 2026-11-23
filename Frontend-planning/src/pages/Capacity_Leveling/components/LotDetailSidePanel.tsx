@@ -3,6 +3,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import dayjs from "dayjs";
 import {
+  ArrowUpToLine,
   Calendar as CalendarIcon,
   Settings,
   X,
@@ -28,6 +29,8 @@ interface LotDetailSidePanelProps {
   onApply: (lot: LotItem, newDate: string) => void;
   onCancel: () => void;
   onOpenCapacityModal: () => void;
+  queuePosition?: { position: number; total: number };
+  onReorderToPosition?: (lot: LotItem, targetPosition: number) => void;
   isDraggingCard?: boolean;
 }
 
@@ -52,11 +55,18 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
   onApply,
   onCancel,
   onOpenCapacityModal,
+  queuePosition,
+  onReorderToPosition,
   isDraggingCard = false,
   readOnly = false,
 }) => {
   const releaseBoxRef = useRef<HTMLDivElement>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [posInput, setPosInput] = useState("");
+
+  useEffect(() => {
+    setPosInput(queuePosition ? String(queuePosition.position) : "");
+  }, [lot?.id, queuePosition?.position]);
 
   // Keep last non-null lot so the drawer can animate sliding out smoothly
   const [renderedLot, setRenderedLot] = useState<LotItem | null>(lot);
@@ -293,6 +303,63 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
               />
             )}
           </div>
+
+          {/* Queue Position */}
+          {!readOnly && queuePosition && queuePosition.total > 1 && onReorderToPosition && (
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-base-content/50 block mb-1">
+                Queue Position
+              </label>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const next = Number(posInput);
+                  if (Number.isInteger(next) && next >= 1 && next <= queuePosition.total && next !== queuePosition.position) {
+                    onReorderToPosition(activeLot, next);
+                  }
+                }}
+                className="flex items-center justify-between gap-2 border border-base-300 rounded-xl px-3 py-1.5 bg-base-100 tabular-nums"
+              >
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={queuePosition.total}
+                    value={posInput}
+                    onChange={(e) => setPosInput(e.target.value)}
+                    aria-label="Queue position"
+                    className="w-12 h-7 px-2 rounded-lg border border-base-300 bg-base-100 text-center text-xs font-bold text-base-content focus:outline-none focus:border-primary"
+                  />
+                  <span className="text-xs text-base-content/55 font-medium">/ {queuePosition.total}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="submit"
+                    disabled={
+                      !posInput.trim() ||
+                      !Number.isInteger(Number(posInput)) ||
+                      Number(posInput) < 1 ||
+                      Number(posInput) > queuePosition.total ||
+                      Number(posInput) === queuePosition.position
+                    }
+                    className="btn btn-xs h-7 px-2.5 rounded-lg bg-[#4f46e5] hover:bg-[#4338ca] disabled:bg-base-200 disabled:text-base-content/35 text-white border-none text-[11px] font-semibold cursor-pointer"
+                  >
+                    Move
+                  </button>
+                  <button
+                    type="button"
+                    disabled={queuePosition.position === 1}
+                    onClick={() => onReorderToPosition(activeLot, 1)}
+                    title="Move to top (#1)"
+                    className="btn btn-xs h-7 px-2 rounded-lg bg-base-200/80 hover:bg-base-300 disabled:opacity-40 border border-base-300 text-base-content text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowUpToLine size={11} />
+                    <span>Top</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Arrival Load & Capacity */}
           <div className="rounded-xl border border-base-200 bg-base-100 p-3 flex flex-col gap-2 tabular-nums">
