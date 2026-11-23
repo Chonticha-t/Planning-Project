@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type { OverviewDay, OverviewProduct } from "../types";
 import { dayLabel, formatQty } from "../overviewView";
@@ -58,6 +59,78 @@ const BalanceTable = ({
     setScrollTop(e.currentTarget.scrollTop);
   }, []);
 
+  // Docked horizontal scrollbar (same behavior as Planning Summary): when the table's own
+  // x-scrollbar is below the viewport, show a fixed copy at the bottom of the screen.
+  const theadRef = useRef<HTMLTableSectionElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const dockedScrollbarRef = useRef<HTMLDivElement>(null);
+  const dockedScrollContentRef = useRef<HTMLDivElement>(null);
+
+  const handleDockedScroll = useCallback(() => {
+    const docked = dockedScrollbarRef.current;
+    const el = scrollRef.current;
+    if (docked && docked.clientWidth > 0 && el && Math.abs(el.scrollLeft - docked.scrollLeft) > 0.5) {
+      el.scrollLeft = docked.scrollLeft;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const head = theadRef.current;
+    const table = tableRef.current;
+    const docked = dockedScrollbarRef.current;
+    const content = dockedScrollContentRef.current;
+    if (!el || !head || !table || !docked || !content) return;
+    let frame = 0;
+
+    const updateScrollbar = () => {
+      frame = 0;
+      const rect = el.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const viewportBottom = (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - 1;
+      const hasOverflow = el.scrollWidth > el.clientWidth;
+      const shouldDock = hasOverflow && rect.bottom > viewportBottom &&
+        head.getBoundingClientRect().bottom < viewportBottom - 24;
+      docked.style.display = shouldDock ? "block" : "none";
+      if (!shouldDock) return;
+
+      // Match the native scrollbar's range so scrollLeft maps 1:1.
+      const barHeight = Math.max(el.offsetHeight - el.clientHeight - el.clientTop, 17);
+      docked.style.left = `${rect.left + el.clientLeft}px`;
+      docked.style.top = `${viewportBottom - barHeight}px`;
+      docked.style.width = `${el.clientWidth}px`;
+      docked.style.height = `${barHeight}px`;
+      content.style.width = `${el.scrollWidth}px`;
+      if (Math.abs(docked.scrollLeft - el.scrollLeft) > 0.5) {
+        docked.scrollLeft = el.scrollLeft;
+      }
+    };
+
+    const scheduleUpdate = (event?: Event) => {
+      if (event?.target === docked) return;
+      if (!frame) frame = window.requestAnimationFrame(updateScrollbar);
+    };
+    const resizeObserver = new ResizeObserver(() => scheduleUpdate());
+    resizeObserver.observe(el);
+    resizeObserver.observe(table);
+    const pageRoot = el.closest(".planning-overview") ?? el.parentElement;
+    if (pageRoot) resizeObserver.observe(pageRoot);
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+    window.visualViewport?.addEventListener("resize", scheduleUpdate);
+    window.visualViewport?.addEventListener("scroll", scheduleUpdate);
+    updateScrollbar();
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      window.visualViewport?.removeEventListener("resize", scheduleUpdate);
+      window.visualViewport?.removeEventListener("scroll", scheduleUpdate);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
   const indexes = useMemo(() => days.map((_, i) => i), [days]);
   const n = indexes.length;
   const colCount = 3 + Math.max(n, 1);
@@ -115,6 +188,30 @@ const BalanceTable = ({
         </div>
       </header>
 
+      {/* Fixed-position copy of the x-scrollbar, rendered in body so ancestors can't clip it. */}
+      {createPortal(
+        <div
+          ref={dockedScrollbarRef}
+          role="region"
+          aria-label="SO Balance Overview horizontal scroll"
+          tabIndex={0}
+          onScroll={handleDockedScroll}
+          style={{
+            display: "none",
+            position: "fixed",
+            overflowX: "scroll",
+            overflowY: "hidden",
+            boxSizing: "content-box",
+            zIndex: 40,
+            borderTop: "1px solid var(--color-base-300)",
+            backgroundColor: "var(--color-base-100)",
+          }}
+        >
+          <div ref={dockedScrollContentRef} style={{ height: 1 }} />
+        </div>,
+        document.body
+      )}
+
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -122,8 +219,8 @@ const BalanceTable = ({
           isFullscreen ? "flex-1 min-h-0" : "max-h-[calc(100vh-330px)] min-h-[260px]"
         } ${loading && hasData ? "opacity-60" : ""}`}
       >
-        <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-[12.5px] tabular-nums">
-          <thead>
+        <table ref={tableRef} className="w-full min-w-[1100px] border-separate border-spacing-0 text-[12.5px] tabular-nums">
+          <thead ref={theadRef}>
             <tr>
               <th rowSpan={2} scope="col" className={`${headCell} top-0 left-0 z-30 min-w-[160px] px-3 text-left shadow-[1px_0_0_var(--color-base-300)]`}>
                 Product
