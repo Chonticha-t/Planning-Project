@@ -134,9 +134,9 @@ export const routes_hidden: AppRoute[] = [
   },
   {
     path: `${BASE}/planning_overview`,
-    element: <Planning_Summary defaultTab="overview" />,
-    label: "PLANNING OVERVIEW",
-    Title: "PLANNING SUMMARY",
+    element: <SO_Balance defaultTab="overview" />,
+    label: "OVERVIEW",
+    Title: "SO BALANCE",
     icon: CalendarRange,
   },
   {

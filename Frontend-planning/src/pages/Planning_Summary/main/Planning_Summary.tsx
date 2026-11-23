@@ -1,6 +1,5 @@
-import React, { useState, useCallback, Suspense } from "react";
+import React, { useState, useCallback } from "react";
 import type { GridSortModel } from "@mui/x-data-grid";
-import { CalendarRange, LayoutDashboard } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { PlanningSummaryFilter } from "../types";
@@ -14,20 +13,7 @@ import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import { toDMY } from "../../SO_Balance/utils";
 import "../../Planning_Summary_Gate/gateTheme.css";
 
-const Planning_Overview = React.lazy(
-  () => import("@/pages/Planning_Overview/main/Planning_Overview")
-);
-
-export type PlanningSummaryTab = "summary" | "overview";
-
-interface PlanningSummaryProps {
-  defaultTab?: PlanningSummaryTab;
-}
-
-const Planning_Summary: React.FC<PlanningSummaryProps> = ({
-  defaultTab = "summary",
-}) => {
-  const [activeTab, setActiveTab] = useState<PlanningSummaryTab>(defaultTab);
+const Planning_Summary: React.FC = () => {
   const [filter, setFilter] = useState<PlanningSummaryFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const {
@@ -133,86 +119,34 @@ const Planning_Summary: React.FC<PlanningSummaryProps> = ({
 
   return (
     <div className="planning-summary-gate flex flex-col gap-3 w-full">
-      {/* Tab switcher: Planning Summary / Planning Overview */}
-      <div className="flex items-center">
-        <div
-          role="tablist"
-          aria-label="Planning Summary views"
-          className="inline-flex items-center gap-1 rounded-xl border border-base-300 bg-base-100 p-1 shadow-2xs"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "summary"}
-            onClick={() => setActiveTab("summary")}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-              activeTab === "summary"
-                ? "bg-[#4f46e5] text-white shadow-xs"
-                : "text-base-content/70 hover:text-base-content hover:bg-base-200/70"
-            }`}
-          >
-            <LayoutDashboard size={14} />
-            <span>Planning Summary</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "overview"}
-            onClick={() => setActiveTab("overview")}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-              activeTab === "overview"
-                ? "bg-[#4f46e5] text-white shadow-xs"
-                : "text-base-content/70 hover:text-base-content hover:bg-base-200/70"
-            }`}
-          >
-            <CalendarRange size={14} />
-            <span>Planning Overview</span>
-          </button>
-        </div>
-      </div>
+      {/* 1. เมนูกรองข้อมูล Filter Bar (อยู่บนสุดเหมือนหน้า PO Balance / Summary Gate) */}
+      <FilterBar
+        filter={filter}
+        filterOptions={filtersOptions}
+        sortModel={sortModel}
+        onSortModelChange={setSortModel}
+        onChange={setFilter}
+        onSearch={handleSearch}
+        onReset={handleReset}
+        onExport={handleExport}
+        loading={loading}
+      />
 
-      {activeTab === "overview" ? (
-        <Suspense
-          fallback={
-            <div className="flex items-center justify-center py-16 text-sm text-base-content/60">
-              Loading Planning Overview...
-            </div>
-          }
-        >
-          <Planning_Overview />
-        </Suspense>
-      ) : (
-        <>
-          {/* 1. เมนูกรองข้อมูล Filter Bar (อยู่บนสุดเหมือนหน้า PO Balance / Summary Gate) */}
-          <FilterBar
-            filter={filter}
-            filterOptions={filtersOptions}
-            sortModel={sortModel}
-            onSortModelChange={setSortModel}
-            onChange={setFilter}
-            onSearch={handleSearch}
-            onReset={handleReset}
-            onExport={handleExport}
-            loading={loading}
-          />
+      {/* 2. สรุปภาพรวม KPI Cards */}
+      <SummaryCards kpi={kpi} />
 
-          {/* 2. สรุปภาพรวม KPI Cards */}
-          <SummaryCards kpi={kpi} />
-
-          {/* 3. ตารางข้อมูล Planning Summary Table พร้อม Column Grouping */}
-          <PlanningSummaryTable
-            rows={rows}
-            loading={loading}
-            sortModel={sortModel}
-            onSortModelChange={setSortModel}
-            onExport={handleExport}
-            onSkipDue={skipLotDueDate}
-            onUnskipDue={unskipLotDueDate}
-            onAssignWipDue={assignWipDueDate}
-            onUnassignWipDue={unassignWipDueDate}
-          />
-        </>
-      )}
+      {/* 3. ตารางข้อมูล Planning Summary Table พร้อม Column Grouping */}
+      <PlanningSummaryTable
+        rows={rows}
+        loading={loading}
+        sortModel={sortModel}
+        onSortModelChange={setSortModel}
+        onExport={handleExport}
+        onSkipDue={skipLotDueDate}
+        onUnskipDue={unskipLotDueDate}
+        onAssignWipDue={assignWipDueDate}
+        onUnassignWipDue={unassignWipDueDate}
+      />
     </div>
   );
 };

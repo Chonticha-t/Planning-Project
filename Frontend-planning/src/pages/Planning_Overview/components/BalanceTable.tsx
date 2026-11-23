@@ -1,8 +1,10 @@
-import { memo, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type { OverviewDay, OverviewProduct } from "../types";
 import { dayLabel, formatQty } from "../overviewView";
+
+const ROW_HEIGHT = 36; // matches h-9 (2.25rem)
+const OVERSCAN = 10;
 
 interface BalanceTableProps {
   rows: OverviewProduct[];
@@ -11,6 +13,9 @@ interface BalanceTableProps {
   loading: boolean;
   calendarFallback: boolean;
   hasData: boolean;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+  headerControls?: ReactNode;
 }
 
 const headCell = "sticky z-20 bg-base-200 border-b border-base-300 text-[11px] font-bold uppercase tracking-wider text-base-content/70";
@@ -25,21 +30,43 @@ const BalanceTable = ({
   loading,
   calendarFallback,
   hasData,
+  isFullscreen,
+  onToggleFullscreen,
+  headerControls,
 }: BalanceTableProps) => {
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
 
   useEffect(() => {
-    if (!isFullscreen) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsFullscreen(false);
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewportHeight(el.clientHeight || 600);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, [isFullscreen]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+    setScrollTop(0);
+  }, [rows]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
 
   const indexes = useMemo(() => days.map((_, i) => i), [days]);
   const n = indexes.length;
   const colCount = 3 + Math.max(n, 1);
+
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIdx = Math.min(rows.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+  const visibleRows = rows.slice(startIdx, endIdx);
+  const topPad = startIdx * ROW_HEIGHT;
+  const bottomPad = (rows.length - endIdx) * ROW_HEIGHT;
 
   const dayHead = (d: OverviewDay, j: number) => (
     <th
@@ -56,25 +83,24 @@ const BalanceTable = ({
     </th>
   );
 
-  const tableSection = (
+  return (
     <section
       aria-label="Inventory vs Net Required"
-      className={
-        isFullscreen
-          ? "planning-overview fixed inset-0 z-[100] flex flex-col bg-base-100 shadow-2xl overflow-hidden"
-          : "rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden"
-      }
+      className={`rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden ${
+        isFullscreen ? "flex-1 min-h-0 flex flex-col" : ""
+      }`}
     >
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 shrink-0">
-        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          <h2 className="text-[13.5px] font-extrabold tracking-wide text-base-content">B/L FG · AFTER SO</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-[13.5px] font-extrabold tracking-wide text-base-content shrink-0">SO BALANCE OVERVIEW</h2>
+          {headerControls}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-base-content/70">
-          <span className="inline-flex items-center gap-1.5"><span className="bl-ok size-3 rounded border border-base-300" aria-hidden="true" />Ready</span>
-          <span className="inline-flex items-center gap-1.5"><span className="bl-short size-3 rounded border border-base-300" aria-hidden="true" />Net Req</span>
+          <span className="inline-flex items-center gap-1.5 font-semibold text-base-content/80"><span className="size-3 rounded bg-emerald-500" aria-hidden="true" />Ready</span>
+          <span className="inline-flex items-center gap-1.5 font-semibold text-base-content/80"><span className="size-3 rounded bg-rose-500" aria-hidden="true" />Net Req</span>
           <button
             type="button"
-            onClick={() => setIsFullscreen((prev) => !prev)}
+            onClick={onToggleFullscreen}
             title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
             aria-label={isFullscreen ? "Exit fullscreen" : "Expand table to fullscreen"}
             className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
@@ -90,6 +116,8 @@ const BalanceTable = ({
       </header>
 
       <div
+        ref={scrollRef}
+        onScroll={handleScroll}
         className={`overflow-auto border-t border-base-300 transition-opacity ${
           isFullscreen ? "flex-1 min-h-0" : "max-h-[calc(100vh-330px)] min-h-[260px]"
         } ${loading && hasData ? "opacity-60" : ""}`}
@@ -103,7 +131,7 @@ const BalanceTable = ({
               <th rowSpan={2} scope="col" className={`${headCell} top-0 w-[68px] px-2 text-center`}>Type</th>
               <th rowSpan={2} scope="col" className={`${headCell} top-0 w-[104px] px-3 text-right`}>Inventory</th>
               <th colSpan={Math.max(n, 1)} scope="colgroup" className={`${headCell} top-0 h-[30px] px-2 text-center ${groupStart}`}>
-                B/L FG <span className="font-medium normal-case tracking-normal text-base-content/55">· Ready / Net Req</span>
+                SO Balance <span className="font-medium normal-case tracking-normal text-base-content/55">· Ready / Net Req</span>
               </th>
             </tr>
             <tr>
@@ -125,7 +153,12 @@ const BalanceTable = ({
                 </td>
               </tr>
             )}
-            {rows.map((r) => (
+            {topPad > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={colCount} style={{ height: topPad, padding: 0, border: 0 }} />
+              </tr>
+            )}
+            {visibleRows.map((r) => (
               <tr key={r.prd_name} className="group">
                 <th
                   scope="row"
@@ -165,23 +198,23 @@ const BalanceTable = ({
                 })}
               </tr>
             ))}
+            {bottomPad > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={colCount} style={{ height: bottomPad, padding: 0, border: 0 }} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 border-t border-base-300 text-xs text-base-content/60 shrink-0">
         <span>
-          Showing {formatQty(rows.length)} of {formatQty(totalProducts)} products · products with earliest Net Req are on top ·{" "}
-          <b className="text-base-content">bold</b> = new SO due that day · hover a cell for details
+          Showing {formatQty(rows.length)} of {formatQty(totalProducts)} products
           {calendarFallback && " · working-day calendar unavailable, Sundays hidden"}
         </span>
       </footer>
     </section>
   );
-
-  return isFullscreen && typeof document !== "undefined"
-    ? createPortal(tableSection, document.body)
-    : tableSection;
 };
 
 export default memo(BalanceTable);

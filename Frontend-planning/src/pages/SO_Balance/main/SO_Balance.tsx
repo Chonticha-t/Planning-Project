@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, Suspense } from "react";
+import { CalendarRange, ClipboardList } from "lucide-react";
 import toast from "react-hot-toast";
 import type { GridSortModel } from "@mui/x-data-grid";
 
@@ -13,7 +14,18 @@ import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
 import "../../Planning_Summary_Gate/gateTheme.css";
 import { toDMY } from "../utils";
 
-const SO_Balance = () => {
+const Planning_Overview = React.lazy(
+  () => import("@/pages/Planning_Overview/main/Planning_Overview")
+);
+
+export type SOBalanceTab = "balance" | "overview";
+
+interface SOBalanceProps {
+  defaultTab?: SOBalanceTab;
+}
+
+const SO_Balance = ({ defaultTab = "balance" }: SOBalanceProps) => {
+  const [activeTab, setActiveTab] = useState<SOBalanceTab>(defaultTab);
   const [filter, setFilter] = useState<PlanningFilter>(EMPTY_FILTER);
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const [isExchangeRateModalOpen, setIsExchangeRateModalOpen] = useState(false);
@@ -78,39 +90,91 @@ const SO_Balance = () => {
 
   return (
     <div className="planning-summary-gate flex flex-col gap-3 w-full">
-      <FilterBar
-        filter={filter}
-        products={products}
-        sortModel={sortModel}
-        onSortModelChange={setSortModel}
-        onChange={setFilter}
-        onSearch={handleSearch}
-        onReset={handleReset}
-      />
-      <SummaryCards
-        summary={summary}
-        lastUpdatedAt={lastUpdatedAt}
-        productCount={productCount}
-      />
-      <SOBalanceTable
-        rows={rows}
-        loading={loading}
-        sortModel={sortModel}
-        onSortModelChange={setSortModel}
-        onViewHistory={setSelectedHistoryRow}
-        onExport={handleExport}
-        onOpenExchangeRate={handleOpenExchangeRate}
-      />
-      <ExchangeRateModal
-        isOpen={isExchangeRateModalOpen}
-        onClose={handleCloseExchangeRate}
-        dbVersion={dbVersion}
-      />
-      <SOBalanceHistoryModal
-        isOpen={Boolean(selectedHistoryRow)}
-        row={selectedHistoryRow}
-        onClose={() => setSelectedHistoryRow(null)}
-      />
+      {/* Tab switcher: SO Balance / Overview */}
+      <div className="flex items-center">
+        <div
+          role="tablist"
+          aria-label="SO Balance views"
+          className="inline-flex items-center gap-1 rounded-xl border border-base-300 bg-base-100 p-1 shadow-2xs"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "balance"}
+            onClick={() => setActiveTab("balance")}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeTab === "balance"
+                ? "bg-[#4f46e5] text-white shadow-xs"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/70"
+            }`}
+          >
+            <ClipboardList size={14} />
+            <span>SO Balance</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "overview"}
+            onClick={() => setActiveTab("overview")}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeTab === "overview"
+                ? "bg-[#4f46e5] text-white shadow-xs"
+                : "text-base-content/70 hover:text-base-content hover:bg-base-200/70"
+            }`}
+          >
+            <CalendarRange size={14} />
+            <span>Overview</span>
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "overview" ? (
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center py-16 text-sm text-base-content/60">
+              Loading Overview...
+            </div>
+          }
+        >
+          <Planning_Overview />
+        </Suspense>
+      ) : (
+        <>
+          <FilterBar
+            filter={filter}
+            products={products}
+            sortModel={sortModel}
+            onSortModelChange={setSortModel}
+            onChange={setFilter}
+            onSearch={handleSearch}
+            onReset={handleReset}
+          />
+          <SummaryCards
+            summary={summary}
+            lastUpdatedAt={lastUpdatedAt}
+            productCount={productCount}
+          />
+          <SOBalanceTable
+            rows={rows}
+            loading={loading}
+            sortModel={sortModel}
+            onSortModelChange={setSortModel}
+            onViewHistory={setSelectedHistoryRow}
+            onExport={handleExport}
+            onOpenExchangeRate={handleOpenExchangeRate}
+          />
+          <ExchangeRateModal
+            isOpen={isExchangeRateModalOpen}
+            onClose={handleCloseExchangeRate}
+            dbVersion={dbVersion}
+          />
+          <SOBalanceHistoryModal
+            isOpen={Boolean(selectedHistoryRow)}
+            row={selectedHistoryRow}
+            onClose={() => setSelectedHistoryRow(null)}
+          />
+        </>
+      )}
     </div>
   );
 };
