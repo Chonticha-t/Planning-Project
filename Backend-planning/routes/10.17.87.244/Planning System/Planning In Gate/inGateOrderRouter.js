@@ -145,6 +145,7 @@ const parseSaveOrderPayload = (body) => {
   const pushedOutLots = parseLabelList(body.pushedOutLots, "pushedOutLots");
   const nowFitLots = parseLabelList(body.nowFitLots, "nowFitLots");
   const reason = cleanOptionalText(body.reason ?? body.note, 500, "reason");
+  const resetToPlan = body.resetToPlan === true;
   return {
     gate: body.gate,
     date: body.date,
@@ -157,6 +158,7 @@ const parseSaveOrderPayload = (body) => {
     pushedOutLots,
     nowFitLots,
     reason,
+    resetToPlan,
   };
 };
 
@@ -484,12 +486,21 @@ function createInGateOrderRouter({ pool, verifyPlanner }) {
         });
       }
 
+      if (payload.resetToPlan && (!existing || !Array.isArray(existing.card_ids) || existing.card_ids.length === 0)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          status: "ERROR",
+          code: "NO_CHANGES",
+          message: "Queue order is already following the Capacity Leveling plan.",
+        });
+      }
+
       const beforeOrder = reconcileBeforeOrder(existing?.card_ids, payload.cardIdsBefore, payload.cardIds);
       let moves = computePositionMoves(beforeOrder, payload.cardIds, payload.items, payload.inactiveCardIds);
       if (moves.length === 0 && payload.inactiveCardIds.length > 0) {
         moves = computePositionMoves(beforeOrder, payload.cardIds, payload.items);
       }
-      if (moves.length === 0) {
+      if (!payload.resetToPlan && moves.length === 0) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           status: "ERROR",
@@ -502,6 +513,8 @@ function createInGateOrderRouter({ pool, verifyPlanner }) {
       const nextRevision = currentRevision + 1;
       const orderId = existing ? existing.order_id : randomUUID();
       const historyId = randomUUID();
+      const storedCardIds = payload.resetToPlan ? [] : payload.cardIds;
+      const storedReason = payload.reason || (payload.resetToPlan ? `Reset to Plan v${planVersion}` : null);
       let savedOrderRow;
 
       if (existing) {
@@ -518,7 +531,7 @@ function createInGateOrderRouter({ pool, verifyPlanner }) {
              WHERE order_id = $1
              RETURNING order_id, gate_name, to_char(planned_date, 'YYYY-MM-DD') AS planned_date,
                        plan_id, plan_version, revision, card_ids, note, updated_by, updated_at`,
-            [orderId, payload.planId, planVersion, nextRevision, JSON.stringify(payload.cardIds), payload.reason, actor]
+            [orderId, payload.planId, planVersion, nextRevision, JSON.stringify(storedCardIds), storedReason, actor]
           )
         ).rows[0];
       } else {
@@ -538,8 +551,8 @@ function createInGateOrderRouter({ pool, verifyPlanner }) {
               payload.planId,
               planVersion,
               nextRevision,
-              JSON.stringify(payload.cardIds),
-              payload.reason,
+              JSON.stringify(storedCardIds),
+              storedReason,
               actor,
             ]
           )
@@ -568,21 +581,23 @@ function createInGateOrderRouter({ pool, verifyPlanner }) {
             JSON.stringify(payload.cardIds),
             JSON.stringify(payload.pushedOutLots),
             JSON.stringify(payload.nowFitLots),
-            payload.reason,
+            storedReason,
             actor,
           ]
         )
       ).rows[0];
 
-      await client.query(INSERT_MOVES_SQL, [
-        historyId,
-        moves.map((m) => m.cardId),
-        moves.map((m) => m.lotNo),
-        moves.map((m) => m.prdName),
-        moves.map((m) => m.itemKind),
-        moves.map((m) => m.fromPosition),
-        moves.map((m) => m.toPosition),
-      ]);
+      if (moves.length > 0) {
+        await client.query(INSERT_MOVES_SQL, [
+          historyId,
+          moves.map((m) => m.cardId),
+          moves.map((m) => m.lotNo),
+          moves.map((m) => m.prdName),
+          moves.map((m) => m.itemKind),
+          moves.map((m) => m.fromPosition),
+          moves.map((m) => m.toPosition),
+        ]);
+      }
 
       await client.query("COMMIT");
 
@@ -597,7 +612,7 @@ function createInGateOrderRouter({ pool, verifyPlanner }) {
 
       return res.json({
         status: "OK",
-        message: "Queue order saved.",
+        message: payload.resetToPlan ? `Queue order reset to Plan v${planVersion}.` : "Queue order saved.",
         data: {
           order: formatOrderRow(savedOrderRow),
           historyEntry: formatHistoryRow(historyRow, formattedMoves),

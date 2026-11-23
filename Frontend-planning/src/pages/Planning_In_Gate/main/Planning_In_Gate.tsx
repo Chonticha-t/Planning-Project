@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { AlertCircle, Clock, History } from "lucide-react";
+import { AlertCircle, Clock, History, RotateCcw } from "lucide-react";
 import "../../Planning_Summary_Gate/gateTheme.css";
 import { useAuth } from "@/context/AuthContext";
 import { ConfirmReorderModal } from "../../Capacity_Leveling/components/ConfirmReorderModal";
@@ -12,6 +12,7 @@ import { ApiWorkListTable } from "../components/ApiWorkListTable";
 import { ApiMonthlySummary } from "../components/ApiMonthlySummary";
 import { HistoryPanel } from "../components/HistoryPanel";
 import { PlannedDateDropdown } from "../components/PlannedDateDropdown";
+import { ResetInGateOrderModal } from "../components/ResetInGateOrderModal";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 
 const Planning_In_Gate = () => {
@@ -23,10 +24,12 @@ const Planning_In_Gate = () => {
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
     allocations, finishedRows,
     changeCategory, changeView, countText, refresh, exportPlan,
-    hasUnsavedChanges, saving, currentOrder, pendingDiff, historyRefreshToken,
-    stageMoveLot, stageReorderById, confirmReorder, undoOrder, saveOrder,
+    hasUnsavedChanges, saving, currentOrder, hasSavedCurrentOrder, isCurrentScopeReset, canResetOrder,
+    pendingDiff, historyRefreshToken,
+    stageMoveLot, stageReorderById, confirmReorder, undoOrder, resetCurrentOrder, saveOrder,
   } = usePlanningInGate();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
   const [pendingReorder, setPendingReorder] = useState<StagedReorder | null>(null);
   const orderHistory = useInGateOrderHistory(gate, date, historyOpen, historyRefreshToken);
 
@@ -102,7 +105,7 @@ const Planning_In_Gate = () => {
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#316be8]/10 text-[#316be8] border border-[#316be8]/20">
                     Plan v{saved.plan.version}
                   </span>
-                  {currentOrder && (
+                  {hasSavedCurrentOrder && currentOrder && !isCurrentScopeReset && (
                     <span
                       title={`In Gate order r${currentOrder.revision} · saved by ${currentOrder.updatedBy} · ${dayjs(currentOrder.updatedAt).format("YYYY-MM-DD HH:mm")}`}
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20"
@@ -150,6 +153,22 @@ const Planning_In_Gate = () => {
                     <>
                       <button
                         type="button"
+                        disabled={!canResetOrder}
+                        onClick={() => void requirePlanner(() => setResetModalOpen(true))}
+                        title={
+                          canResetOrder
+                            ? `Reset ${gate} (${date}) queue order back to Plan v${saved.plan.version}`
+                            : isCurrentScopeReset
+                              ? "Reset draft pending — click Save order to apply"
+                              : `Queue order already matches Plan v${saved.plan.version}`
+                        }
+                        className="btn btn-xs h-8 rounded-lg border border-rose-200 bg-base-100 px-3 text-xs font-bold text-rose-600 flex items-center gap-1.5 hover:bg-rose-50 hover:border-rose-300 transition-colors disabled:border-base-300 disabled:text-base-content/40 disabled:opacity-35 cursor-pointer"
+                      >
+                        <RotateCcw size={13} />
+                        Reset
+                      </button>
+                      <button
+                        type="button"
                         disabled={!hasUnsavedChanges || saving}
                         onClick={() => void requirePlanner(() => undoOrder())}
                         title={hasUnsavedChanges ? "Revert uncommitted reorders" : "No changes to undo"}
@@ -171,6 +190,11 @@ const Planning_In_Gate = () => {
                   )}
                 </div>
               </div>
+              {isCurrentScopeReset && workMode === "edit" && (
+                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-950">
+                  Reset to Plan v{saved.plan.version} · Draft not saved. Queue order for <strong>{gate}</strong> ({date}) was restored to Capacity Leveling order. Click <strong>Save order</strong> to apply or <strong>Undo</strong> to cancel.
+                </div>
+              )}
               {(saved.snapshot.undatedArrivalCount > 0 || saved.snapshot.orphanMoves.length > 0) && <p className="text-xs text-warning">Some arrivals have missing dates or unmatched overrides. Review this plan in Capacity Leveling.</p>}
               <ApiWorkListTable
                 key={JSON.stringify([saved.plan.planId, category, gate, date])}
@@ -204,6 +228,20 @@ const Planning_In_Gate = () => {
               savedBy: saved.plan.savedBy,
               reason: saved.plan.note ?? undefined,
               sourceCategory: category,
+            }}
+          />
+        )}
+        {resetModalOpen && saved && (
+          <ResetInGateOrderModal
+            gate={gate}
+            date={date}
+            planVersion={saved.plan.version}
+            hasSavedOrder={hasSavedCurrentOrder}
+            busy={saving}
+            onCancel={() => setResetModalOpen(false)}
+            onConfirm={() => {
+              resetCurrentOrder();
+              setResetModalOpen(false);
             }}
           />
         )}

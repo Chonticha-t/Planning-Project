@@ -22,20 +22,26 @@ export interface SaveOrderItemInput {
 
 export const orderScopeKey = (gate: string, date: string): string => JSON.stringify([gate, date]);
 
+export const hasActiveInGateOrder = (order: InGateQueueOrder | null | undefined): boolean =>
+  Boolean(order && Array.isArray(order.cardIds) && order.cardIds.length > 0);
+
 /**
  * Option A overlay: apply saved Planning In Gate queue orders on top of the
  * Capacity Leveling plan's boardCardOrder per (gate, planned_date).
+ * Scopes listed in `resetScopes` fall back to `planOrder`.
  */
 export function mergeInGateOrders(
   planOrder: BoardCardOrder,
   inGateOrders: readonly InGateQueueOrder[],
+  resetScopes?: ReadonlySet<string>,
 ): BoardCardOrder {
   if (!inGateOrders.length) return planOrder;
   const merged = new Map<string, readonly string[]>(planOrder);
   for (const order of inGateOrders) {
-    if (order.gate && order.date && Array.isArray(order.cardIds) && order.cardIds.length > 0) {
-      merged.set(orderScopeKey(order.gate, order.date), order.cardIds);
-    }
+    if (!order.gate || !order.date || !hasActiveInGateOrder(order)) continue;
+    const key = orderScopeKey(order.gate, order.date);
+    if (resetScopes?.has(key)) continue;
+    merged.set(key, order.cardIds);
   }
   return merged;
 }

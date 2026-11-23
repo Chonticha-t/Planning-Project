@@ -484,3 +484,83 @@ test("unknown planId returns 404, no-op returns 400, and DB errors hide sensitiv
     assert.equal(db.log.at(-1), "RELEASE");
   });
 });
+
+test("resetToPlan clears active card_ids while preserving revision lineage, history and allowing later reorders", async () => {
+  await withServer({ actor: "planner_reset" }, async (base) => {
+    // 1. Resetting before any custom In Gate order exists returns 400 NO_CHANGES
+    const emptyReset = await fetch(`${base}/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        gate: "FVAC",
+        date: "2026-11-23",
+        planId: PLAN_V10_ID,
+        baseRevision: 0,
+        cardIdsBefore: [CARD_A, CARD_B],
+        cardIds: [CARD_A, CARD_B],
+        resetToPlan: true,
+      }),
+    });
+    assert.equal(emptyReset.status, 400);
+    assert.equal((await emptyReset.json()).code, "NO_CHANGES");
+
+    // 2. Save custom order rev 1 ([B, A])
+    const save1 = await fetch(`${base}/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        gate: "FVAC",
+        date: "2026-11-23",
+        planId: PLAN_V10_ID,
+        baseRevision: 0,
+        cardIdsBefore: [CARD_A, CARD_B],
+        cardIds: [CARD_B, CARD_A],
+      }),
+    });
+    assert.equal(save1.status, 200);
+
+    // 3. Reset back to Plan v10 order ([A, B]) -> rev 2 with cardIds: []
+    const resetRes = await fetch(`${base}/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        gate: "FVAC",
+        date: "2026-11-23",
+        planId: PLAN_V10_ID,
+        baseRevision: 1,
+        cardIdsBefore: [CARD_B, CARD_A],
+        cardIds: [CARD_A, CARD_B],
+        resetToPlan: true,
+      }),
+    });
+    assert.equal(resetRes.status, 200);
+    const resetBody = await resetRes.json();
+    assert.equal(resetBody.data.order.revision, 2);
+    assert.deepEqual(resetBody.data.order.cardIds, []);
+    assert.equal(resetBody.data.historyEntry.reason, "Reset to Plan v10");
+    assert.equal(resetBody.data.historyEntry.moves.length, 2);
+
+    // 4. Subsequent reorder after reset works cleanly against baseRevision=2 -> rev 3
+    const save3 = await fetch(`${base}/order`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        gate: "FVAC",
+        date: "2026-11-23",
+        planId: PLAN_V11_ID,
+        baseRevision: 2,
+        cardIdsBefore: [CARD_A, CARD_B, CARD_D],
+        cardIds: [CARD_D, CARD_A, CARD_B],
+      }),
+    });
+    assert.equal(save3.status, 200);
+    const body3 = await save3.json();
+    assert.equal(body3.data.order.revision, 3);
+    assert.deepEqual(body3.data.order.cardIds, [CARD_D, CARD_A, CARD_B]);
+
+    // 5. History retains all 3 revisions newest first
+    const hist = await (await fetch(`${base}/order/history?gate=FVAC&date=2026-11-23`)).json();
+    assert.deepEqual(hist.data.entries.map((e) => e.revision), [3, 2, 1]);
+    assert.equal(hist.data.entries[1].reason, "Reset to Plan v10");
+  });
+});

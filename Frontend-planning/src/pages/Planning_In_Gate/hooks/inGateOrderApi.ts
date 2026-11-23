@@ -30,6 +30,7 @@ export interface SaveInGateOrderPayload {
   pushedOutLots?: string[];
   nowFitLots?: string[];
   reason?: string;
+  resetToPlan?: boolean;
 }
 
 export interface SaveInGateOrderResult {

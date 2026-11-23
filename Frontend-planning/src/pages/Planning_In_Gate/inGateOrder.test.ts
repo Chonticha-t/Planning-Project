@@ -7,6 +7,7 @@ import {
   buildSaveOrderItems,
   computeOrderDiff,
   findDirtyOrderScopes,
+  hasActiveInGateOrder,
   mergeInGateOrders,
   orderScopeKey,
 } from "./inGateOrder.ts";
@@ -110,6 +111,15 @@ test("Option A mergeInGateOrders overlays In Gate order on top of Capacity Level
   assert.deepEqual(ordered.map((lot) => lot.label), ["LOT-C", "LOT-A", "LOT-D"]);
   // Unrelated gate keeps Capacity Leveling order untouched
   assert.ok(merged.has(orderScopeKey("FADL", DAY)));
+
+  // Staging a reset for (FVAC, DAY) restores Capacity Leveling's plan order
+  const resetMerged = mergeInGateOrders(planOrder, inGateOrders, new Set([orderScopeKey("FVAC", DAY)]));
+  const resetOrdered = applyBoardCardOrder([lotA, lotC, lotD], resetMerged);
+  assert.deepEqual(resetOrdered.map((lot) => lot.label), ["LOT-A", "LOT-C", "LOT-D"]);
+
+  // Persisted reset (cardIds: []) is treated as inactive so planOrder applies automatically
+  assert.equal(hasActiveInGateOrder(inGateOrders[0]), true);
+  assert.equal(hasActiveInGateOrder({ ...inGateOrders[0], cardIds: [] }), false);
 });
 
 test("findDirtyOrderScopes detects real changes and clears when moved back to original position", () => {

@@ -15,6 +15,7 @@ import {
   buildSaveOrderItems,
   computeOrderDiff,
   findDirtyOrderScopes,
+  hasActiveInGateOrder,
   mergeInGateOrders,
   orderScopeKey,
 } from "../inGateOrder";
@@ -91,11 +92,13 @@ export default function usePlanningInGate() {
   }, [tvMode, loading, observedLoading, revalidatePlan, revalidateOrders, revalidateObserved]);
 
   const [draftCardOrder, setDraftCardOrder] = useState<BoardCardOrder>(new Map());
+  const [resetScopes, setResetScopes] = useState<ReadonlySet<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
 
   useEffect(() => {
     setDraftCardOrder(new Map());
+    setResetScopes(new Set());
   }, [saved?.plan.planId, saved?.plan.version]);
 
   const planCardOrder = useMemo(() => readBoardCardOrder(saved?.snapshot.boardCardOrder), [saved]);
@@ -103,10 +106,12 @@ export default function usePlanningInGate() {
     () => mergeInGateOrders(planCardOrder, inGateOrders.orders),
     [planCardOrder, inGateOrders.orders],
   );
-  const effectiveCardOrder = useMemo(
-    () => new Map([...savedCardOrder, ...draftCardOrder]),
-    [savedCardOrder, draftCardOrder],
-  );
+  const effectiveCardOrder = useMemo(() => {
+    const base = resetScopes.size > 0
+      ? mergeInGateOrders(planCardOrder, inGateOrders.orders, resetScopes)
+      : savedCardOrder;
+    return new Map([...base, ...draftCardOrder]);
+  }, [planCardOrder, inGateOrders.orders, resetScopes, savedCardOrder, draftCardOrder]);
 
   const allBoardLots = useMemo(() => {
     if (!saved) return [];
@@ -181,11 +186,11 @@ export default function usePlanningInGate() {
   };
 
   const dirtyScopes = useMemo(() => {
-    if (!saved || draftCardOrder.size === 0) return [];
+    if (!saved || (draftCardOrder.size === 0 && resetScopes.size === 0)) return [];
     return findDirtyOrderScopes(allBoardLots, savedCardOrder, effectiveCardOrder);
-  }, [saved, allBoardLots, savedCardOrder, effectiveCardOrder, draftCardOrder.size]);
+  }, [saved, allBoardLots, savedCardOrder, effectiveCardOrder, draftCardOrder.size, resetScopes.size]);
 
-  const hasUnsavedChanges = dirtyScopes.length > 0;
+  const hasUnsavedChanges = dirtyScopes.length > 0 || resetScopes.size > 0;
 
   const pendingDiff = useMemo(() => {
     if (!saved || !hasUnsavedChanges) return null;
@@ -195,6 +200,15 @@ export default function usePlanningInGate() {
   const currentOrder = useMemo(
     () => inGateOrders.orders.find((order) => order.gate === gate && order.date === date) ?? null,
     [inGateOrders.orders, gate, date],
+  );
+  const currentScopeKey = orderScopeKey(gate, date);
+  const hasSavedCurrentOrder = hasActiveInGateOrder(currentOrder);
+  const isCurrentScopeReset = resetScopes.has(currentScopeKey);
+  const canResetOrder = Boolean(
+    saved
+    && !saving
+    && !isCurrentScopeReset
+    && (hasSavedCurrentOrder || dirtyScopes.some((scope) => scope.key === currentScopeKey)),
   );
 
   const stageMoveLot = (
@@ -264,6 +278,12 @@ export default function usePlanningInGate() {
     if (scopeKey) {
       const ids = nextOrder.get(scopeKey);
       if (!ids) return;
+      setResetScopes((prev) => {
+        if (!prev.has(scopeKey)) return prev;
+        const next = new Set(prev);
+        next.delete(scopeKey);
+        return next;
+      });
       setDraftCardOrder((prev) => {
         const updated = new Map(prev);
         updated.set(scopeKey, ids);
@@ -283,17 +303,69 @@ export default function usePlanningInGate() {
 
   const undoOrder = () => {
     setDraftCardOrder(new Map());
+    setResetScopes(new Set());
+  };
+
+  const resetCurrentOrder = () => {
+    if (!saved || !gate || !date) return;
+    const scopeKey = orderScopeKey(gate, date);
+    setDraftCardOrder((prev) => {
+      if (!prev.has(scopeKey)) return prev;
+      const next = new Map(prev);
+      next.delete(scopeKey);
+      return next;
+    });
+    if (hasSavedCurrentOrder) {
+      setResetScopes((prev) => {
+        const next = new Set(prev);
+        next.add(scopeKey);
+        return next;
+      });
+      toast.success(`Reset to Plan v${saved.plan.version}. Review the draft and click Save order to apply.`);
+    } else {
+      toast.success(`Draft changes reverted to Plan v${saved.plan.version}.`);
+    }
   };
 
   const saveOrder = async (reason?: string) => {
-    if (!saved || dirtyScopes.length === 0 || saving) return;
+    if (!saved || (!dirtyScopes.length && !resetScopes.size) || saving) return;
     setSaving(true);
     const ordersByScope = new Map(inGateOrders.orders.map((order) => [orderScopeKey(order.gate, order.date), order]));
+    const scopesToSave = dirtyScopes.map((scope) => ({
+      ...scope,
+      isReset: resetScopes.has(scope.key),
+    }));
+    const includedKeys = new Set(scopesToSave.map((scope) => scope.key));
+    for (const resetKey of resetScopes) {
+      if (includedKeys.has(resetKey)) continue;
+      let parsedGate: string;
+      let parsedDate: string;
+      try {
+        [parsedGate, parsedDate] = JSON.parse(resetKey) as [string, string];
+      } catch {
+        continue;
+      }
+      const scopeLots = allBoardLots.filter((lot) => lot.gate === parsedGate && lot.plannedDate === parsedDate);
+      if (!scopeLots.length) continue;
+      const beforeLots = applyBoardCardOrder(scopeLots, savedCardOrder);
+      const afterLots = applyBoardCardOrder(scopeLots, effectiveCardOrder);
+      scopesToSave.push({
+        key: resetKey,
+        gate: parsedGate,
+        date: parsedDate,
+        beforeIds: beforeLots.map((lot) => lot.id),
+        afterIds: afterLots.map((lot) => lot.id),
+        beforeLots,
+        afterLots,
+        isReset: true,
+      });
+    }
+
     const savedKeys: string[] = [];
     let lastRevision: number | null = null;
-    const currentScopeKey = orderScopeKey(gate, date);
+    let lastWasReset = false;
     try {
-      for (const scope of dirtyScopes) {
+      for (const scope of scopesToSave) {
         const existing = ordersByScope.get(scope.key);
         const inactiveSet = new Set(
           scope.afterLots
@@ -313,14 +385,18 @@ export default function usePlanningInGate() {
           items: buildSaveOrderItems(scope.afterLots),
           pushedOutLots: diff?.pushedOut ?? [],
           nowFitLots: diff?.nowFit ?? [],
-          reason,
+          reason: reason ?? (scope.isReset ? `Reset to Plan v${saved.plan.version}` : undefined),
+          resetToPlan: scope.isReset,
         });
         savedKeys.push(scope.key);
         lastRevision = result.order.revision;
+        lastWasReset = scope.isReset;
       }
       toast.success(
-        dirtyScopes.length === 1 && lastRevision !== null
-          ? `Queue order saved (Order r${lastRevision})`
+        scopesToSave.length === 1 && lastRevision !== null
+          ? lastWasReset
+            ? `Queue order reset to Plan v${saved.plan.version} (Order r${lastRevision})`
+            : `Queue order saved (Order r${lastRevision})`
           : `Queue order saved for ${savedKeys.length} gates/days`,
       );
     } catch (err: unknown) {
@@ -335,6 +411,11 @@ export default function usePlanningInGate() {
         const savedSet = new Set(savedKeys);
         setDraftCardOrder((prev) => {
           const next = new Map(prev);
+          for (const key of savedSet) next.delete(key);
+          return next;
+        });
+        setResetScopes((prev) => {
+          const next = new Set(prev);
           for (const key of savedSet) next.delete(key);
           return next;
         });
@@ -431,7 +512,8 @@ export default function usePlanningInGate() {
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
     allocations, finishedRows,
     changeCategory, changeView, countText, refresh, exportPlan,
-    hasUnsavedChanges, saving, currentOrder, pendingDiff, historyRefreshToken,
-    moveLot, stageMoveLot, stageReorderById, confirmReorder, undoOrder, saveOrder,
+    hasUnsavedChanges, saving, currentOrder, hasSavedCurrentOrder, isCurrentScopeReset, canResetOrder,
+    pendingDiff, historyRefreshToken,
+    moveLot, stageMoveLot, stageReorderById, confirmReorder, undoOrder, resetCurrentOrder, saveOrder,
   };
 }

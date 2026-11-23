@@ -251,11 +251,17 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       {e.shown.length} {e.shown.length === 1 ? "move" : "moves"}
                     </span>
                   </div>
-                  <ul className="divide-y divide-base-200/60 border-t border-base-200 pt-1">
-                    {e.shown.map((m) => (
-                      <MoveLine key={m.cardId ?? m.lotId} move={m} />
-                    ))}
-                  </ul>
+                  {e.shown.length > 0 ? (
+                    <ul className="divide-y divide-base-200/60 border-t border-base-200 pt-1">
+                      {e.shown.map((m) => (
+                        <MoveLine key={m.cardId ?? m.lotId} move={m} />
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="border-t border-base-200 pt-2 text-xs text-base-content/55">
+                      Restored to Capacity Leveling plan order.
+                    </p>
+                  )}
                   {!filtering && (e.pushedOut.length > 0 || e.nowFit.length > 0) && (
                     <div className="mt-2 pt-2 border-t border-base-200">
                       <CapacityEffect diff={e} />
