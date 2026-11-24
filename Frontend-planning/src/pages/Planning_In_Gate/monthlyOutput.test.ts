@@ -89,3 +89,20 @@ test("monthly KPIs compute daily average across active output days and count pas
   assert.equal(unknownMetrics.dailyAverage, null);
   assert.equal(unknownMetrics.comparedPlanDays, 0);
 });
+
+test("validators enforce matching planId when In Plan only scope is active", () => {
+  const planId = "11111111-1111-4111-8111-111111111111";
+  const otherId = "22222222-2222-4222-8222-222222222222";
+  assert.equal(validateMonthlyOutput({ ...payload(), planId }, "2026-11", "ALL", "", planId).planId, planId);
+  assert.throws(() => validateMonthlyOutput(payload(), "2026-11", "ALL", "", planId));
+  assert.throws(() => validateMonthlyOutput({ ...payload(), planId: otherId }, "2026-11", "ALL", "", planId));
+  assert.throws(() => validateMonthlyOutput({ ...payload(), planId }, "2026-11", "ALL", "", null));
+
+  const selection: OutputSelection = { month: "2026-11", category: "ALL", search: "", gate: "GATE_A", date: row.date, product: row.product, asOf: checkedAt, planId };
+  const detail = { id: "10", gate: row.gate, product: row.product, lot: "LOT_A", nextGate: "GATE_B", date: row.date,
+    shift: row.shift, pcs: null, sheets: null, outAt: checkedAt, timeZone: "Asia/Bangkok" };
+  const page = { month: selection.month, category: "ALL", search: "", checkedAt, planId, rows: [detail], nextCursor: null };
+  assert.equal(validateOutputLots(page, selection).planId, planId);
+  assert.throws(() => validateOutputLots({ ...page, planId: otherId }, selection));
+  assert.throws(() => validateOutputLots({ ...page, planId: undefined }, selection));
+});

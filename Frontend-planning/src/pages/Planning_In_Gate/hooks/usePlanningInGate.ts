@@ -8,7 +8,7 @@ import { allocateBoardShifts } from "../../Capacity_Leveling/utils/boardShiftAll
 import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, type BoardCardOrder } from "../../Capacity_Leveling/utils/boardCardOrder";
 import { buildBoardLots, toLotItem } from "../../Capacity_Leveling/utils/levelingCalculations";
 import type { LotItem } from "../../Capacity_Leveling/types";
-import type { CountUnit, InGateCategory, InGateView, WorkMode } from "../types";
+import type { CountUnit, InGateCategory, InGateView, MonthOutputScope, WorkMode } from "../types";
 import { planStatus, savedPlanGates, savedViewRows } from "../savedPlan";
 import { buildWorkRows } from "../finishedPlan";
 import {
@@ -49,7 +49,8 @@ export default function usePlanningInGate() {
   const [selectedGate, setSelectedGate] = useState("FVAC");
   const [month, setMonth] = useState(today.slice(0, 7));
   const view: InGateView = params.get("view") === "month" ? "month" : "day";
-  const [workMode, setWorkMode] = useState<WorkMode>("edit");
+  const [workMode, setWorkMode] = useState<WorkMode>("view");
+  const [outputScope, setOutputScope] = useState<MonthOutputScope>("all");
   const [unit, setUnit] = useState<CountUnit>("lots");
   const [search, setSearch] = useState("");
   const [tvMode, setTvMode] = useState(false);
@@ -58,7 +59,9 @@ export default function usePlanningInGate() {
   const inGateOrders = useInGateOrders(true);
   const { revalidate: revalidateOrders } = inGateOrders;
   const finished = useFinishedToday(date, view === "day");
-  const monthly = useMonthlyOutput(month, category, search, view === "month");
+  const effectiveOutputScope: MonthOutputScope = outputScope === "plan" && saved?.plan.planId ? "plan" : "all";
+  const monthlyPlanId = effectiveOutputScope === "plan" ? saved?.plan.planId ?? null : null;
+  const monthly = useMonthlyOutput(month, category, search, view === "month", monthlyPlanId);
   const { loading: observedLoading, revalidate: revalidateObserved } = view === "day" ? finished : monthly;
 
   useEffect(() => {
@@ -514,7 +517,7 @@ export default function usePlanningInGate() {
 
   return {
     today, category, view, date, setDate, month, setMonth, unit, setUnit, search, setSearch,
-    workMode, setWorkMode, tvMode, setTvMode, exporting,
+    workMode, setWorkMode, outputScope: effectiveOutputScope, setOutputScope, tvMode, setTvMode, exporting,
     saved, loading, error, reload, finished, monthly,
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
     allocations, monthAllocations, finishedRows,

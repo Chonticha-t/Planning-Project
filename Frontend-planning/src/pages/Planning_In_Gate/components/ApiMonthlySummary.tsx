@@ -1,13 +1,13 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
 import type { BoardShiftAllocation, LevelingData, LotItem } from "../../Capacity_Leveling/types";
-import type { CountUnit, InGateCategory } from "../types";
+import type { CountUnit, InGateCategory, MonthOutputScope } from "../types";
 import type { useMonthlyOutput } from "../hooks/useMonthlyOutput";
 import { computeMonthlyKpis, observedMonth } from "../monthlyOutput";
 import { ObservedLotDrawer } from "./ObservedLotDrawer";
+import { PlannedArrivalDrawer } from "./PlannedArrivalDrawer";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { planShiftBadge, planShiftTotals, planStatus, savedMonth, type PlanShiftSummary } from "../savedPlan";
+import { planShiftTotals, savedMonth, type PlanShiftSummary } from "../savedPlan";
 import { MonthlyChart, type ChartDay } from "./MonthlyChart";
 
 interface Props {
@@ -18,9 +18,12 @@ interface Props {
   unit: CountUnit;
   search: string;
   version?: number;
+  planId?: string;
   gate: string;
   category: InGateCategory;
   output: ReturnType<typeof useMonthlyOutput>;
+  outputScope?: MonthOutputScope;
+  onOutputScopeChange?: (scope: MonthOutputScope) => void;
   allocations?: ReadonlyMap<string, BoardShiftAllocation>;
   tvMode?: boolean;
 }
@@ -46,20 +49,17 @@ const formatPlanBreakdown = (shifts: PlanShiftSummary, unit: CountUnit) => {
 
 const formatPlanTooltip = (shifts: PlanShiftSummary, unit: CountUnit) => `Plan · ${formatPlanBreakdown(shifts, unit)}`;
 
-const SHIFT_BADGE_CLASS = {
-  ds: "bg-[#fdecb3] text-[#8a5a00]",
-  ns: "bg-[#e9e3fb] text-[#5a3fc0]",
-  over: "bg-rose-100 text-rose-700 border border-rose-300",
-  muted: "bg-base-200 text-base-content/70",
-} as const;
-
 /** Keep saved arrivals separate from observed output and unknown historical coverage. */
-export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, version, gate, category, output, allocations, tvMode = false }: Props) {
+export function ApiMonthlySummary({
+  rows, snapshot, month, today, unit, search, version, planId, gate, category, output,
+  outputScope = "all", onOutputScopeChange, allocations, tvMode = false,
+}: Props) {
   const [selected, setSelected] = useState<{ date: string; product?: string; mode: "actual" | "plan"; asOf?: string } | null>(null);
-  // A new search closes the open day details.
-  const [searchedFor, setSearchedFor] = useState(search);
-  if (searchedFor !== search) {
-    setSearchedFor(search);
+  // A new search or output scope closes the open day details.
+  const [searchedFor, setSearchedFor] = useState(`${search}\0${outputScope}`);
+  const currentFilterKey = `${search}\0${outputScope}`;
+  if (searchedFor !== currentFilterKey) {
+    setSearchedFor(currentFilterKey);
     setSelected(null);
   }
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -162,7 +162,8 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
   }), [data, actual, workToday, snapshot, unit]);
   const selection = useMemo(() => selected?.mode === "actual" && selected.asOf ? {
     month, category, search, gate, date: selected.date, product: selected.product, asOf: selected.asOf,
-  } : null, [selected, month, category, search, gate]);
+    ...(outputScope === "plan" && planId ? { planId } : {}),
+  } : null, [selected, month, category, search, gate, outputScope, planId]);
   const selectedRows = selected ? filtered.filter(row => row.plannedDate === selected.date && (!selected.product || row.product === selected.product)) : [];
   const selectedSummary = selected?.mode === "plan" ? planShiftTotals(selectedRows, unit, allocations) : null;
   const planTooltip = snapshot ? formatPlanTooltip(data.shifts, unit) : undefined;
@@ -198,7 +199,13 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
       : `All ${kpiMetrics.comparedPlanDays} observed past planned day(s) met or exceeded planned arrivals`
     : undefined;
   const kpis = [
-    { title: "Observed output (month)", value: show(actual.total, records.length > 0), sub: `${unit} · Next-gate scan evidence` },
+    {
+      title: "Observed output (month)",
+      value: show(actual.total, records.length > 0),
+      sub: outputScope === "plan" && snapshot
+        ? `${unit} · Filtered to ${version ? `Plan v${version}` : "saved plan"} (${month})`
+        : `${unit} · All recorded gate output`,
+    },
     {
       title: "Plan this month",
       value: snapshot ? fmt(data.total) : "—",
@@ -225,7 +232,34 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
     },
   ];
   return <div className="p-6 flex flex-col gap-4">
-    <h2 className="text-sm font-extrabold uppercase tracking-wider">Monthly summary</h2>
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-sm font-extrabold uppercase tracking-wider">Monthly summary</h2>
+      {onOutputScopeChange && (
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="font-semibold text-base-content/60">Output</span>
+          <div role="group" aria-label="Observed output scope" className="inline-flex h-8 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/80 p-0.5">
+            <button
+              type="button"
+              aria-pressed={outputScope === "all"}
+              onClick={() => onOutputScopeChange("all")}
+              className={`btn btn-xs h-full min-h-0 rounded-md px-2.5 font-bold whitespace-nowrap transition-all ${outputScope === "all" ? "btn-primary shadow-xs" : "btn-ghost text-base-content/70 hover:bg-base-300/50"}`}
+            >
+              All output
+            </button>
+            <button
+              type="button"
+              disabled={!snapshot || !planId}
+              aria-pressed={outputScope === "plan"}
+              title={snapshot && planId ? `Show observed output only for lots in ${version ? `Plan v${version}` : "saved plan"} (${month})` : "No saved plan available"}
+              onClick={() => onOutputScopeChange("plan")}
+              className={`btn btn-xs h-full min-h-0 rounded-md px-2.5 font-bold whitespace-nowrap transition-all disabled:opacity-40 ${outputScope === "plan" ? "btn-primary shadow-xs" : "btn-ghost text-base-content/70 hover:bg-base-300/50"}`}
+            >
+              {version ? `In Plan v${version} only` : "In Plan only"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
     {output.loading && <p role="status" className="text-sm text-base-content/60">Loading observed output…</p>}
     {output.error && <div role="alert" className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm">{output.error}{output.data && " Showing the last checked results."}<button type="button" className="btn btn-xs ml-2" onClick={output.reload}>Retry output</button></div>}
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -346,44 +380,27 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
         </tr></tfoot>
       </table>
     </div>
-    {selection && <ObservedLotDrawer key={JSON.stringify(selection)} selection={selection} onClose={() => setSelected(null)} />}
-    {selected?.mode === "plan" && createPortal(<div className="planning-summary-gate fixed inset-0 z-[120] flex justify-end" onKeyDown={event => event.key === 'Escape' && setSelected(null)}>
-      <button type="button" aria-label="Close lot details backdrop" className="absolute inset-0 bg-slate-900/30" onClick={() => setSelected(null)} />
-      <aside role="dialog" aria-modal="true" aria-label="Saved plan lots" className="relative h-full w-full max-w-3xl bg-base-100 border-l border-base-300 shadow-2xl overflow-y-auto p-5">
-        <div className="flex justify-between items-start gap-2">
-          <div>
-            <h3 className="font-bold">Planned arrivals · {selected.date}{selected.product ? ` · ${selected.product}` : ""}</h3>
-            <p className="text-xs text-base-content/60">Plan v{version} · Status at save</p>
-            {selectedSummary && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                <span className="rounded px-2 py-0.5 font-semibold bg-[#fdecb3] text-[#8a5a00]">D/S: {show(selectedSummary.ds, selectedSummary.hasDs)}</span>
-                <span className="rounded px-2 py-0.5 font-semibold bg-[#e9e3fb] text-[#5a3fc0]">N/S: {show(selectedSummary.ns, selectedSummary.hasNs)}</span>
-                {selectedSummary.hasOver && (
-                  <span className="rounded px-2 py-0.5 font-semibold bg-rose-100 text-rose-700 border border-rose-300">Over: {show(selectedSummary.over, true)}</span>
-                )}
-                {selectedSummary.hasNoLoad && (
-                  <span className="rounded px-2 py-0.5 font-semibold bg-base-200 text-base-content/75">No load: {show(selectedSummary.noLoad, true)}</span>
-                )}
-                {selectedSummary.hasNeed && (
-                  <span className="rounded px-2 py-0.5 font-semibold bg-base-200 text-base-content/75">Need WIP: {show(selectedSummary.need, true)}</span>
-                )}
-                {selectedSummary.hasUnassigned && (
-                  <span className="rounded px-2 py-0.5 font-semibold bg-base-200 text-base-content/75">Unassigned: {show(selectedSummary.unassigned, true)}</span>
-                )}
-                <span className="rounded px-2 py-0.5 font-semibold bg-base-200/70 text-base-content">Total: {fmt(selectedSummary.total)}</span>
-              </div>
-            )}
-          </div>
-          <button autoFocus type="button" className="btn btn-sm btn-ghost" aria-label="Close lot details" onClick={() => setSelected(null)}><X size={18} /></button>
-        </div>
-        <div className="mt-4 overflow-x-auto"><table className="table table-sm"><thead><tr><th>Product</th><th>Lot</th><th>Shift</th><th>Pcs</th><th>Sheets</th><th>Status at save</th></tr></thead>
-          <tbody>{selectedRows.slice(0, 200).map(lot => {
-            const badge = planShiftBadge(lot, allocations?.get(lot.id));
-            return <tr key={lot.id}><td>{lot.product}</td><td>{lot.label}</td><td><span title={badge.reason} className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-semibold ${SHIFT_BADGE_CLASS[badge.tone]}`}>{badge.label}</span></td><td>{formatGateQuantity(lot.qty, 'piece')}</td><td>{formatGateQuantity(lot.sheets, 'sheet')}</td><td>{planStatus(lot)}</td></tr>;
-          })}</tbody>
-        </table></div>{!selectedRows.length && <p className="p-8 text-center text-sm text-base-content/50">No saved arrivals for this selection.</p>}
-        {selectedRows.length > 200 && <p className="mt-3 text-xs text-base-content/60">Showing the first 200 records. Use the daily view or Excel for the full list.</p>}
-      </aside>
-    </div>, document.body)}
+    {selection && (
+      <ObservedLotDrawer
+        key={JSON.stringify(selection)}
+        selection={selection}
+        planVersion={version}
+        onClose={() => setSelected(null)}
+      />
+    )}
+    {selected?.mode === "plan" && (
+      <PlannedArrivalDrawer
+        key={`${selected.date}\0${selected.product ?? ""}`}
+        gate={gate}
+        date={selected.date}
+        product={selected.product}
+        version={version}
+        unit={unit}
+        rows={selectedRows}
+        summary={selectedSummary}
+        allocations={allocations}
+        onClose={() => setSelected(null)}
+      />
+    )}
   </div>;
 }

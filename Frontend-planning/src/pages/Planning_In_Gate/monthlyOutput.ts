@@ -6,6 +6,7 @@ export interface OutputGroup {
 }
 export interface MonthlyOutput {
   month: string; category: InGateCategory; search: string; checkedAt: string;
+  planId?: string;
   coverage: "observed_only"; rows: OutputGroup[]; workToday: string | null;
   firstRecordedAt: string | null; lastRecordedAt: string | null;
   shiftRules: { timeZone: string; dayStart: string; nightStart: string }[];
@@ -17,11 +18,12 @@ export interface OutputLot {
 }
 export interface OutputLotPage {
   month: string; category: InGateCategory; search: string; checkedAt: string;
+  planId?: string;
   rows: OutputLot[]; nextCursor: string | null;
 }
 export interface OutputSelection {
   month: string; category: InGateCategory; search: string;
-  gate: string; date: string; product?: string; asOf: string;
+  gate: string; date: string; product?: string; asOf: string; planId?: string;
 }
 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -36,8 +38,16 @@ const zone = (value: unknown): value is string => {
   try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; }
 };
 
-export function validateMonthlyOutput(value: unknown, month: string, category: InGateCategory, search: string): MonthlyOutput {
+export function validateMonthlyOutput(
+  value: unknown,
+  month: string,
+  category: InGateCategory,
+  search: string,
+  planId?: string | null,
+): MonthlyOutput {
+  const expectedPlanId = planId || null;
   if (!object(value) || value.month !== month || value.category !== category || value.search !== search.trim()
+    || (expectedPlanId ? value.planId !== expectedPlanId : value.planId !== undefined && value.planId !== null)
     || value.coverage !== "observed_only" || !timestamp(value.checkedAt)
     || !(value.workToday === null || day(value.workToday))
     || !(value.firstRecordedAt === null || timestamp(value.firstRecordedAt))
@@ -62,6 +72,7 @@ export function validateMonthlyOutput(value: unknown, month: string, category: I
 export function validateOutputLots(value: unknown, selection: OutputSelection, cursor?: string): OutputLotPage {
   if (!object(value) || value.month !== selection.month || value.category !== selection.category
     || value.search !== selection.search.trim() || value.checkedAt !== selection.asOf
+    || (selection.planId ? value.planId !== selection.planId : value.planId !== undefined && value.planId !== null)
     || !Array.isArray(value.rows) || value.rows.length > 100
     || !(value.nextCursor === null || typeof value.nextCursor === "string" && /^[1-9]\d{0,18}$/.test(value.nextCursor))) {
     throw new Error("Invalid output details response.");

@@ -118,3 +118,65 @@ test("source failures and summary limits return an explicit failure and always r
     }, options);
   }
 });
+
+test("optional planId scopes monthly summary and lots to planned lots in that month and validates UUID", async () => {
+  const planId = "11111111-1111-4111-8111-111111111111";
+  await withApi(async (api, queries) => {
+    assert.equal((await api("month", { month: "2026-11", planId: "not-a-uuid" })).status, 400);
+    assert.equal(queries.length, 0);
+
+    const monthRes = await api("month", { month: "2026-11", category: "ALL", planId });
+    assert.equal(monthRes.status, 200);
+    assert.equal(monthRes.body.data.planId, planId);
+    const summaryQuery = queries.find(([sql]) => sql.includes("COUNT(*)::integer"));
+    assert.equal(summaryQuery[1][4], planId);
+    assert.match(summaryQuery[0], /FROM planning\.work_plan_lot_card/);
+    assert.match(summaryQuery[0], /EXISTS \(\s*SELECT 1 FROM planned_in_month/);
+
+    const lotsRes = await api("lots", { month: "2026-11", category: "ALL", gate: "GATE_A", date: "2026-11-12", asOf, planId });
+    assert.equal(lotsRes.status, 200);
+    assert.equal(lotsRes.body.data.planId, planId);
+    const lotsQuery = queries.find(([sql]) => sql.includes("output_id::text"));
+    assert.equal(lotsQuery[1][8], planId);
+    assert.match(lotsQuery[0], /FROM planning\.work_plan_lot_card/);
+  });
+});
+
+test("planId-scoped monthly query falls back to legacy JSONB SQL when work_plan_lot_card table is missing", async () => {
+  const planId = "22222222-2222-4222-8222-222222222222";
+  const queries = [];
+  const pool = {
+    connect: async () => ({
+      release: () => queries.push(["RELEASE"]),
+      query: async (sql, params) => {
+        queries.push([sql, params]);
+        if (sql.includes("work_plan_lot_card")) {
+          const err = new Error("relation planning.work_plan_lot_card does not exist");
+          err.code = "42P01";
+          throw err;
+        }
+        if (sql.includes("FROM planning.gate_output_log")) {
+          if (sql.includes("JSONB_AGG")) return { rows: [{ first_recorded_at: asOf, last_recorded_at: asOf, rules: [rule] }] };
+          return { rows: [group] };
+        }
+        return { rows: [] };
+      },
+    }),
+  };
+  const app = express();
+  app.use(createInGateRoutingRouter({ pool }));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise(resolve => server.once("listening", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/output/month?month=2026-11&planId=${planId}`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data.planId, planId);
+    assert.equal(body.data.rows.length, 1);
+    assert.ok(queries.some(([sql]) => sql === "ROLLBACK"));
+    assert.ok(queries.some(([sql]) => sql.includes("jsonb_array_elements") && !sql.includes("work_plan_lot_card")));
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

@@ -19,7 +19,7 @@ const Planning_In_Gate = () => {
   const { requirePlanner } = useAuth();
   const {
     today, category, view, date, setDate, month, setMonth, unit, setUnit, search, setSearch,
-    workMode, setWorkMode, tvMode, setTvMode, exporting,
+    workMode, setWorkMode, outputScope, setOutputScope, tvMode, setTvMode, exporting,
     saved, loading, error, reload, finished, monthly,
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
     allocations, monthAllocations, finishedRows,
@@ -66,7 +66,7 @@ const Planning_In_Gate = () => {
 
   return <div className={`planning-summary-gate flex flex-col gap-4 w-full ${tvMode ? "fixed inset-0 z-[100] overflow-y-auto bg-base-200 p-4 sm:p-6" : ""}`}>
     <InGateHeader snapshotOnly busy={loading || exporting || finished.loading || monthly.loading} exportDisabled={!saved || Boolean(error) || !visible.length}
-      monthStatus={monthly.loading ? "Loading observed output…" : monthly.error ? (monthly.data ? "Showing last checked output" : "Observed output unavailable") : "Saved arrivals · Observed gate output"}
+      monthStatus={monthly.loading ? "Loading observed output…" : monthly.error ? (monthly.data ? "Showing last checked output" : "Observed output unavailable") : outputScope === "plan" && saved ? `Saved arrivals · Output in Plan v${saved.plan.version} only` : "Saved arrivals · All observed gate output"}
       view={view} onViewChange={changeView} month={month} thisMonth={today.slice(0, 7)} onMonthChange={setMonth}
       unit={unit} onUnitChange={setUnit} category={category} onCategoryChange={changeCategory}
       date={date} todayStr={today} onDateChange={setDate} orderBy="plan" onOrderByChange={() => {}}
@@ -95,7 +95,7 @@ const Planning_In_Gate = () => {
               <div className="text-sm font-bold">{item.gate}</div><div className="text-xs">{countText(item.gate)}</div>
             </button>)}
           </div>
-          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={tableSearch} version={saved?.plan.version} gate={gate} category={category} output={monthly} allocations={monthAllocations} tvMode={tvMode} /> : saved ?
+          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={tableSearch} version={saved?.plan.version} planId={saved?.plan.planId} gate={gate} category={category} output={monthly} outputScope={outputScope} onOutputScopeChange={setOutputScope} allocations={monthAllocations} tvMode={tvMode} /> : saved ?
             <div className="p-4 sm:p-5 flex flex-col gap-3">
               {/* Clean Unified Queue Header */}
               <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-base-200">

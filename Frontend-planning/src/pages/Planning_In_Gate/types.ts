@@ -150,6 +150,7 @@ export interface OrderHistoryEntry extends OrderDiff {
 // ── Summary · Month ─────────────────────────────────────────────────────────
 
 export type InGateView = "day" | "month";
+export type MonthOutputScope = "all" | "plan";
 export type CountUnit = "lots" | "pcs" | "sheets";
 
 export interface MonthProduct {
