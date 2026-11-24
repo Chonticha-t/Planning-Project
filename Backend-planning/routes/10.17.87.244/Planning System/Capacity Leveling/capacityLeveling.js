@@ -474,6 +474,100 @@ const enrichSnapshotWithLiveStatus = (snapshotData, liveRows) => {
   return { ...snapshotData, arrivalRows, cards };
 };
 
+const applyCapacityConfigToSnapshot = (snapshotData, config, extraCalendarDays = []) => {
+  if (!snapshotData || !Array.isArray(snapshotData.cards) || !snapshotData.capacity || typeof snapshotData.capacity !== "object") {
+    return snapshotData;
+  }
+  const isWorkingByDate = new Map();
+  for (const source of [snapshotData.calendarDays, snapshotData.days, extraCalendarDays]) {
+    if (!Array.isArray(source)) continue;
+    for (const entry of source) {
+      if (entry && isDate(entry.date) && typeof entry.isWorking === "boolean") {
+        isWorkingByDate.set(entry.date, entry.isWorking);
+      }
+    }
+  }
+  const dateSet = new Set();
+  for (const day of snapshotData.days ?? []) {
+    if (day && isDate(day.date)) dateSet.add(day.date);
+  }
+  for (const gateCap of Object.values(snapshotData.capacity)) {
+    if (!gateCap || typeof gateCap !== "object") continue;
+    for (const date of Object.keys(gateCap)) {
+      if (isDate(date)) dateSet.add(date);
+    }
+  }
+  for (const card of snapshotData.cards) {
+    if (card && isDate(card.plannedDate)) dateSet.add(card.plannedDate);
+  }
+  const daysForCapacity = [...dateSet]
+    .filter((date) => isWorkingByDate.has(date))
+    .sort()
+    .map((date) => ({ date, isWorking: isWorkingByDate.get(date) }));
+
+  const configByGate = new Map(config.map((item) => [item.gate, item]));
+  const gates = Array.isArray(snapshotData.gates)
+    ? snapshotData.gates.map((item) => {
+        const cfg = configByGate.get(item.gate);
+        if (!cfg) return item;
+        return {
+          ...item,
+          standardShiftMin: Object.fromEntries(
+            SHIFTS.map((code) => [code, shiftMinutesPerMachine(cfg.shifts[code], false)])
+          ),
+        };
+      })
+    : snapshotData.gates;
+
+  const updateGrid = (existingGrid, options) => {
+    const freshGrid = capacityGrid(config, daysForCapacity, options);
+    const next = { ...existingGrid };
+    for (const cfg of config) {
+      next[cfg.gate] = { ...(existingGrid[cfg.gate] ?? {}), ...freshGrid[cfg.gate] };
+    }
+    return next;
+  };
+  const capacity = updateGrid(snapshotData.capacity);
+  const requiredCapacity = snapshotData.requiredCapacity && typeof snapshotData.requiredCapacity === "object"
+    ? updateGrid(snapshotData.requiredCapacity, { includeOt: false })
+    : snapshotData.requiredCapacity;
+
+  const cards = snapshotData.cards.map((card) => {
+    const gateCfg = configByGate.get(card.gate);
+    if (!gateCfg) return card;
+    const standardShiftMin = Object.fromEntries(
+      SHIFTS.map((code) => [code, shiftMinutesPerMachine(gateCfg.shifts[code], false)])
+    );
+    const normal = standardShiftMin.day + standardShiftMin.night;
+    let loadMin;
+    if (card.kind !== "lot") {
+      loadMin = 0;
+    } else if (card.loadReason === "first_gate" || card.loadReason === "not_in_routing") {
+      loadMin = normal > 0 ? 0 : null;
+    } else if (card.loadReason === "routing") {
+      const total = positiveInt(card.routeTotalProc);
+      const lotDays = total !== null && typeof card.routeLeadDays === "number" ? card.routeLeadDays / total : 1;
+      loadMin = normal > 0 ? round2(lotDays * normal) : null;
+    } else {
+      loadMin = calculateLotLoadMin(card.leadDays, positiveInt(card.totalProcInGate), normal);
+    }
+    return { ...card, standardShiftMin, loadMin };
+  });
+
+  let calendarDays = snapshotData.calendarDays;
+  if (Array.isArray(snapshotData.calendarDays) && Array.isArray(extraCalendarDays) && extraCalendarDays.length > 0) {
+    const merged = new Map();
+    for (const entry of [...snapshotData.calendarDays, ...extraCalendarDays]) {
+      if (entry && isDate(entry.date) && typeof entry.isWorking === "boolean") {
+        merged.set(entry.date, { date: entry.date, isWorking: entry.isWorking });
+      }
+    }
+    calendarDays = [...merged.keys()].sort().map((date) => merged.get(date));
+  }
+
+  return { ...snapshotData, gates, capacity, requiredCapacity, cards, calendarDays };
+};
+
 // Summary Gate uses arrival as the boundary: completion is leadDays working days later.
 const arrivalEndDate = (arrival, leadDays, calendar) => {
   if (!isDate(arrival) || !Number.isInteger(leadDays) || leadDays < 1 || leadDays > 366) return null;
@@ -627,6 +721,6 @@ module.exports = {
   ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid,
   loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
   workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate, resolveBoardCardOrder,
-  mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
+  mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus, applyCapacityConfigToSnapshot,
   ROUTE_GATE_ALIASES, attachRouteLeads, routeLoadBasis, dropUnroutedFromSnapshot,
 };

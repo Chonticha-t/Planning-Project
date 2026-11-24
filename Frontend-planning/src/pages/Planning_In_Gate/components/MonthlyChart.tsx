@@ -7,6 +7,7 @@ import {
   Line,
   ReferenceArea,
   ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -21,6 +22,9 @@ export interface ChartDay {
   ns: number | null;
   planFuture: number | null;
   plan: number | null;
+  dateText?: string;
+  actualText?: string;
+  planText?: string;
 }
 
 interface MonthlyChartProps {
@@ -30,6 +34,34 @@ interface MonthlyChartProps {
 }
 
 const compact = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
+
+const ChartTooltip = ({ active, payload }: { active?: boolean; payload?: { payload?: ChartDay }[] }) => {
+  const day = active ? payload?.[0]?.payload : undefined;
+  if (!day) return null;
+  return (
+    <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-2 shadow-md text-xs text-base-content space-y-1">
+      <div className="font-bold flex items-center gap-1.5">
+        <span>{day.dateText ?? day.date}</span>
+        {day.phase === "today" && (
+          <span className="rounded bg-[#4f46e5]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#4f46e5]">TODAY</span>
+        )}
+        {day.off && (
+          <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold text-rose-600">OFF</span>
+        )}
+      </div>
+      {day.actualText && (
+        <div className="text-base-content/80">
+          <span className="font-semibold">Observed:</span> {day.actualText}
+        </div>
+      )}
+      {day.planText && (
+        <div className="text-base-content/75">
+          <span className="font-semibold">Plan:</span> {day.planText}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const MonthlyChart: React.FC<MonthlyChartProps> = ({ data, onPick, compareOutputToPlan = true }) => {
   const today = data.find((d) => d.phase === "today" && !d.off);
@@ -93,6 +125,7 @@ export const MonthlyChart: React.FC<MonthlyChartProps> = ({ data, onPick, compar
             tickFormatter={compact}
             domain={[0, (max: number) => Math.ceil((max * 1.08) / 10) * 10]}
           />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: "currentColor", fillOpacity: 0.04 }} />
           {today && <ReferenceArea x1={today.label} x2={today.label} fill="#4f46e5" fillOpacity={0.08} stroke="none" />}
           <Bar dataKey="ds" stackId="out" fill="#f5c542" radius={[0, 0, 2, 2]} cursor="pointer" isAnimationActive={false} onClick={pick} />
           <Bar dataKey="ns" stackId="out" fill="#6d4fd8" radius={[3, 3, 0, 0]} cursor="pointer" isAnimationActive={false} onClick={pick}>

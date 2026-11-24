@@ -22,7 +22,7 @@ const Planning_In_Gate = () => {
     workMode, setWorkMode, tvMode, setTvMode, exporting,
     saved, loading, error, reload, finished, monthly,
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
-    allocations, finishedRows,
+    allocations, monthAllocations, finishedRows,
     changeCategory, changeView, countText, refresh, exportPlan,
     hasUnsavedChanges, saving, currentOrder, hasSavedCurrentOrder, isCurrentScopeReset, canResetOrder,
     pendingDiff, historyRefreshToken,
@@ -95,7 +95,7 @@ const Planning_In_Gate = () => {
               <div className="text-sm font-bold">{item.gate}</div><div className="text-xs">{countText(item.gate)}</div>
             </button>)}
           </div>
-          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={tableSearch} version={saved?.plan.version} gate={gate} category={category} output={monthly} /> : saved ?
+          {view === "month" ? <ApiMonthlySummary key={JSON.stringify([saved?.plan.planId, category, gate, month])} rows={gateRows} snapshot={saved?.snapshot} month={month} today={today} unit={unit} search={tableSearch} version={saved?.plan.version} gate={gate} category={category} output={monthly} allocations={monthAllocations} tvMode={tvMode} /> : saved ?
             <div className="p-4 sm:p-5 flex flex-col gap-3">
               {/* Clean Unified Queue Header */}
               <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-base-200">

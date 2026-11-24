@@ -11,7 +11,7 @@ const {
   LEVELING_GATES, SHIFTS, NORMAL_VALID_FROM, NORMAL_VALID_TO, ValidationError,
   isDate, dayCapacity, buildCapacityConfig, parseSettingsPayload, sameShift,
   arrivalWorkKey, buildArrivalCards, arrivalEndDate, parsePlanPayload, resolveBoardCardOrder,
-  mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus,
+  mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus, applyCapacityConfigToSnapshot,
   attachRouteLeads, dropUnroutedFromSnapshot,
 } = require("./capacityLeveling");
 const { ROUTED_SUMMARY_GATE_SQL } = require("../Planning Summary Gate/routedGates");
@@ -431,10 +431,11 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
     const plan = historyInfo(metaRow);
     const cacheKey = `${planId}|${plan.isActive ? "active" : "older"}|${compact ? "compact" : "full"}`;
     const cached = await livePlanCache.read(cacheKey, async () => {
-      // Run immutable snapshot read and live Summary Gate query in parallel.
-      const [detail, worksRes] = await Promise.all([
+      // Run immutable snapshot read, live Summary Gate query, and current capacity config in parallel.
+      const [detail, worksRes, config] = await Promise.all([
         loadImmutablePlanDetail(planId),
         pool.query(WORKS_SQL, [LEVELING_GATES]),
+        readConfig(pool),
       ]);
       if (!detail || !detail.baseSnapshot) return null;
       const routes = await readRouteRows(pool, (detail.baseSnapshot.arrivalRows ?? []).map((row) => row.prd_name));
@@ -442,7 +443,25 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         dropUnroutedFromSnapshot(detail.baseSnapshot, routes),
         worksRes.rows
       );
-      const snapshot = compact ? compactLiveSnapshot(enriched) : enriched;
+      let extraCalendarDays = [];
+      if (Array.isArray(enriched.calendarDays) && enriched.capacity) {
+        const knownDates = new Set(
+          [...enriched.calendarDays, ...(enriched.days ?? [])]
+            .map((entry) => entry?.date)
+            .filter(isDate)
+        );
+        const missing = [...new Set(
+          (enriched.cards ?? [])
+            .map((card) => card?.plannedDate)
+            .filter((date) => isDate(date) && !knownDates.has(date))
+        )].sort();
+        if (missing.length > 0) {
+          const { calendar } = await loadCalendar(missing[0], missing[missing.length - 1]);
+          extraCalendarDays = missing.map((date) => ({ date, isWorking: calendar.isWorking(date) }));
+        }
+      }
+      const liveSnapshot = applyCapacityConfigToSnapshot(enriched, config, extraCalendarDays);
+      const snapshot = compact ? compactLiveSnapshot(liveSnapshot) : liveSnapshot;
       return JSON.stringify({
         status: "OK",
         data: {
@@ -671,6 +690,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         return readConfig(client);
       });
       loadCache.invalidate();
+      livePlanCache.invalidate();
       return res.json({ status: "OK", data: { gates: config, revision: capacityRevision(config) }, message: "Capacity settings saved." });
     } catch (error) {
       if (error.code === "CAPACITY_VERSION_CONFLICT") return res.status(409).json({ status: "ERROR", code: error.code, message: error.message });

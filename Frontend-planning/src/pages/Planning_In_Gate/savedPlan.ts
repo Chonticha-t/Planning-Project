@@ -1,4 +1,4 @@
-import type { LevelingData, LotItem, PlanHistoryDetail, PlanHistoryPage, ProcessCategory } from "../Capacity_Leveling/types";
+import type { BoardShiftAllocation, LevelingData, LotItem, PlanHistoryDetail, PlanHistoryPage, ProcessCategory } from "../Capacity_Leveling/types";
 import type { CountUnit } from "./types";
 import { buildBoardLots, toLotItem } from "../Capacity_Leveling/utils/levelingCalculations.ts";
 import { applyBoardCardOrder, readBoardCardOrder } from "../Capacity_Leveling/utils/boardCardOrder.ts";
@@ -158,8 +158,103 @@ export function planStatus(lot: LotItem): string {
   }
 }
 
+export interface PlanShiftSummary {
+  total: number | null;
+  ds: number | null;
+  ns: number | null;
+  over: number | null;
+  noLoad: number | null;
+  unassigned: number | null;
+  need: number | null;
+  hasDs: boolean;
+  hasNs: boolean;
+  hasOver: boolean;
+  hasNoLoad: boolean;
+  hasUnassigned: boolean;
+  hasNeed: boolean;
+}
+
+export function planShiftTotals(
+  items: LotItem[],
+  unit: CountUnit,
+  allocations?: ReadonlyMap<string, BoardShiftAllocation>,
+): PlanShiftSummary {
+  const dsItems: LotItem[] = [];
+  const nsItems: LotItem[] = [];
+  const overItems: LotItem[] = [];
+  const noLoadItems: LotItem[] = [];
+  const unassignedItems: LotItem[] = [];
+  const needItems: LotItem[] = [];
+
+  for (const lot of items) {
+    if (lot.kind !== "lot") {
+      if (unit !== "lots") needItems.push(lot);
+      continue;
+    }
+    switch (allocations?.get(lot.id)?.status) {
+      case "day":
+        dsItems.push(lot);
+        break;
+      case "night":
+        nsItems.push(lot);
+        break;
+      case "over":
+        overItems.push(lot);
+        break;
+      case "no_load":
+        noLoadItems.push(lot);
+        break;
+      default:
+        unassignedItems.push(lot);
+        break;
+    }
+  }
+
+  const bucket = (group: LotItem[]) => (group.length > 0 ? planQuantity(group, unit) : null);
+  return {
+    total: planQuantity(items, unit),
+    ds: bucket(dsItems),
+    ns: bucket(nsItems),
+    over: bucket(overItems),
+    noLoad: bucket(noLoadItems),
+    unassigned: bucket(unassignedItems),
+    need: bucket(needItems),
+    hasDs: dsItems.length > 0,
+    hasNs: nsItems.length > 0,
+    hasOver: overItems.length > 0,
+    hasNoLoad: noLoadItems.length > 0,
+    hasUnassigned: unassignedItems.length > 0,
+    hasNeed: needItems.length > 0,
+  };
+}
+
+export function planShiftBadge(
+  lot: LotItem,
+  allocation?: BoardShiftAllocation,
+): { label: "D/S" | "N/S" | "Over" | "No load" | "Unassigned" | "—"; tone: "ds" | "ns" | "over" | "muted"; reason?: string } {
+  if (lot.kind !== "lot") return { label: "—", tone: "muted" };
+  switch (allocation?.status) {
+    case "day":
+      return { label: "D/S", tone: "ds" };
+    case "night":
+      return { label: "N/S", tone: "ns" };
+    case "over":
+      return { label: "Over", tone: "over", reason: allocation.reason };
+    case "no_load":
+      return { label: "No load", tone: "muted", reason: allocation.reason };
+    default:
+      return { label: "Unassigned", tone: "muted", reason: allocation?.reason };
+  }
+}
+
 /** Aggregate saved arrivals, without generating output, shift splits or weekend rules. */
-export function savedMonth(rows: LotItem[], snapshot: Pick<LevelingData, "calendarDays">, month: string, unit: CountUnit) {
+export function savedMonth(
+  rows: LotItem[],
+  snapshot: Pick<LevelingData, "calendarDays">,
+  month: string,
+  unit: CountUnit,
+  allocations?: ReadonlyMap<string, BoardShiftAllocation>,
+) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("Invalid month.");
   const first = new Date(`${month}-01T00:00:00Z`);
   const last = new Date(first);
@@ -169,13 +264,34 @@ export function savedMonth(rows: LotItem[], snapshot: Pick<LevelingData, "calend
   const days = Array.from({ length: last.getUTCDate() }, (_, i) => {
     const date = `${month}-${String(i + 1).padStart(2, "0")}`;
     const lots = monthRows.filter(row => row.plannedDate === date);
-    return { date, day: i + 1, off: calendar.get(date) === false, lots, plan: planQuantity(lots, unit) };
+    return {
+      date,
+      day: i + 1,
+      off: calendar.get(date) === false,
+      lots,
+      plan: planQuantity(lots, unit),
+      shifts: planShiftTotals(lots, unit, allocations),
+    };
   });
   const products = [...new Set(monthRows.map(row => row.product))].sort().map(product => {
-    const lots = monthRows.filter(row => row.product === product);
-    return { product, total: planQuantity(lots, unit), cells: Object.fromEntries(days.map(day => [
-      day.date, planQuantity(lots.filter(row => row.plannedDate === day.date), unit),
-    ])) };
+    const productLots = monthRows.filter(row => row.product === product);
+    return {
+      product,
+      total: planQuantity(productLots, unit),
+      shifts: planShiftTotals(productLots, unit, allocations),
+      cells: Object.fromEntries(days.map(day => [
+        day.date, planQuantity(productLots.filter(row => row.plannedDate === day.date), unit),
+      ])),
+      shiftCells: Object.fromEntries(days.map(day => {
+        const cellLots = productLots.filter(row => row.plannedDate === day.date);
+        return [day.date, cellLots.length > 0 ? planShiftTotals(cellLots, unit, allocations) : undefined];
+      })),
+    };
   });
-  return { days, products, total: planQuantity(monthRows, unit) };
+  return {
+    days,
+    products,
+    total: planQuantity(monthRows, unit),
+    shifts: planShiftTotals(monthRows, unit, allocations),
+  };
 }

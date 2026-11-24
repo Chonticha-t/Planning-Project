@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ApiCard, LevelingData, PlanHistoryDetail, PlanHistoryInfo } from "../Capacity_Leveling/types";
 import { allocateBoardShifts } from "../Capacity_Leveling/utils/boardShiftAllocation.ts";
-import { planQuantity, planStatus, readLatestSavedPlan, savedMonth, savedPlanGates, savedPlanRows, savedViewRows, summarizeActivePlan, validateSnapshot } from "./savedPlan.ts";
+import { planQuantity, planShiftBadge, planShiftTotals, planStatus, readLatestSavedPlan, savedMonth, savedPlanGates, savedPlanRows, savedViewRows, summarizeActivePlan, validateSnapshot } from "./savedPlan.ts";
 
 const day = "2026-11-16";
 function snapshot(): LevelingData {
@@ -268,4 +268,157 @@ test("compact live snapshot without card.allocations still validates and renders
     savedPlanRows(compact, "ALL").map(row => [row.label, row.qty, row.sheets, row.plannedDate]),
     savedPlanRows(full, "ALL").map(row => [row.label, row.qty, row.sheets, row.plannedDate]),
   );
+});
+
+test("savedMonth splits planned arrivals into D/S, N/S and Over while preserving passedGate lots", () => {
+  const data = snapshot();
+  data.cards = [
+    { ...data.cards[0], id: "A", workKey: "A", lotNo: "LOT-A", prdName: "PRODUCT-A", plannedDate: day, passedGate: true, loadMin: 400, qty: 100, sheets: 10 },
+    { ...data.cards[1], id: "B", workKey: "B", lotNo: "LOT-B", prdName: "PRODUCT-A", plannedDate: day, passedGate: false, loadMin: 450, qty: 200, sheets: 20 },
+    { ...data.cards[2], id: "C", workKey: "C", lotNo: "LOT-C", prdName: "PRODUCT-A", plannedDate: day, passedGate: false, loadMin: 400, qty: 300, sheets: 30 },
+  ];
+  data.arrivalRows = data.cards.map((card, index) => ({
+    ...data.arrivalRows[index],
+    pri: index + 1, workKey: card.workKey, lot_no: card.lotNo, prd_name: card.prdName,
+    arrive_by: card.arriveBy, passed_gate: card.passedGate, qty: card.qty ?? 0, pcs_per_sheet: 10,
+  }));
+  data.boardCardOrder = [{
+    gate: "GATE_A",
+    date: day,
+    cardIds: ["LOT-A", "LOT-B", "LOT-C"].map(lot => JSON.stringify(["GATE_A", day, "lot", lot])),
+  }];
+  data.capacity = {
+    GATE_A: {
+      [day]: {
+        off: false, hasOt: false, capacityMin: 950,
+        shifts: {
+          day: { open: true, otOn: false, capacityMin: 475 },
+          night: { open: true, otOn: false, capacityMin: 475 },
+        },
+      },
+    },
+  };
+
+  const rows = savedPlanRows(data, "ALL");
+  const allocations = allocateBoardShifts(data, rows, { excludePassed: false });
+  const monthPcs = savedMonth(rows, data, "2026-11", "pcs", allocations);
+  const dayCell = monthPcs.days.find(d => d.date === day)!;
+  assert.deepEqual([dayCell.shifts.ds, dayCell.shifts.ns, dayCell.shifts.over, dayCell.shifts.total], [100, 200, 300, 600]);
+  assert.deepEqual([dayCell.shifts.hasDs, dayCell.shifts.hasNs, dayCell.shifts.hasOver], [true, true, true]);
+  const prod = monthPcs.products.find(p => p.product === "PRODUCT-A")!;
+  assert.deepEqual([prod.shiftCells[day]?.ds, prod.shiftCells[day]?.ns, prod.shiftCells[day]?.over], [100, 200, 300]);
+  assert.equal(planShiftBadge(rows[0], allocations.get(rows[0].id)).label, "D/S");
+  assert.equal(planShiftBadge(rows[1], allocations.get(rows[1].id)).label, "N/S");
+  assert.equal(planShiftBadge(rows[2], allocations.get(rows[2].id)).label, "Over");
+});
+
+test("no_load lots stay out of D/S and N/S and count only in noLoad and total", () => {
+  const data = snapshot();
+  data.cards[0] = { ...data.cards[0], plannedDate: day, loadMin: 0, loadReason: "first_gate", qty: 120, sheets: 12 };
+  data.cards[1] = { ...data.cards[1], plannedDate: day, loadMin: 400, qty: 200, sheets: 20 };
+  data.cards[2] = { ...data.cards[2], plannedDate: day, loadMin: 400, qty: 300, sheets: 30 };
+  data.arrivalRows = data.cards.map((card, index) => ({
+    ...data.arrivalRows[index],
+    pri: index + 1, workKey: card.workKey, lot_no: card.lotNo, prd_name: card.prdName,
+    arrive_by: card.arriveBy, qty: card.qty ?? 0, pcs_per_sheet: 10,
+  }));
+  data.boardCardOrder = [{
+    gate: "GATE_A",
+    date: day,
+    cardIds: ["LOT-A", "LOT-B", "LOT-C"].map(lot => JSON.stringify(["GATE_A", day, "lot", lot])),
+  }];
+  data.capacity = {
+    GATE_A: {
+      [day]: {
+        off: false, hasOt: false, capacityMin: 950,
+        shifts: {
+          day: { open: true, otOn: false, capacityMin: 475 },
+          night: { open: true, otOn: false, capacityMin: 475 },
+        },
+      },
+    },
+  };
+
+  const rows = savedPlanRows(data, "ALL");
+  const allocations = allocateBoardShifts(data, rows, { excludePassed: false });
+  const summary = planShiftTotals(rows.filter(r => r.plannedDate === day), "pcs", allocations);
+  assert.deepEqual([summary.ds, summary.ns, summary.noLoad, summary.total], [200, 300, 120, 620]);
+  assert.deepEqual([summary.hasDs, summary.hasNs, summary.hasNoLoad], [true, true, true]);
+  assert.equal(planShiftBadge(rows[0], allocations.get(rows[0].id)).label, "No load");
+});
+
+test("Need WIP and null quantities preserve bucket-level unknown values without polluting other shifts", () => {
+  const data = snapshot();
+  data.cards[0] = { ...data.cards[0], plannedDate: day, loadMin: 400, qty: 100, sheets: 10 };
+  data.cards[1] = { ...data.cards[1], plannedDate: day, loadMin: 400, qty: 200, sheets: null };
+  data.cards[2] = { ...data.cards[2], plannedDate: day, kind: "need", lotNo: null, gateState: "need_wip", loadMin: 0, qty: 50, sheets: 5 };
+  data.arrivalRows[0] = { ...data.arrivalRows[0], qty: 100, pcs_per_sheet: 10 };
+  data.arrivalRows[1] = { ...data.arrivalRows[1], qty: 200, pcs_per_sheet: null };
+  data.arrivalRows[2] = { ...data.arrivalRows[2], lot_no: null, gate_state: "need_wip", qty: 50, pcs_per_sheet: 10 };
+  data.boardCardOrder = [{
+    gate: "GATE_A",
+    date: day,
+    cardIds: [
+      JSON.stringify(["GATE_A", day, "lot", "LOT-A"]),
+      JSON.stringify(["GATE_A", day, "lot", "LOT-B"]),
+      JSON.stringify(["GATE_A", day, "need", "C"]),
+    ],
+  }];
+  data.capacity = {
+    GATE_A: {
+      [day]: {
+        off: false, hasOt: false, capacityMin: 950,
+        shifts: {
+          day: { open: true, otOn: false, capacityMin: 475 },
+          night: { open: true, otOn: false, capacityMin: 475 },
+        },
+      },
+    },
+  };
+
+  const rows = savedPlanRows(data, "ALL");
+  const allocations = allocateBoardShifts(data, rows, { excludePassed: false });
+  const lotsSummary = planShiftTotals(rows, "lots", allocations);
+  assert.deepEqual([lotsSummary.ds, lotsSummary.ns, lotsSummary.need, lotsSummary.hasNeed, lotsSummary.total], [1, 1, null, false, 2]);
+
+  const sheetsSummary = planShiftTotals(rows, "sheets", allocations);
+  assert.deepEqual([sheetsSummary.ds, sheetsSummary.ns, sheetsSummary.hasNs, sheetsSummary.need, sheetsSummary.total], [10, null, true, 5, null]);
+});
+
+test("cross-category allocation computed on ALL lots keeps EFPC_AUTO in Night after EFPC_GEN fills Day", () => {
+  const data = snapshot();
+  data.cards = [
+    { ...data.cards[0], id: "GEN", workKey: "GEN", lotNo: "LOT-GEN", prdName: "PRD-GEN", processGroup: "EFPC_GEN", plannedDate: day, loadMin: 450, qty: 100, sheets: 10 },
+    { ...data.cards[1], id: "AUTO", workKey: "AUTO", lotNo: "LOT-AUTO", prdName: "PRD-AUTO", processGroup: "EFPC_AUTO", plannedDate: day, loadMin: 300, qty: 200, sheets: 20 },
+  ];
+  data.arrivalRows = [
+    { ...data.arrivalRows[0], pri: 1, workKey: "GEN", lot_no: "LOT-GEN", prd_name: "PRD-GEN", process_group: "EFPC_GEN", qty: 100, pcs_per_sheet: 10 },
+    { ...data.arrivalRows[1], pri: 2, workKey: "AUTO", lot_no: "LOT-AUTO", prd_name: "PRD-AUTO", process_group: "EFPC_AUTO", arrive_by: day, qty: 200, pcs_per_sheet: 10 },
+  ];
+  data.boardCardOrder = [{
+    gate: "GATE_A",
+    date: day,
+    cardIds: [
+      JSON.stringify(["GATE_A", day, "lot", "LOT-GEN"]),
+      JSON.stringify(["GATE_A", day, "lot", "LOT-AUTO"]),
+    ],
+  }];
+  data.capacity = {
+    GATE_A: {
+      [day]: {
+        off: false, hasOt: false, capacityMin: 950,
+        shifts: {
+          day: { open: true, otOn: false, capacityMin: 475 },
+          night: { open: true, otOn: false, capacityMin: 475 },
+        },
+      },
+    },
+  };
+
+  const allRows = savedPlanRows(data, "ALL");
+  const allAllocations = allocateBoardShifts(data, allRows, { excludePassed: false });
+  const autoRows = allRows.filter(r => r.processGroup === "EFPC_AUTO");
+  const monthAuto = savedMonth(autoRows, data, "2026-11", "pcs", allAllocations);
+  const dayCell = monthAuto.days.find(d => d.date === day)!;
+  assert.deepEqual([dayCell.shifts.hasDs, dayCell.shifts.ds, dayCell.shifts.ns, dayCell.shifts.total], [false, null, 200, 200]);
 });

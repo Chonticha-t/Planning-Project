@@ -1,6 +1,6 @@
 const {
   SHIFTS, dateRange, occupancyCalendarRange, buildArrivalCards, shiftMinutesPerMachine,
-  capacityGrid, arrivalWorkKey, isDate, resolveBoardCardOrder,
+  capacityGrid, arrivalWorkKey, isDate, resolveBoardCardOrder, ValidationError,
 } = require("./capacityLeveling");
 
 // Build both the live response and the saved view from server-owned inputs.
@@ -8,18 +8,33 @@ async function buildLevelingView({ sourceRows, moves, config, today, start, end,
   history = {}, order = [], plan = null, legacy = false, calculationMethod }) {
   const { cards, orphanMoves, undated, duplicates } = buildArrivalCards(sourceRows, moves, today, config);
   const range = occupancyCalendarRange(cards, start, end);
+  for (const card of cards) {
+    for (const candidate of [card.plannedDate, card.baseDate]) {
+      if (!isDate(candidate)) continue;
+      if (candidate < range.start) range.start = candidate;
+      if (candidate > range.end) range.end = candidate;
+    }
+  }
+  if (Date.parse(`${range.end}T00:00:00Z`) - Date.parse(`${range.start}T00:00:00Z`) > 3660 * 86400000) {
+    throw new ValidationError("The planning dates exceed the supported ten-year calendar range.");
+  }
   const maxLead = cards.reduce((max, card) => Math.max(max, card.leadDays || 1), 1);
   range.end = new Date(Date.parse(`${range.end}T00:00:00Z`) + (maxLead * 7 + 14) * 86400000).toISOString().slice(0, 10);
   const { calendar } = await loadCalendar(range.start, range.end);
   const days = dateRange(start, end).map((date) => ({ date, isWorking: calendar.isWorking(date) }));
   const calendarDays = dateRange(range.start, range.end).map((date) => ({ date, isWorking: calendar.isWorking(date) }));
+  const capacityDateSet = new Set(days.map((day) => day.date));
+  for (const card of cards) {
+    if (isDate(card.plannedDate)) capacityDateSet.add(card.plannedDate);
+  }
+  const capacityDays = [...capacityDateSet].sort().map((date) => ({ date, isWorking: calendar.isWorking(date) }));
   return {
     today, days, calendarDays,
     gates: config.map(({ gate, group, shifts }) => ({ gate, group,
       standardShiftMin: Object.fromEntries(SHIFTS.map((code) => [code, shiftMinutesPerMachine(shifts[code], false)])),
     })),
-    capacity: capacityGrid(config, days),
-    requiredCapacity: capacityGrid(config, days, { includeOt: false }),
+    capacity: capacityGrid(config, capacityDays),
+    requiredCapacity: capacityGrid(config, capacityDays, { includeOt: false }),
     cards: cards.map((card) => ({ ...card, moveHistory: Array.isArray(history?.[card.id]) ? history[card.id] : [] })),
     orphanMoves, undatedCount: undated,
     arrivalRows: sourceRows.map((row, index) => ({ ...row, workKey: arrivalWorkKey(row, index) })),

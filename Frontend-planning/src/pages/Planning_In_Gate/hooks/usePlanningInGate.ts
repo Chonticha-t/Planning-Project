@@ -135,7 +135,14 @@ export default function usePlanningInGate() {
     [categoryBoardLots, effectiveCardOrder],
   );
 
-  const allocations = useMemo(() => saved ? allocateBoardShifts(saved.snapshot, rows, { excludePassed: true }) : new Map(), [saved, rows]);
+  const allocations = useMemo(
+    () => (saved ? allocateBoardShifts(saved.snapshot, savedPlanLots, { excludePassed: true }) : new Map()),
+    [saved, savedPlanLots],
+  );
+  const monthAllocations = useMemo(
+    () => (saved ? allocateBoardShifts(saved.snapshot, savedPlanLots, { excludePassed: false }) : new Map()),
+    [saved, savedPlanLots],
+  );
   const gates = useMemo(() => {
     if (saved) return savedPlanGates(saved.snapshot, category);
     const list = category === "ALL" ? [...DEFAULT_FPC_GATES, ...DEFAULT_SMT_GATES] : category === "SMT" ? DEFAULT_SMT_GATES : DEFAULT_FPC_GATES;
@@ -510,7 +517,7 @@ export default function usePlanningInGate() {
     workMode, setWorkMode, tvMode, setTvMode, exporting,
     saved, loading, error, reload, finished, monthly,
     gates, gate, setSelectedGate, gateRows, dayPlanLots, savedPlanLots, scheduledDates, queue, visible,
-    allocations, finishedRows,
+    allocations, monthAllocations, finishedRows,
     changeCategory, changeView, countText, refresh, exportPlan,
     hasUnsavedChanges, saving, currentOrder, hasSavedCurrentOrder, isCurrentScopeReset, canResetOrder,
     pendingDiff, historyRefreshToken,

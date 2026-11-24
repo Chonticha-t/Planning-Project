@@ -1898,3 +1898,106 @@ test("edge case: buildGateItemColumns sanitizes null/invalid source_qty and empt
   assert.deepEqual(itemInsert.params[6], [null]);
   assert.deepEqual(itemInsert.params[9], [0]);
 });
+
+test("saved capacity covers cards outside the 28-day window and live active plan reflects PUT /capacity changes", async () => {
+  const pastRow = work({ lot_no: "L-PAST", gate_name: "FADL", arrive_by: "2026-11-02", must_out: "2026-11-04" });
+  const futureRow = work({ lot_no: "L-FUTURE", gate_name: "FADL", arrive_by: "2026-12-15", must_out: "2026-12-17" });
+  let settings = [
+    row({ setting_id: "s1", gate_name: "FADL", shift_code: "day", resource_count: 2 }),
+    row({ setting_id: "s2", gate_name: "FADL", shift_code: "night", resource_count: 2 }),
+  ];
+  let header = null;
+  let storedSnapshot = null;
+  const pool = fakePool([
+    [/CURRENT_DATE::text/, () => [{ today: "2026-11-12" }]],
+    [/FROM planning\.capacity_setting/, () => settings],
+    [/UPDATE planning\.capacity_setting/, (params) => {
+      settings = settings.filter((item) => item.setting_id !== params[0]);
+      return [];
+    }],
+    [/INSERT INTO planning\.capacity_setting/, (params) => {
+      settings.push({
+        setting_id: params[0], gate_name: params[1], setting_kind: params[2], valid_from: params[3],
+        shift_code: params[5], is_working_day: params[6], resource_count: params[7], manpower: params[8],
+        regular_minutes_per_shift: params[9], ot_enabled: params[10], ot_minutes_per_shift: params[11],
+        break1_enabled: params[12], break1_minutes: params[13], break2_enabled: params[14], break2_minutes: params[15],
+        lunch_enabled: params[16], lunch_minutes: params[17], efficiency: params[18],
+      });
+      return [];
+    }],
+    [/AS arrival_rows/, (params) => (header && params[0] === header.plan_id ? [snapshotRow(storedSnapshot)] : [])],
+    [/FROM planning\.work_plan p/, (params) => {
+      if (!header) return [];
+      if (params.length > 1 && params[1] !== header.plan_id) return [];
+      return [{
+        ...historyRow(header.version_no, header.version_no),
+        plan_id: header.plan_id,
+        current_plan_id: header.plan_id,
+        board_card_order: header.board_card_order,
+        view_snapshot: storedSnapshot,
+        has_snapshot: true,
+      }];
+    }],
+    [/FROM planning\.work_plan\b/, (params) => (params[0] === PLAN_METHOD && header ? [header] : [])],
+    [/FROM planning\.work_plan_gate_item/, () => []],
+    [/planning_summary_gate/, () => [pastRow, futureRow]],
+    [/INSERT INTO planning\.work_plan \(/, (params) => {
+      const snapshot = JSON.parse(params[9]);
+      storedSnapshot = snapshot.viewSnapshot;
+      header = {
+        plan_id: params[0], plan_group_id: params[1], version_no: params[2], note: params[7],
+        created_by: params[8], saved_at: "2026-11-12 12:00",
+        board_card_order: snapshot.boardCardOrder, move_history: snapshot.moveHistory, has_snapshot: true,
+      };
+      return [];
+    }],
+  ]);
+
+  await withApi(pool, async (api) => {
+    const saveRes = await api("/plan", { method: "POST", body: { baseVersion: 0, moves: [] } });
+    assert.equal(saveRes.status, 200);
+    const savedView = storedSnapshot.data;
+    assert.equal(savedView.days.length, 28);
+    assert.equal(savedView.capacity.FADL["2026-11-02"].shifts.day.capacityMin, 950);
+    assert.equal(savedView.capacity.FADL["2026-11-02"].shifts.night.capacityMin, 950);
+    assert.equal(savedView.capacity.FADL["2026-12-15"].shifts.day.capacityMin, 950);
+    assert.equal(savedView.capacity.FADL["2026-12-15"].shifts.night.capacityMin, 950);
+
+    // Prime live cache before capacity update
+    const beforeCap = await api("/plans/active?live=true&compact=true");
+    assert.equal(beforeCap.status, 200);
+    assert.equal((await beforeCap.json()).data.snapshot.capacity.FADL["2026-11-02"].capacityMin, 1900);
+
+    // Update capacity: 4 MCs on Day Shift, Night Shift closed
+    const capRes = await api("/capacity", {
+      method: "PUT",
+      body: {
+        gates: [{
+          gate: "FADL",
+          shifts: {
+            day: { ...shiftInput, mcLines: 4 },
+            night: { ...shiftInput, enabled: false, mcLines: 2 },
+          },
+        }],
+      },
+    });
+    assert.equal(capRes.status, 200);
+
+    // Live active plan immediately reflects updated capacity without waiting for a new plan save
+    const afterCap = await api("/plans/active?live=true&compact=true");
+    assert.equal(afterCap.status, 200);
+    assert.equal(afterCap.headers.get("x-in-gate-cache"), "MISS");
+    const liveData = (await afterCap.json()).data;
+    assert.equal(liveData.snapshot.capacity.FADL["2026-11-02"].shifts.day.open, true);
+    assert.equal(liveData.snapshot.capacity.FADL["2026-11-02"].shifts.day.capacityMin, 1900);
+    assert.equal(liveData.snapshot.capacity.FADL["2026-11-02"].shifts.night.open, false);
+    assert.equal(liveData.snapshot.capacity.FADL["2026-11-02"].shifts.night.capacityMin, 0);
+    assert.equal(liveData.snapshot.capacity.FADL["2026-12-15"].capacityMin, 1900);
+
+    // Non-live historical plan endpoint preserves original saved snapshot capacity
+    const historical = (await (await api(`/plans/${header.plan_id}`)).json()).data;
+    assert.equal(historical.snapshot.capacity.FADL["2026-11-02"].shifts.day.capacityMin, 950);
+    assert.equal(historical.snapshot.capacity.FADL["2026-11-02"].shifts.night.open, true);
+    assert.equal(historical.snapshot.capacity.FADL["2026-11-02"].shifts.night.capacityMin, 950);
+  });
+});
