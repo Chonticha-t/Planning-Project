@@ -17,7 +17,6 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5">
-      <p className="text-[11px] text-base-content/60">Summary for selected arrival period</p>
       {/* Gate Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {gateFlowList.map((g) => {

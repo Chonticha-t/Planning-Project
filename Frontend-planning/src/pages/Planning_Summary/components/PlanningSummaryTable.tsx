@@ -6,7 +6,6 @@ import {
   GridSortModel,
 } from "@mui/x-data-grid";
 import {
-  LayoutDashboard,
   FileSpreadsheet,
   Info,
   AlertCircle,
@@ -853,9 +852,6 @@ const PlanningSummaryTable = memo(
         {/* Table Top Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-base-300/80 bg-base-100">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
-              <LayoutDashboard size={17} />
-            </div>
             <h2 className="font-bold text-base-content tracking-wide text-sm">
               PLANNING SUMMARY
             </h2>

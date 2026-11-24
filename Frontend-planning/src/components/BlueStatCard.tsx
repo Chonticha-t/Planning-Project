@@ -94,13 +94,8 @@ export const BlueStatCard = ({
   unit?: string;
   children: ReactNode;
 }) => (
-  <div
-    className="flex flex-col overflow-hidden rounded-xl bg-base-100 border border-base-300/80 shadow-xs hover:shadow-md transition-all"
-    style={{
-      boxShadow: `inset 0 4px 0 0 ${tone ? TONES[tone] : "#cbd5e1"}`,
-    }}
-  >
-    <div className="flex flex-1 flex-col gap-2.5 px-3 pb-3 pt-4">
+  <div className="flex flex-col overflow-hidden rounded-xl bg-base-100 border border-base-300/80 shadow-xs hover:shadow-md transition-all">
+    <div className="flex flex-1 flex-col gap-2.5 p-3">
       {/* Top: Title + Big Value (left) | Badge + Icon (right) */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex flex-col gap-0.5">
@@ -123,14 +118,15 @@ export const BlueStatCard = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {badge}
-          <span
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-white shadow-2xs"
-            style={{ backgroundColor: tone ? TONES[tone] : "#475569" }}
-          >
-            <Icon size={15} />
-          </span>
+        <div className="flex items-center shrink-0">
+          {badge ?? (
+            <span
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-white shadow-2xs"
+              style={{ backgroundColor: tone ? TONES[tone] : "#475569" }}
+            >
+              <Icon size={15} />
+            </span>
+          )}
         </div>
       </div>
 
