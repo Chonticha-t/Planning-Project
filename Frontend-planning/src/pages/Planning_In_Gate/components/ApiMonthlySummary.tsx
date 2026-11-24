@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import type { BoardShiftAllocation, LevelingData, LotItem } from "../../Capacity_Leveling/types";
 import type { CountUnit, InGateCategory } from "../types";
 import type { useMonthlyOutput } from "../hooks/useMonthlyOutput";
-import { observedMonth } from "../monthlyOutput";
+import { computeMonthlyKpis, observedMonth } from "../monthlyOutput";
 import { ObservedLotDrawer } from "./ObservedLotDrawer";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { planShiftBadge, planShiftTotals, planStatus, savedMonth, type PlanShiftSummary } from "../savedPlan";
@@ -152,7 +152,7 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
     return {
       date: day.date, label: String(day.day), off: day.off,
       phase: day.date === workToday ? "today" : day.date < workToday ? "past" : "future",
-      ds: known ? cell.ds : null, ns: known ? cell.ns : null,
+      ds: known ? (cell.ds ?? 0) : null, ns: known ? (cell.ns ?? 0) : null,
       planFuture: snapshot && !cell && day.date >= workToday ? day.plan : null,
       plan: snapshot ? day.plan : null,
       dateText: day.date,
@@ -166,6 +166,37 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
   const selectedRows = selected ? filtered.filter(row => row.plannedDate === selected.date && (!selected.product || row.product === selected.product)) : [];
   const selectedSummary = selected?.mode === "plan" ? planShiftTotals(selectedRows, unit, allocations) : null;
   const planTooltip = snapshot ? formatPlanTooltip(data.shifts, unit) : undefined;
+  const kpiMetrics = useMemo(
+    () => computeMonthlyKpis(actual, data.days, workToday, Boolean(snapshot)),
+    [actual, data.days, workToday, snapshot],
+  );
+  const dailyAvgValue = kpiMetrics.activeOutputDays === 0
+    ? "—"
+    : kpiMetrics.dailyAverage === null
+      ? "N/A"
+      : kpiMetrics.dailyAverage.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  const dailyAvgSub = kpiMetrics.activeOutputDays === 0
+    ? "No observed output"
+    : kpiMetrics.dailyAverage === null
+      ? `${unit}/day · Unknown quantity`
+      : `${unit}/day · across ${kpiMetrics.activeOutputDays} ${kpiMetrics.activeOutputDays === 1 ? "output day" : "output days"}`;
+  const belowPlanValue = !snapshot || kpiMetrics.comparedPlanDays === 0
+    ? "—"
+    : String(kpiMetrics.belowPlanDays);
+  const belowPlanSub = !snapshot
+    ? "No saved plan available"
+    : kpiMetrics.comparedPlanDays === 0
+      ? kpiMetrics.noOutputPlanDays > 0
+        ? `No observed output (${kpiMetrics.noOutputPlanDays} past planned)`
+        : "No past planned days"
+      : kpiMetrics.noOutputPlanDays > 0
+        ? `of ${kpiMetrics.comparedPlanDays} observed (${kpiMetrics.noOutputPlanDays} no output)`
+        : `of ${kpiMetrics.comparedPlanDays} past planned ${kpiMetrics.comparedPlanDays === 1 ? "day" : "days"}`;
+  const belowPlanTooltip = snapshot && kpiMetrics.comparedPlanDays > 0
+    ? kpiMetrics.belowPlanDates.length > 0
+      ? `Observed output below planned arrivals on: ${kpiMetrics.belowPlanDates.join(", ")}`
+      : `All ${kpiMetrics.comparedPlanDays} observed past planned day(s) met or exceeded planned arrivals`
+    : undefined;
   const kpis = [
     { title: "Observed output (month)", value: show(actual.total, records.length > 0), sub: `${unit} · Next-gate scan evidence` },
     {
@@ -176,7 +207,7 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
         : "No saved plan available",
       titleAttr: planTooltip,
     },
-    { title: "Daily average", value: "—", sub: "Full-period coverage not confirmed" },
+    { title: "Daily average", value: dailyAvgValue, sub: dailyAvgSub },
     {
       title: "By shift (month)",
       value: "",
@@ -185,7 +216,13 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
         : "Observed output · All matching work dates",
       titleAttr: planTooltip,
     },
-    { title: "Days below plan", value: "—", sub: "Arrival plan is not an output target" },
+    {
+      title: "Days below plan",
+      value: belowPlanValue,
+      sub: belowPlanSub,
+      titleAttr: belowPlanTooltip,
+      highlightError: Boolean(snapshot && kpiMetrics.comparedPlanDays > 0 && kpiMetrics.belowPlanDays > 0),
+    },
   ];
   return <div className="p-6 flex flex-col gap-4">
     <h2 className="text-sm font-extrabold uppercase tracking-wider">Monthly summary</h2>
@@ -194,11 +231,11 @@ export function ApiMonthlySummary({ rows, snapshot, month, today, unit, search, 
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {kpis.map(kpi => <div key={kpi.title} title={kpi.titleAttr} className="rounded-xl border border-base-300 px-4 py-3">
         <div className="text-[11px] font-bold uppercase tracking-wider text-base-content/60">{kpi.title}</div>
-        <div className="mt-0.5 text-2xl font-extrabold tabular-nums leading-tight">{kpi.title.startsWith('By shift') ? <><span className="text-[#c98a00]">{show(actual.ds, actual.hasDs)}</span><small className="text-sm text-base-content/60"> D/S · </small><span className="text-[#6d4fd8]">{show(actual.ns, actual.hasNs)}</span><small className="text-sm text-base-content/60"> N/S</small></> : kpi.value}</div>
+        <div className={`mt-0.5 text-2xl font-extrabold tabular-nums leading-tight ${kpi.highlightError ? "text-rose-600" : ""}`}>{kpi.title.startsWith('By shift') ? <><span className="text-[#c98a00]">{show(actual.ds, actual.hasDs)}</span><small className="text-sm text-base-content/60"> D/S · </small><span className="text-[#6d4fd8]">{show(actual.ns, actual.hasNs)}</span><small className="text-sm text-base-content/60"> N/S</small></> : kpi.value}</div>
         <div className="text-xs text-base-content/60">{kpi.sub}</div>
       </div>)}
     </div>
-    <MonthlyChart compareOutputToPlan={false} data={chart} onPick={date => setSelected({ date, mode: actual.dates.has(date) ? "actual" : "plan", asOf: output.data?.checkedAt })} />
+    <MonthlyChart compareOutputToPlan={Boolean(snapshot)} data={chart} onPick={date => setSelected({ date, mode: actual.dates.has(date) ? "actual" : "plan", asOf: output.data?.checkedAt })} />
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-base-content/70">
       <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#f5c542]" />D/S observed</span>
       <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#6d4fd8]" />N/S observed</span>

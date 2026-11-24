@@ -111,3 +111,55 @@ export function observedMonth(rows: OutputGroup[], unit: CountUnit) {
   const summarize = (map: Map<string, OutputGroup[]>) => new Map([...map].map(([key, group]) => [key, observedTotals(group, unit)]));
   return { dates: summarize(dates), products: summarize(products), cells: summarize(cells), ...observedTotals(rows, unit) };
 }
+
+export interface MonthlyKpiMetrics {
+  dailyAverage: number | null;
+  activeOutputDays: number;
+  belowPlanDays: number;
+  comparedPlanDays: number;
+  noOutputPlanDays: number;
+  belowPlanDates: string[];
+}
+
+export function computeMonthlyKpis(
+  actual: Pick<ReturnType<typeof observedMonth>, "dates" | "total">,
+  days: readonly { date: string; plan: number | null }[],
+  workToday: string,
+  hasPlan: boolean,
+): MonthlyKpiMetrics {
+  const activeOutputDays = actual.dates.size;
+  const dailyAverage =
+    activeOutputDays > 0 && actual.total !== null ? actual.total / activeOutputDays : null;
+
+  let belowPlanDays = 0;
+  let comparedPlanDays = 0;
+  let noOutputPlanDays = 0;
+  const belowPlanDates: string[] = [];
+
+  if (hasPlan) {
+    for (const day of days) {
+      if (day.date >= workToday) continue;
+      if (day.plan === null || day.plan <= 0) continue;
+      const observed = actual.dates.get(day.date);
+      if (!observed) {
+        noOutputPlanDays += 1;
+        continue;
+      }
+      if (observed.total === null) continue;
+      comparedPlanDays += 1;
+      if (observed.total < day.plan) {
+        belowPlanDays += 1;
+        belowPlanDates.push(day.date);
+      }
+    }
+  }
+
+  return {
+    dailyAverage,
+    activeOutputDays,
+    belowPlanDays,
+    comparedPlanDays,
+    noOutputPlanDays,
+    belowPlanDates,
+  };
+}
