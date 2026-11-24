@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Check } from "lucide-react";
 import type { BoardShiftAllocation, LevelingData, LotItem } from "../../Capacity_Leveling/types";
 import type { CountUnit, InGateCategory, MonthOutputScope } from "../types";
 import type { useMonthlyOutput } from "../hooks/useMonthlyOutput";
@@ -48,6 +49,114 @@ const formatPlanBreakdown = (shifts: PlanShiftSummary, unit: CountUnit) => {
 };
 
 const formatPlanTooltip = (shifts: PlanShiftSummary, unit: CountUnit) => `Plan · ${formatPlanBreakdown(shifts, unit)}`;
+
+function TotalProgress({
+  observed,
+  hasObserved,
+  planned,
+  hasPlan,
+  unit,
+  showPlanSlot = true,
+  showNoPlanLabel = true,
+}: {
+  observed: number | null | undefined;
+  hasObserved: boolean;
+  planned: number | null | undefined;
+  hasPlan: boolean;
+  unit: CountUnit;
+  showPlanSlot?: boolean;
+  showNoPlanLabel?: boolean;
+}) {
+  const obsNum = hasObserved && typeof observed === "number" ? observed : null;
+  const planNum = hasPlan && typeof planned === "number" ? planned : null;
+  const canCompare = obsNum !== null && planNum !== null && planNum > 0;
+  const rawPct = canCompare ? Math.round((obsNum / planNum) * 100) : null;
+  const fillPct = canCompare ? Math.min(100, Math.max(0, (obsNum / planNum) * 100)) : 0;
+  const metPlan = canCompare && obsNum >= planNum;
+
+  const obsText = showQuantity(observed, unit, hasObserved);
+  const planText = hasPlan ? fmtQuantity(planned ?? null, unit) : "—";
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="whitespace-nowrap leading-tight tabular-nums">
+        <span
+          className={
+            !hasObserved
+              ? "font-semibold text-base-content/35"
+              : metPlan
+                ? "font-bold text-emerald-600"
+                : "font-bold text-base-content"
+          }
+        >
+          {obsText}
+        </span>
+        {hasPlan ? (
+          <span className="text-xs font-medium text-base-content/45"> / {planText}</span>
+        ) : showPlanSlot ? (
+          <span className="text-xs font-normal text-base-content/30"> / —</span>
+        ) : null}
+      </div>
+
+      {hasPlan ? (
+        <div className="flex w-full items-center gap-1.5">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-base-200">
+            {fillPct > 0 && (
+              <div
+                style={{ width: `${fillPct}%` }}
+                className={`h-full rounded-full transition-all duration-300 ${
+                  metPlan ? "bg-emerald-500" : "bg-[#316be8]"
+                }`}
+              />
+            )}
+          </div>
+          <span
+            className={`inline-flex items-center justify-end gap-0.5 text-[10px] font-bold tabular-nums leading-none shrink-0 min-w-[34px] ${
+              metPlan
+                ? "text-emerald-600"
+                : rawPct !== null
+                  ? "text-base-content/60"
+                  : "text-base-content/35 font-medium"
+            }`}
+          >
+            {metPlan && <Check size={10} strokeWidth={3} className="shrink-0" />}
+            {rawPct !== null ? `${rawPct}%` : hasObserved || planNum === null ? "N/A" : "—"}
+          </span>
+        </div>
+      ) : (
+        showPlanSlot && showNoPlanLabel && (
+          <div className="text-[10px] font-medium leading-none text-base-content/40">No plan</div>
+        )
+      )}
+    </div>
+  );
+}
+
+function summarizePlanOther(planCell: PlanShiftSummary, unit: CountUnit): { label: string; title: string } | null {
+  const values: (number | null)[] = [];
+  const parts: string[] = [];
+  if (planCell.hasNoLoad) {
+    values.push(planCell.noLoad);
+    parts.push(`No load ${fmtQuantity(planCell.noLoad, unit)}`);
+  }
+  if (planCell.hasNeed) {
+    values.push(planCell.need);
+    parts.push(`Need WIP ${fmtQuantity(planCell.need, unit)}`);
+  }
+  if (planCell.hasUnassigned) {
+    values.push(planCell.unassigned);
+    parts.push(`Unassigned ${fmtQuantity(planCell.unassigned, unit)}`);
+  }
+  if (!values.length) return null;
+  const total = values.reduce<number | null>(
+    (acc, val) => (acc === null || val === null ? null : acc + val),
+    0,
+  );
+  return {
+    label: total === null ? "N/A" : `+${fmtQuantity(total, unit)}`,
+    title: parts.join(" · "),
+  };
+}
 
 /** Keep saved arrivals separate from observed output and unknown historical coverage. */
 export function ApiMonthlySummary({
@@ -270,12 +379,23 @@ export function ApiMonthlySummary({
       </div>)}
     </div>
     <MonthlyChart compareOutputToPlan={Boolean(snapshot)} data={chart} onPick={date => setSelected({ date, mode: actual.dates.has(date) ? "actual" : "plan", asOf: output.data?.checkedAt })} />
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-base-content/70">
-      <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#f5c542]" />D/S observed</span>
-      <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#6d4fd8]" />N/S observed</span>
-      <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm border border-dashed border-base-content/40" />Planned arrivals (D/S · N/S · Total)</span>
-      <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-5 bg-[#f97316]" />{version ? `Saved arrivals (Plan v${version})` : "Saved arrivals unavailable"}</span>
-      <span className="ml-auto">Click output or plan to see its lots · — No evidence · N/A Unknown quantity</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-base-content/70">
+      <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#f5c542]" />D/S</span>
+      <span className="inline-flex items-center gap-1.5"><i className="size-3 rounded-sm bg-[#6d4fd8]" />N/S</span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex h-3.5 items-center rounded bg-rose-600 px-1 text-[9px] font-bold leading-none text-white">!</span>
+        Over capacity
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block h-3.5 w-4 rounded-sm border border-base-300 border-l-[3px] border-l-[#316be8] bg-base-100" />
+        Out (observed)
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="inline-block h-3.5 w-4 rounded-sm border border-dashed border-[#f97316]/70 bg-[#f97316]/[0.06]" />
+        Plan (saved arrivals)
+      </span>
+      <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-5 bg-[#f97316]" />{version ? `Plan v${version} line` : "Saved arrivals unavailable"}</span>
+      <span className="ml-auto">Click Out or Plan to inspect lots · — No evidence · N/A Unknown quantity</span>
     </div>
     {typeof document !== "undefined" && createPortal(
       <div
@@ -303,15 +423,25 @@ export function ApiMonthlySummary({
       <table ref={tableRef} className="w-full border-separate border-spacing-0 text-sm tabular-nums">
         <thead ref={theadRef}><tr className="text-xs text-base-content/60">
           <th scope="col" className="sticky left-0 z-10 bg-base-100 py-2 pr-4 text-left font-semibold uppercase tracking-wide border-b border-base-300 min-w-[170px]">Product</th>
-          {data.days.map(day => <th key={day.date} scope="col" className={`px-1 py-2 text-center font-normal border-b border-l border-base-300 min-w-[88px] ${day.date === workToday ? "bg-[#316be8] text-white rounded-t-lg" : ""}`}>
+          {data.days.map(day => <th key={day.date} scope="col" className={`px-1 py-2 text-center font-normal border-b border-l border-base-300 min-w-[96px] ${day.date === workToday ? "bg-[#316be8] text-white rounded-t-lg" : ""}`}>
             <div>{['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][new Date(`${day.date}T00:00:00Z`).getUTCDay()]}</div>
             <div className="text-sm font-bold">{day.day}</div>{day.off && <small>OFF</small>}
           </th>)}
-          <th scope="col" className="sticky right-0 z-10 bg-base-100 py-2 pl-3 text-right font-semibold uppercase border-b border-base-300 min-w-[90px]">Total</th>
+          <th scope="col" className="sticky right-0 z-10 bg-base-100 py-2 pl-3 pr-2 text-right font-semibold uppercase tracking-wide border-b border-l border-base-300 min-w-[136px]">
+            <div>Total</div>
+            <div className="text-[10px] font-normal normal-case tracking-normal text-base-content/50">
+              {snapshot ? "Out / Plan" : "Observed"}
+            </div>
+          </th>
         </tr></thead>
         <tbody>{products.map(product => {
           const plan = plans.get(product);
           const total = actual.products.get(product);
+          const hasProductPlan = Boolean(snapshot && plan && plan.total !== 0);
+          const totalTitle = [
+            total ? `Observed · D/S ${show(total.ds, total.hasDs)} · N/S ${show(total.ns, total.hasNs)} · Total ${show(total.total, true)}` : null,
+            hasProductPlan && plan ? formatPlanTooltip(plan.shifts, unit) : null,
+          ].filter(Boolean).join("\n") || undefined;
           return <tr key={product}>
             <th scope="row" className="sticky left-0 z-10 bg-base-100 py-2 pr-4 text-left border-b border-base-200"><div className="font-bold">{product}</div><div className="text-xs font-normal text-base-content/50">{plan ? "Saved arrivals" : "No saved arrivals"}{total ? " · Observed output" : ""}</div></th>
             {data.days.map(day => {
@@ -321,54 +451,124 @@ export function ApiMonthlySummary({
               if (!cell && !hasPlan) {
                 return <td key={day.date} className="px-1 py-1.5 border-b border-l border-base-200 text-center text-base-content/25">–</td>;
               }
-              return <td key={day.date} className="px-1 py-1 border-b border-l border-base-200 text-center align-middle">
-                {cell && (
-                  <button
-                    type="button"
-                    disabled={!output.data}
-                    aria-label={`Observed output ${product} ${day.date}`}
-                    title={`D/S ${show(cell.ds, cell.hasDs)} · N/S ${show(cell.ns, cell.hasNs)} · Total ${show(cell.total, true)}`}
-                    onClick={() => setSelected({ date: day.date, product, mode: "actual", asOf: output.data?.checkedAt })}
-                    className="w-full rounded-md px-1 py-1 flex items-center justify-center gap-1 whitespace-nowrap hover:bg-base-200/70 disabled:opacity-50"
-                  >
-                    <span className={`min-w-5 rounded px-1 text-center text-[11px] font-semibold leading-5 ${cell.hasDs ? "bg-[#fdecb3] text-[#8a5a00]" : "bg-base-200/60 text-base-content/30"}`}>
-                      {cell.hasDs ? show(cell.ds, true) : "–"}
-                    </span>
-                    <span className={`min-w-5 rounded px-1 text-center text-[11px] font-semibold leading-5 ${cell.hasNs ? "bg-[#e9e3fb] text-[#5a3fc0]" : "bg-base-200/60 text-base-content/30"}`}>
-                      {cell.hasNs ? show(cell.ns, true) : "–"}
-                    </span>
-                    <span className="min-w-5 text-right text-[13px] font-semibold text-base-content/85">
-                      {show(cell.total, true)}
-                    </span>
-                  </button>
-                )}
-                {hasPlan && planCell && (
-                  <button
-                    type="button"
-                    disabled={!snapshot}
-                    aria-label={`Planned arrivals ${product} ${day.date}`}
-                    title={formatPlanTooltip(planCell, unit)}
-                    onClick={() => setSelected({ date: day.date, product, mode: "plan" })}
-                    className={`w-full rounded-md px-1 py-0.5 flex items-center justify-center gap-1 whitespace-nowrap border border-dashed border-base-content/25 bg-base-200/25 hover:bg-base-200/70 ${cell ? "mt-0.5" : ""}`}
-                  >
-                    <span className={`min-w-5 rounded px-1 text-center text-[10px] font-semibold leading-4 ${planCell.hasDs ? "border border-[#e5b325]/60 bg-[#fdecb3]/45 text-[#8a5a00]" : "bg-base-200/50 text-base-content/30"}`}>
-                      {planCell.hasDs ? show(planCell.ds, true) : "–"}
-                    </span>
-                    <span className={`min-w-5 rounded px-1 text-center text-[10px] font-semibold leading-4 ${planCell.hasNs ? "border border-[#7c62dc]/50 bg-[#e9e3fb]/45 text-[#5a3fc0]" : "bg-base-200/50 text-base-content/30"}`}>
-                      {planCell.hasNs ? show(planCell.ns, true) : "–"}
-                    </span>
-                    <span className="min-w-5 text-right text-[11px] font-semibold text-base-content/65">
-                      {show(planCell.total, true)}
-                    </span>
-                  </button>
-                )}
+              const metDayPlan = Boolean(
+                cell &&
+                hasPlan &&
+                planCell &&
+                typeof cell.total === "number" &&
+                typeof planCell.total === "number" &&
+                planCell.total > 0 &&
+                cell.total >= planCell.total,
+              );
+              const planOther = hasPlan && planCell ? summarizePlanOther(planCell, unit) : null;
+              return <td key={day.date} className="px-1 py-1.5 border-b border-l border-base-200 align-middle">
+                <div className="flex flex-col gap-1">
+                  {cell && (
+                    <button
+                      type="button"
+                      disabled={!output.data}
+                      aria-label={`Observed output ${product} ${day.date}`}
+                      title={`Observed · D/S ${show(cell.ds, cell.hasDs)} · N/S ${show(cell.ns, cell.hasNs)} · Total ${show(cell.total, true)}`}
+                      onClick={() => setSelected({ date: day.date, product, mode: "actual", asOf: output.data?.checkedAt })}
+                      className="w-full rounded-lg border border-base-300/90 border-l-[3px] border-l-[#316be8] bg-base-100 px-1.5 py-1 text-left transition-colors hover:border-[#316be8]/60 hover:bg-base-200/50 disabled:opacity-50 cursor-pointer"
+                    >
+                      <div className="flex items-baseline justify-between gap-1.5 leading-none">
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-blue-600">Out</span>
+                        <span
+                          className={`text-[13px] font-extrabold tabular-nums whitespace-nowrap ${
+                            metDayPlan ? "text-emerald-600" : "text-base-content"
+                          }`}
+                        >
+                          {show(cell.total, true)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1 whitespace-nowrap">
+                        <span
+                          className={`flex-1 min-w-5 rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none ${
+                            cell.hasDs ? "bg-[#fdecb3] text-[#8a5a00]" : "bg-base-200/70 text-base-content/30"
+                          }`}
+                        >
+                          {cell.hasDs ? show(cell.ds, true) : "–"}
+                        </span>
+                        <span
+                          className={`flex-1 min-w-5 rounded px-1 py-0.5 text-center text-[10px] font-bold leading-none ${
+                            cell.hasNs ? "bg-[#e9e3fb] text-[#5a3fc0]" : "bg-base-200/70 text-base-content/30"
+                          }`}
+                        >
+                          {cell.hasNs ? show(cell.ns, true) : "–"}
+                        </span>
+                      </div>
+                    </button>
+                  )}
+                  {hasPlan && planCell && (
+                    <button
+                      type="button"
+                      disabled={!snapshot}
+                      aria-label={`Planned arrivals ${product} ${day.date}`}
+                      title={formatPlanTooltip(planCell, unit)}
+                      onClick={() => setSelected({ date: day.date, product, mode: "plan" })}
+                      className="w-full rounded-lg border border-dashed border-[#f97316]/55 bg-[#f97316]/[0.04] px-1.5 py-1 text-left transition-colors hover:border-[#f97316] hover:bg-[#f97316]/[0.09] disabled:opacity-50 cursor-pointer"
+                    >
+                      <div className="flex items-baseline justify-between gap-1.5 leading-none">
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-orange-600">Plan</span>
+                        <span className="text-[12px] font-bold text-base-content/80 tabular-nums whitespace-nowrap">
+                          {show(planCell.total, true)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1 whitespace-nowrap">
+                        <span
+                          className={`flex-1 min-w-5 rounded px-1 py-0.5 text-center text-[10px] font-semibold leading-none ${
+                            planCell.hasDs
+                              ? "border border-[#e5b325]/60 bg-[#fdecb3]/55 text-[#8a5a00]"
+                              : "bg-base-200/60 text-base-content/30"
+                          }`}
+                        >
+                          {planCell.hasDs ? show(planCell.ds, true) : "–"}
+                        </span>
+                        <span
+                          className={`flex-1 min-w-5 rounded px-1 py-0.5 text-center text-[10px] font-semibold leading-none ${
+                            planCell.hasNs
+                              ? "border border-[#7c62dc]/50 bg-[#e9e3fb]/55 text-[#5a3fc0]"
+                              : "bg-base-200/60 text-base-content/30"
+                          }`}
+                        >
+                          {planCell.hasNs ? show(planCell.ns, true) : "–"}
+                        </span>
+                        {planCell.hasOver && (
+                          <span
+                            title={`Over capacity: ${show(planCell.over, true)}`}
+                            className="shrink-0 rounded bg-rose-600 px-1 py-0.5 text-center text-[10px] font-bold leading-none text-white"
+                          >
+                            !{show(planCell.over, true)}
+                          </span>
+                        )}
+                        {planOther && (
+                          <span
+                            title={planOther.title}
+                            className="shrink-0 rounded bg-base-300/80 px-1 py-0.5 text-center text-[10px] font-semibold leading-none text-base-content/75"
+                          >
+                            {planOther.label}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )}
+                </div>
               </td>;
             })}
-            <td className="sticky right-0 z-10 bg-base-100 py-2 pl-3 text-right border-b border-base-200">
-              <div className="font-semibold">{show(total?.total, Boolean(total))}</div>
-              {snapshot && plan && plan.total !== 0 && (
-                <div title={formatPlanTooltip(plan.shifts, unit)} className="text-xs text-base-content/50">Plan {fmt(plan.total)}</div>
-              )}
+            <td
+              title={totalTitle}
+              className="sticky right-0 z-10 bg-base-100 py-2 pl-3 pr-2 text-right border-b border-l border-base-200 align-middle"
+            >
+              <TotalProgress
+                observed={total?.total}
+                hasObserved={Boolean(total)}
+                planned={plan?.total}
+                hasPlan={hasProductPlan}
+                unit={unit}
+                showPlanSlot={Boolean(snapshot)}
+                showNoPlanLabel={Boolean(snapshot)}
+              />
             </td>
           </tr>;
         })}
@@ -376,7 +576,17 @@ export function ApiMonthlySummary({
         </tbody>
         <tfoot><tr><th scope="row" className="sticky left-0 z-10 bg-base-100 py-3 pr-4 text-left font-bold border-t-2 border-base-300">Observed / Arrivals</th>
           {data.days.map(day => <td key={day.date} title={snapshot ? formatPlanTooltip(day.shifts, unit) : undefined} className="py-3 text-center border-t-2 border-base-300">{show(actual.dates.get(day.date)?.total, actual.dates.has(day.date))}<span className="text-base-content/50"> / {snapshot ? fmt(day.plan) : "—"}</span></td>)}
-          <td title={planTooltip} className="sticky right-0 z-10 bg-base-100 py-3 pl-3 text-right border-t-2 border-base-300">{show(actual.total, records.length > 0)} / {snapshot ? fmt(data.total) : "—"}</td>
+          <td title={planTooltip} className="sticky right-0 z-10 bg-base-100 py-2.5 pl-3 pr-2 text-right border-t-2 border-l border-base-300 align-middle">
+            <TotalProgress
+              observed={actual.total}
+              hasObserved={records.length > 0}
+              planned={data.total}
+              hasPlan={Boolean(snapshot && data.total !== 0)}
+              unit={unit}
+              showPlanSlot
+              showNoPlanLabel={false}
+            />
+          </td>
         </tr></tfoot>
       </table>
     </div>
