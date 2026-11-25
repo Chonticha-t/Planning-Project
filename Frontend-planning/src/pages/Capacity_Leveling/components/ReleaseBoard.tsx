@@ -636,7 +636,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             title={isFullscreen ? "Exit full view (Esc)" : "Expand board to full view"}
           >
             {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            <span>{isFullscreen ? "Minimize" : "Maximize"}</span>
+            <span>{isFullscreen ? "Exit" : "Full"}</span>
           </button>
         </div>
       </div>
