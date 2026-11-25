@@ -163,7 +163,7 @@ const getColumns = (
   },
   {
     field: "po_bal",
-    headerName: "SO Bal",
+    headerName: "PO Bal",
     type: "number",
     flex: 1.15,
     minWidth: 170,
