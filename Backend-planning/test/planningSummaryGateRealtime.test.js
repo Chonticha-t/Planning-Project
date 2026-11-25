@@ -1015,3 +1015,37 @@ test("period counts deduplicate a physical lot across dates without changing dai
     assert.equal(h.render().filteredTableRows.length, 1);
   } finally { h.unmount(); }
 });
+
+test("SMT filter includes FULL products at SMT gates and keeps them out of FPC-GEN/FPC-AUTO product lists", async () => {
+  const h = hookHarness();
+  try {
+    h.render();
+    const base = {
+      gate_order: 6, gate_state: "coming", arrive_by: "2026-01-01", must_out: "2026-01-02",
+      pcs_per_sheet: 10, pri: 1, qty: 100,
+    };
+    await h.succeed(h.requests.slice(), [
+      { ...base, prd_name: "PRD-FPC", prd_category: "FPC", gate_name: "FFPC", gate_order: 1, lot_no: "LOT-FPC", process_group: "EFPC_GEN" },
+      { ...base, prd_name: "PRD-FULL-SMT-ONLY", prd_category: "FULL", gate_name: "MMOT", lot_no: "LOT-FULL-GEN", process_group: "EFPC_GEN" },
+      { ...base, prd_name: "PRD-FULL-AUTO", prd_category: "FULL", gate_name: "MMOT", lot_no: "LOT-FULL-AUTO", process_group: "EFPC_AUTO" },
+      { ...base, prd_name: "PRD-SMT", prd_category: "SMT", gate_name: "MMOT", lot_no: "LOT-SMT", process_group: "SMT" },
+    ]);
+
+    // In FPC-GEN, SMT-gate FULL products must not appear in availableProducts or FPC gates.
+    assert.deepEqual(Array.from(h.render().availableProducts), ["PRD-FPC"]);
+
+    // In SMT, all 3 lots visiting MMOT (FULL GEN, FULL AUTO, and SMT) must appear.
+    h.render().setCategory("SMT");
+    h.render().selectGate("MMOT");
+    const smt = h.render();
+    assert.equal(smt.gateFlowList.find(g => g.gate_name === "MMOT").quantities.total.lot, 3);
+    assert.equal(smt.tableStats.totalLots, 3);
+    assert.deepEqual(Array.from(smt.availableProducts), ["PRD-FULL-AUTO", "PRD-FULL-SMT-ONLY", "PRD-SMT"]);
+
+    // ALL and SMT must agree on MMOT total lots.
+    h.render().setCategory("ALL");
+    h.render().selectGate("MMOT");
+    const all = h.render();
+    assert.equal(all.gateFlowList.find(g => g.gate_name === "MMOT").quantities.total.lot, 3);
+  } finally { h.unmount(); }
+});

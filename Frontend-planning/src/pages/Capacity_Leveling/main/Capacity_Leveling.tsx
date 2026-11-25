@@ -222,9 +222,13 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const effectiveBoardCardOrder = useMemo(
     () => new Map([...(requiredReset ? [] : savedBoardCardOrder), ...boardCardOrder]), [savedBoardCardOrder, boardCardOrder, requiredReset]
   );
+  const allCategoryBoardLots = useMemo(
+    () => data ? applyBoardCardOrder(buildBoardLots(data, lots, "ALL"), effectiveBoardCardOrder) : [],
+    [data, lots, effectiveBoardCardOrder]
+  );
   const allBoardLots = useMemo(
-    () => data ? applyBoardCardOrder(buildBoardLots(data, lots, category), effectiveBoardCardOrder) : [],
-    [data, lots, category, effectiveBoardCardOrder]
+    () => !data ? [] : category === "ALL" ? allCategoryBoardLots : applyBoardCardOrder(buildBoardLots(data, lots, category), effectiveBoardCardOrder),
+    [data, lots, category, effectiveBoardCardOrder, allCategoryBoardLots]
   );
   const gateLots = useMemo(
     () => allBoardLots.filter((lot) => lot.gate === boardGate && !lot.passedGate),
@@ -249,9 +253,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   }, [draggedLot, selectedLotIds, boardLots, pendingMove]);
   const activePreviewTargetDate = hoverTargetDate || pendingMove?.targetDate || null;
 
+  // Allocate shifts on ALL lots (matching Planning In Gate) because gate capacity is shared across categories.
   const baseShiftAllocations = useMemo(
-    () => data ? allocateBoardShifts(data, allBoardLots, { excludePassed: true }) : new Map<string, BoardShiftAllocation>(),
-    [data, allBoardLots]
+    () => data ? allocateBoardShifts(data, allCategoryBoardLots, { excludePassed: true }) : new Map<string, BoardShiftAllocation>(),
+    [data, allCategoryBoardLots]
   );
 
   // Dragging across columns changes the target often; the heavy preview follows it at lower priority,
@@ -262,7 +267,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     () => new Map<string, { grid: DayGateLoad[]; shifts: Map<string, BoardShiftAllocation> }>(),
     // A new, empty cache whenever anything except the target date changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, grid, lots, allBoardLots, category, effectiveBoardCardOrder, activeMovingLots]
+    [data, grid, lots, allCategoryBoardLots, category, effectiveBoardCardOrder, activeMovingLots]
   );
   const movePreview = useMemo(() => {
     if (!data || !previewTarget) return null;
@@ -270,8 +275,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     if (cached) return cached;
     const ids = new Set(activeMovingLots.flatMap((lot) => lot.sourceIds || [lot.id]));
     const projectedLots = lots.map((lot) => ids.has(lot.id) ? { ...lot, plannedDate: previewTarget } : lot);
-    // Rebuild to merge physical lots and apply priority at the destination before allocating shifts.
-    const projectedBoard = applyBoardCardOrder(buildBoardLots(data, projectedLots, category), effectiveBoardCardOrder);
+    // Rebuild on ALL lots to merge physical lots, apply priority and allocate shared shift capacity.
+    const projectedBoard = applyBoardCardOrder(buildBoardLots(data, projectedLots, "ALL"), effectiveBoardCardOrder);
     const entry = {
       grid: computeMovePreview(data, grid, lots, activeMovingLots, previewTarget, category).previewGrid,
       shifts: allocateBoardShifts(data, projectedBoard, { excludePassed: true }),
@@ -283,7 +288,25 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const shiftAllocations = movePreview?.shifts ?? baseShiftAllocations;
   const displayGrid = movePreview?.grid ?? grid;
 
-  const kpis = useMemo(() => calculateKpis(grid, requiredGrid, lots, data ?? undefined), [grid, requiredGrid, lots, data]);
+  const kpis = useMemo(
+    () => calculateKpis(grid, requiredGrid, lots, data ?? undefined, { category, visibleGates: visibleGridGates }),
+    [grid, requiredGrid, lots, data, category, visibleGridGates]
+  );
+  const saveMissingPlanningCards = useMemo(() => {
+    if (category === "ALL") return kpis.missingPlanningCards;
+    return lots.filter(
+      (lot) => !lot.passedGate && isMoved(lot) && (!data || lot.plannedDate >= data.today) && (lot.loadMin === null || (data && !occupancyWindow(data, lot)))
+    ).length;
+  }, [category, kpis.missingPlanningCards, lots, data]);
+  const saveKpis = useMemo(() => {
+    if (!saveModalOpen || category === "ALL" || !data) return kpis;
+    return calculateKpis(
+      buildGrid(data, lots, false, "ALL"),
+      buildGrid(data, lots, true, "ALL"),
+      lots,
+      data
+    );
+  }, [saveModalOpen, category, data, lots, kpis]);
   const draftChangesCount = useMemo(() => {
     const movedLots = lots.filter((lot) => lot.plannedDate !== (requiredReset ? lot.baseDate : lot.savedDate)).length;
     return movedLots + boardCardOrder.size;
@@ -699,12 +722,12 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           setSelectedLotId(null);
           setSaveModalOpen(true);
         }}
-        canSave={!readOnly && Boolean(data) && !loading && !saving && kpis.missingPlanningCards === 0}
+        canSave={!readOnly && Boolean(data) && !loading && !saving && saveMissingPlanningCards === 0}
         saveDisabledReason={
           readOnly
             ? "Viewing a historical plan snapshot (read-only)"
-            : kpis.missingPlanningCards > 0
-            ? `Cannot save: ${kpis.missingPlanningCards} card(s) are missing valid gate lead time or normal shift minutes`
+            : saveMissingPlanningCards > 0
+            ? `Cannot save: ${saveMissingPlanningCards} card(s) are missing valid gate lead time or normal shift minutes`
             : loading || saving
             ? "Please wait while loading or saving…"
             : null
@@ -779,7 +802,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             <div className="w-full min-w-0">
               <ReleaseBoard
                 readOnly={readOnly}
-                gates={gates}
+                gates={visibleGridGates}
                 boardGate={boardGate}
                 onBoardGateChange={handleBoardGateChange}
                 lots={boardLots}
@@ -863,7 +886,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
             onConfirmSave={(reason) => void handleConfirmSave(reason)}
             nextVersion={(data.plan?.version ?? 0) + 1}
             isSaving={saving}
-            kpis={kpis}
+            kpis={saveKpis}
             resetToRequired={requiredReset}
           />
         </>

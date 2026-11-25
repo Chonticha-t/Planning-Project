@@ -3,7 +3,7 @@ import axios from "axios";
 import dayjs from "dayjs";
 import { useGateToday } from "./useGateToday";
 import { formatGateName, formatGateTransition } from "../gatePresentation";
-import { summarizeGateQuantities } from "../gateUnits";
+import { matchesGateCategory, summarizeGateQuantities } from "../gateUnits";
 import {
   PLANNING_SUMMARY_GATE_TABLE_API,
   PLANNING_SUMMARY_GATE_CALENDAR_API,
@@ -271,10 +271,11 @@ export const usePlanningSummaryGate = () => {
     must_out: row.must_out_no_skip ?? row.must_out,
   })), [sourceRows, filters.skipHolidays]);
 
-  // Use the stored process group for every section; unknown groups appear in ALL.
+  // Match process group with gate side: SMT includes all work at SMT gates (SMT + FULL),
+  // while FPC-GEN / FPC-AUTO match FPC-side rows only; unknown FPC groups appear in ALL.
   const categoryRows = useMemo(() => {
     if (filters.category === "ALL") return baseRows;
-    return baseRows.filter((r) => r.process_group === filters.category);
+    return baseRows.filter((r) => matchesGateCategory(r.gate_name, r.process_group, filters.category));
   }, [baseRows, filters.category]);
 
   // Distinct sorted product names for the dropdown filter

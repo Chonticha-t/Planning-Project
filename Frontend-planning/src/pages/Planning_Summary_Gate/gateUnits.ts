@@ -1,7 +1,48 @@
-import type { GateQuantitySummary, GateUnit, GateUnitValues, PlanningSummaryGateRow } from "./types";
+import type { GateQuantitySummary, GateUnit, GateUnitValues, PlanningSummaryGateRow, ProcessGroupFilter } from "./types";
 
 export const GATE_UNIT_LABELS: Record<GateUnit, string> = { piece: "pcs", sheet: "sheets", lot: "lots" };
 export const GATE_UNIT_TITLES: Record<GateUnit, string> = { piece: "Piece", sheet: "Sheet", lot: "Lot" };
+
+export const FPC_GATES: ReadonlySet<string> = new Set(["FFPC", "FVAC", "FADL", "FIN", "W/H"]);
+export const SMT_GATES: ReadonlySet<string> = new Set(["MFPC", "MMOT", "MBLK", "MFIN", "MW/H"]);
+export type GateGroupSide = "FPC" | "SMT";
+
+export const buildGateGroupMap = (
+  gates?: readonly { gate: string; group: GateGroupSide }[],
+): Map<string, GateGroupSide> | undefined =>
+  gates?.length ? new Map(gates.map((item) => [item.gate, item.group])) : undefined;
+
+export const resolveGateSide = (
+  gateName: string | null | undefined,
+  gateGroupMap?: ReadonlyMap<string, GateGroupSide>,
+): GateGroupSide | null => {
+  const gate = gateName?.trim() ?? "";
+  if (!gate) return null;
+  const mapped = gateGroupMap?.get(gate);
+  if (mapped) return mapped;
+  if (SMT_GATES.has(gate)) return "SMT";
+  if (FPC_GATES.has(gate)) return "FPC";
+  return null;
+};
+
+/**
+ * Match a gate row against the Process Group filter (ALL | FPC-GEN | FPC-AUTO | SMT).
+ * FULL products keep their FPC process_group (EFPC_GEN / EFPC_AUTO) on SMT gates too;
+ * SMT includes all work visiting SMT gates, while FPC-GEN / FPC-AUTO stay on non-SMT gates.
+ */
+export const matchesGateCategory = (
+  gateName: string | null | undefined,
+  processGroup: string | null | undefined,
+  category: ProcessGroupFilter,
+  gateGroupMap?: ReadonlyMap<string, GateGroupSide>,
+): boolean => {
+  if (category === "ALL") return true;
+  const side = resolveGateSide(gateName, gateGroupMap);
+  if (category === "SMT") {
+    return side === "SMT" || (side === null && processGroup === "SMT");
+  }
+  return side !== "SMT" && processGroup === category;
+};
 
 export const formatGateQuantity = (value: number | null, unit: GateUnit): string => {
   if (value === null || !Number.isFinite(value)) return "N/A";

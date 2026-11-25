@@ -203,7 +203,15 @@ const Planning_In_Gate = () => {
                 search={tableSearch}
                 allocations={allocations}
                 capacity={saved.snapshot.capacity?.[gate]?.[date]}
-                finished={{ ...finished, rows: finishedRows, unresolved: finished.unresolved + finished.rows.filter(row => row.processGroup === null).length }}
+                finished={{
+                  ...finished,
+                  rows: finishedRows,
+                  unresolved: finished.unresolved + (
+                    category === "EFPC_GEN" || category === "EFPC_AUTO"
+                      ? finished.rows.filter(row => row.gate === gate && row.processGroup === null).length
+                      : 0
+                  ),
+                }}
                 canEdit={workMode === "edit"}
                 onMoveUp={(lot, filter) => handleStageMove(lot, "up", filter)}
                 onMoveDown={(lot, filter) => handleStageMove(lot, "down", filter)}

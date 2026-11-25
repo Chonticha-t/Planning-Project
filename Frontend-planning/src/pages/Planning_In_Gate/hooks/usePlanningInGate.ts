@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import toast from "react-hot-toast";
 import { exportToExcel } from "@/utility/Service/xlxs/exportToExcel";
-import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
+import { buildGateGroupMap, formatGateQuantity, matchesGateCategory } from "../../Planning_Summary_Gate/gateUnits";
 import { allocateBoardShifts } from "../../Capacity_Leveling/utils/boardShiftAllocation";
 import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, type BoardCardOrder } from "../../Capacity_Leveling/utils/boardCardOrder";
 import { buildBoardLots, toLotItem } from "../../Capacity_Leveling/utils/levelingCalculations";
@@ -152,7 +152,11 @@ export default function usePlanningInGate() {
     return list.map(gate => ({ gate }));
   }, [saved, category]);
   const gate = gates.find(item => item.gate === selectedGate)?.gate ?? gates[0]?.gate ?? "";
-  const finishedRows = useMemo(() => finished.rows.filter(row => row.gate === gate && (category === "ALL" || row.processGroup === category)), [finished.rows, gate, category]);
+  const gateGroups = useMemo(() => buildGateGroupMap(saved?.snapshot.gates), [saved]);
+  const finishedRows = useMemo(
+    () => finished.rows.filter(row => row.gate === gate && matchesGateCategory(row.gate, row.processGroup, category, gateGroups)),
+    [finished.rows, gate, category, gateGroups],
+  );
   const gateRows = useMemo(() => rows.filter(row => row.gate === gate), [rows, gate]);
   const dayRows = useMemo(() => savedViewRows(rows, view, view === "month" ? month : date), [rows, date, month, view]);
   const dayPlanLots = useMemo(() => rows.filter(row => row.plannedDate === date && row.gate === gate), [rows, date, gate]);

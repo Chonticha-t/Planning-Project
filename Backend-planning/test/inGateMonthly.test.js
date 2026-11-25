@@ -180,3 +180,21 @@ test("planId-scoped monthly query falls back to legacy JSONB SQL when work_plan_
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test("monthly output SQL scopes SMT to all SMT-gate rows (including FULL products) and keeps FPC groups off SMT gates", async () => {
+  await withApi(async (api, queries) => {
+    const smtRes = await api("month", { month: "2026-11", category: "SMT" });
+    assert.equal(smtRes.status, 200);
+    const summaryQuery = queries.find(([sql]) => sql.includes("COUNT(*)::integer"));
+    assert.equal(summaryQuery[1][1], "SMT");
+    assert.match(summaryQuery[0], /\$2::text = 'SMT' AND \(gate_name = ANY\(ARRAY\['MFPC','MMOT','MBLK','MFIN','MW\/H'\]\)/);
+    assert.match(summaryQuery[0], /\$2::text IN \('EFPC_GEN', 'EFPC_AUTO'\) AND gate_name <> ALL\(ARRAY\['MFPC','MMOT','MBLK','MFIN','MW\/H'\]\) AND process_group = \$2/);
+
+    const lotsRes = await api("lots", { month: "2026-11", category: "SMT", gate: "MMOT", date: "2026-11-12", asOf });
+    assert.equal(lotsRes.status, 200);
+    const lotsQuery = queries.find(([sql]) => sql.includes("output_id::text"));
+    assert.equal(lotsQuery[1][1], "SMT");
+    assert.equal(lotsQuery[1][4], "MMOT");
+    assert.match(lotsQuery[0], /gate_name = ANY\(ARRAY\['MFPC','MMOT','MBLK','MFIN','MW\/H'\]\)/);
+  });
+});

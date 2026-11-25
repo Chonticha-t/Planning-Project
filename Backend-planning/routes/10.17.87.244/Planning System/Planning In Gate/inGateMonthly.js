@@ -1,12 +1,18 @@
 const express = require("express");
 
 const CATEGORIES = new Set(["ALL", "EFPC_GEN", "EFPC_AUTO", "SMT"]);
+const FPC_GATES_SQL = "ARRAY['FFPC','FVAC','FADL','FIN','W/H']";
+const SMT_GATES_SQL = "ARRAY['MFPC','MMOT','MBLK','MFIN','MW/H']";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_GROUPS = 20000;
 const PAGE_SIZE = 100;
 const SCOPE_SQL = `FROM planning.gate_output_log
   WHERE work_date >= $1::date AND work_date < $1::date + INTERVAL '1 month'
-    AND ($2::text = 'ALL' OR process_group = $2)
+    AND (
+      $2::text = 'ALL'
+      OR ($2::text = 'SMT' AND (gate_name = ANY(${SMT_GATES_SQL}) OR (gate_name <> ALL(${FPC_GATES_SQL}) AND process_group = 'SMT')))
+      OR ($2::text IN ('EFPC_GEN', 'EFPC_AUTO') AND gate_name <> ALL(${SMT_GATES_SQL}) AND process_group = $2)
+    )
     AND ($3::text = '' OR STRPOS(LOWER(prd_name), LOWER($3)) > 0 OR STRPOS(LOWER(lot_no), LOWER($3)) > 0)
     AND recorded_at <= $4::timestamptz AND out_at <= $4::timestamptz`;
 const PLAN_FILTER_SQL = `AND EXISTS (

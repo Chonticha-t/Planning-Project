@@ -422,3 +422,31 @@ test("cross-category allocation computed on ALL lots keeps EFPC_AUTO in Night af
   const dayCell = monthAuto.days.find(d => d.date === day)!;
   assert.deepEqual([dayCell.shifts.hasDs, dayCell.shifts.ds, dayCell.shifts.ns, dayCell.shifts.total], [false, null, 200, 200]);
 });
+
+test("SMT filter includes FULL products on SMT gates and excludes them from FPC-GEN / FPC-AUTO", () => {
+  const data = snapshot();
+  data.cards.push(
+    {
+      ...data.cards[0], id: "FULL-SMT-GEN", workKey: "FULL-SMT-GEN", gate: "GATE_B",
+      lotNo: "LOT-FULL-GEN", prdName: "PRD-FULL", processGroup: "EFPC_GEN", plannedDate: day,
+    },
+    {
+      ...data.cards[0], id: "FULL-SMT-AUTO", workKey: "FULL-SMT-AUTO", gate: "GATE_B",
+      lotNo: "LOT-FULL-AUTO", prdName: "PRD-FULL-A", processGroup: "EFPC_AUTO", plannedDate: day,
+    },
+    {
+      ...data.cards[0], id: "PURE-SMT", workKey: "PURE-SMT", gate: "GATE_B",
+      lotNo: "LOT-SMT", prdName: "PRD-SMT", processGroup: "SMT", plannedDate: day,
+    },
+  );
+  data.arrivalRows.push(
+    { ...data.arrivalRows[0], pri: 10, workKey: "FULL-SMT-GEN", gate_name: "GATE_B", lot_no: "LOT-FULL-GEN", prd_name: "PRD-FULL", process_group: "EFPC_GEN", arrive_by: day },
+    { ...data.arrivalRows[0], pri: 11, workKey: "FULL-SMT-AUTO", gate_name: "GATE_B", lot_no: "LOT-FULL-AUTO", prd_name: "PRD-FULL-A", process_group: "EFPC_AUTO", arrive_by: day },
+    { ...data.arrivalRows[0], pri: 12, workKey: "PURE-SMT", gate_name: "GATE_B", lot_no: "LOT-SMT", prd_name: "PRD-SMT", process_group: "SMT", arrive_by: day },
+  );
+
+  assert.deepEqual(savedPlanRows(data, "SMT").map(row => row.label), ["LOT-FULL-GEN", "LOT-FULL-AUTO", "LOT-SMT"]);
+  assert.deepEqual(savedPlanRows(data, "EFPC_GEN").map(row => row.label), ["LOT-C"]);
+  assert.deepEqual(savedPlanRows(data, "EFPC_AUTO").map(row => row.label), ["LOT-A", "LOT-B"]);
+  assert.equal(savedPlanRows(data, "ALL").length, 6);
+});

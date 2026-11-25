@@ -447,18 +447,64 @@ test("overdue releases clamped to today do not pull historical arrivals into tod
   assert.equal(cellOf(buildGrid(source, source.cards.map(toLotItem)), "2026-11-16", "FADL").lotCount, 0);
 });
 
-test("process filter applies to both arrivals and load; unknown groups appear only in ALL", () => {
-  const source = data([card()]);
+test("process filter applies to both arrivals and load; FULL products at SMT gates match SMT and unknown FPC groups appear only in ALL", () => {
+  const source = data([
+    card(),
+    card({ id: "smt-full-gen", workKey: "smt-full-gen", gate: "MMOT", lotNo: "FULL-GEN", processGroup: "EFPC_GEN" }),
+    card({ id: "smt-full-auto", workKey: "smt-full-auto", gate: "MMOT", lotNo: "FULL-AUTO", processGroup: "EFPC_AUTO" }),
+    card({ id: "smt-only", workKey: "smt-only", gate: "MMOT", lotNo: "SMT-ONLY", processGroup: "SMT" }),
+  ]);
   const first = source.arrivalRows[0];
   source.arrivalRows.push(
     { ...first, lot_no: "AUTO", process_group: "EFPC_AUTO" },
-    { ...first, lot_no: "SMT", process_group: "SMT" },
     { ...first, lot_no: "UNKNOWN", process_group: null },
   );
-  for (const [category, count] of [["EFPC_GEN", 1], ["EFPC_AUTO", 1], ["SMT", 1], ["ALL", 4]] as const) {
-    const cell = cellOf(buildGrid(source, source.cards.map(toLotItem), false, category), "2026-11-16", "FADL");
-    assert.deepEqual([cell.lotCount, cell.loadMin], [count, count * 950]);
+  const lots = source.cards.map(toLotItem);
+  for (const [category, fadlCount, mmotCount] of [
+    ["EFPC_GEN", 1, 0],
+    ["EFPC_AUTO", 1, 0],
+    ["SMT", 0, 3],
+    ["ALL", 3, 3],
+  ] as const) {
+    const grid = buildGrid(source, lots, false, category);
+    const fadl = cellOf(grid, "2026-11-16", "FADL");
+    const mmot = cellOf(grid, "2026-11-16", "MMOT");
+    assert.deepEqual([fadl.lotCount, fadl.loadMin], [fadlCount, fadlCount * 950]);
+    assert.deepEqual([mmot.lotCount, mmot.loadMin], [mmotCount, mmotCount * 950]);
   }
+  assert.deepEqual(buildBoardLots(source, lots, "SMT").map((lot) => lot.label).sort(), ["FULL-AUTO", "FULL-GEN", "SMT-ONLY"]);
+  assert.deepEqual(buildBoardLots(source, lots, "EFPC_GEN").map((lot) => lot.label), ["L1"]);
+});
+
+test("calculateKpis scopes overload, late and moved counts to the selected category and visible gates", () => {
+  const source = data([
+    card({ id: "gen-fadl", workKey: "gen-fadl", gate: "FADL", lotNo: "L1", processGroup: "EFPC_GEN", plannedDate: "2026-11-17", mustOut: "2026-11-25" }),
+    card({ id: "full-mmot-1", workKey: "full-mmot-1", gate: "MMOT", lotNo: "L2", processGroup: "EFPC_GEN", plannedDate: "2026-11-18", mustOut: "2026-11-17" }),
+    card({ id: "full-mmot-2", workKey: "full-mmot-2", gate: "MMOT", lotNo: "L3", processGroup: "EFPC_GEN", plannedDate: "2026-11-18", mustOut: "2026-11-25" }),
+  ]);
+  source.capacity.MMOT["2026-11-18"] = open(950);
+  source.capacity.FADL["2026-11-17"] = open(1900);
+  const lots = source.cards.map(toLotItem);
+  const fpcGates = source.gates.filter((g) => g.group === "FPC");
+  const smtGates = source.gates.filter((g) => g.group === "SMT");
+
+  // EFPC_GEN must only count FADL (1 moved, 0 overload, 0 late) and ignore MMOT's FULL overload/late cards.
+  const genGrid = buildGrid(source, lots, false, "EFPC_GEN");
+  const genReq = buildGrid(source, lots, true, "EFPC_GEN");
+  const genKpis = calculateKpis(genGrid, genReq, lots, source, { category: "EFPC_GEN", visibleGates: fpcGates });
+  assert.equal(genKpis.totalCount, 1);
+  assert.equal(genKpis.movedCount, 1);
+  assert.equal(genKpis.overloadCells, 0);
+  assert.equal(genKpis.lateCards, 0);
+
+  // SMT must count both FULL lots on MMOT (2 moved, 1 overloaded cell at 200%, 1 late card).
+  const smtGrid = buildGrid(source, lots, false, "SMT");
+  const smtReq = buildGrid(source, lots, true, "SMT");
+  const smtKpis = calculateKpis(smtGrid, smtReq, lots, source, { category: "SMT", visibleGates: smtGates });
+  assert.equal(smtKpis.totalCount, 2);
+  assert.equal(smtKpis.movedCount, 2);
+  assert.equal(smtKpis.overloadCells, 1);
+  assert.equal(smtKpis.lateCards, 1);
 });
 
 test("Need WIP quantities match Summary Gate but do not reserve machine minutes", () => {

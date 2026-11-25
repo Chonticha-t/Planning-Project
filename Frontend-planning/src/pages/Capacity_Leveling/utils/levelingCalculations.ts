@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { mergeMoveHistory } from "./moveHistory.ts";
-import { isGateNeedWip, summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
+import { buildGateGroupMap, isGateNeedWip, matchesGateCategory, summarizeGateQuantities } from "../../Planning_Summary_Gate/gateUnits.ts";
 import type {
   ApiCard,
   DayGateLoad,
@@ -40,8 +40,11 @@ export const toLotItem = (card: ApiCard): LotItem => {
   };
 };
 
-export const matchesCategory = (lot: LotItem, category: ProcessCategory) =>
-  category === "ALL" || lot.processGroup === category;
+export const matchesCategory = (
+  lot: Pick<LotItem, "gate" | "processGroup">,
+  category: ProcessCategory,
+  gates?: LevelingData["gates"],
+) => matchesGateCategory(lot.gate, lot.processGroup, category, buildGateGroupMap(gates));
 
 export const isMoved = (lot: LotItem) => lot.plannedDate !== lot.baseDate;
 
@@ -296,10 +299,11 @@ const compareBoardPriority = (a: BoardPriority, b: BoardPriority) =>
 /** One visible card per physical lot/gate/planned arrival; retain every allocation. */
 export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: ProcessCategory = "ALL"): LotItem[] => {
   const sources = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
+  const gateGroups = buildGateGroupMap(data.gates);
   const buckets = new Map<string, { rows: GateArrivalRow[]; members: Map<string, LotItem>; date: string }>();
   for (const row of data.arrivalRows) {
     // Keep passed_gate rows here so Planning_In_Gate and boardCardOrder still see saved passed cards.
-    if (row.gate_state === "passed" || (category !== "ALL" && row.process_group !== category)) continue;
+    if (row.gate_state === "passed" || !matchesGateCategory(row.gate_name, row.process_group, category, gateGroups)) continue;
     const source = sources.get(siblingKey(row.workKey, row.gate_name));
     const date = plannedArrivalDate(row.arrive_by, source);
     if (!date || !source) continue;
@@ -390,9 +394,10 @@ export const buildGrid = (
   const byDate = new Map(grid.map((day) => [day.date, day]));
 
   const cards = new Map(lots.map((lot) => [siblingKey(lot.workKey, lot.gate), lot]));
+  const gateGroups = buildGateGroupMap(data.gates);
   const buckets = new Map<string, GridBucket>();
   for (const row of data.arrivalRows) {
-    if (isPassedRow(row) || (category !== "ALL" && row.process_group !== category)) continue;
+    if (isPassedRow(row) || !matchesGateCategory(row.gate_name, row.process_group, category, gateGroups)) continue;
     const date = plannedArrivalDate(row.arrive_by, cards.get(siblingKey(row.workKey, row.gate_name)), useBaseDates);
     if (!date || !byDate.get(date)?.gates[row.gate_name]) continue;
     const key = cellKey(date, row.gate_name);
@@ -509,6 +514,7 @@ const projectGrid = (
     if (!entry) changes.set(key, entry = { date, gate, removed: new Set(), added: [] });
     return entry;
   };
+  const gateGroups = buildGateGroupMap(data.gates);
   const siblings = new Set<string>();
   for (const lot of allLots) if (movingIds.has(lot.id)) siblings.add(siblingKey(lot.workKey, lot.gate));
   for (const key of siblings) {
@@ -517,7 +523,7 @@ const projectGrid = (
     if (!card || !movingIds.has(card.id)) continue;
     const projected = { ...card, plannedDate: targetDate };
     for (const row of bySibling.get(key) ?? []) {
-      if (isPassedRow(row) || (category !== "ALL" && row.process_group !== category)) continue;
+      if (isPassedRow(row) || !matchesGateCategory(row.gate_name, row.process_group, category, gateGroups)) continue;
       const from = plannedArrivalDate(row.arrive_by, card);
       const to = plannedArrivalDate(row.arrive_by, projected);
       if (from === to) continue;
@@ -607,23 +613,42 @@ export const calculateKpis = (
   grid: DayGateLoad[],
   requiredGrid: DayGateLoad[],
   lots: LotItem[],
-  data?: LevelingData
+  data?: LevelingData,
+  options?: {
+    category?: ProcessCategory;
+    visibleGates?: readonly Pick<LevelingData["gates"][number], "gate">[];
+  }
 ): LevelingKpiData => {
-  const overloaded = (data: DayGateLoad[]) =>
-    data.flatMap((day) =>
+  const allowedGates = options?.visibleGates
+    ? new Set(options.visibleGates.map((item) => item.gate))
+    : null;
+  const category = options?.category ?? "ALL";
+  const gateGroups = buildGateGroupMap(data?.gates);
+  const overloaded = (rows: DayGateLoad[]) =>
+    rows.flatMap((day) =>
       Object.entries(day.gates)
-        .filter(([, cell]) => cell.configured && (cell.pct > 100 || (cell.capacityMin === 0 && cell.loadMin > 0)))
+        .filter(([gate, cell]) =>
+          (!allowedGates || allowedGates.has(gate)) &&
+          cell.configured &&
+          (cell.pct > 100 || (cell.capacityMin === 0 && cell.loadMin > 0))
+        )
         .map(([gate]) => `${gate} · ${day.displayDate}`)
     );
   const red = overloaded(grid);
-  const activeLots = lots.filter((lot) => !lot.passedGate);
   const planned = plannedDateIndex(lots, data);
+  const activeLots = lots.filter(
+    (lot) =>
+      !lot.passedGate &&
+      (!allowedGates || allowedGates.has(lot.gate)) &&
+      matchesGateCategory(lot.gate, lot.processGroup, category, gateGroups)
+  );
   const warnings = activeLots.map((lot) => moveWarning(lot, lot.plannedDate, planned, data));
   const late = activeLots.filter((_, index) => warnings[index] === "late" || warnings[index] === "order");
   const moved = activeLots.filter(isMoved);
   const unset = new Set<string>();
   for (const day of grid) {
     for (const [gate, cell] of Object.entries(day.gates)) {
+      if (allowedGates && !allowedGates.has(gate)) continue;
       if (!cell.off && (!cell.configured || cell.isDefaultMc)) unset.add(gate);
     }
   }
