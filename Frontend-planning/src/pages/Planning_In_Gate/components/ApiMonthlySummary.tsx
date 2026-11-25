@@ -388,14 +388,14 @@ export function ApiMonthlySummary({
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className="inline-block h-3.5 w-4 rounded-sm border border-base-300 border-l-[3px] border-l-[#316be8] bg-base-100" />
-        Out (observed)
+        Actual (observed)
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className="inline-block h-3.5 w-4 rounded-sm border border-dashed border-[#f97316]/70 bg-[#f97316]/[0.06]" />
         Plan (saved arrivals)
       </span>
       <span className="inline-flex items-center gap-1.5"><i className="h-0.5 w-5 bg-[#f97316]" />{version ? `Plan v${version} line` : "Saved arrivals unavailable"}</span>
-      <span className="ml-auto">Click Out or Plan to inspect lots · — No evidence · N/A Unknown quantity</span>
+      <span className="ml-auto">Click Actual or Plan to inspect lots · — No evidence · N/A Unknown quantity</span>
     </div>
     {typeof document !== "undefined" && createPortal(
       <div
@@ -430,7 +430,7 @@ export function ApiMonthlySummary({
           <th scope="col" className="sticky right-0 z-10 bg-base-100 py-2 pl-3 pr-2 text-right font-semibold uppercase tracking-wide border-b border-l border-base-300 min-w-[136px]">
             <div>Total</div>
             <div className="text-[10px] font-normal normal-case tracking-normal text-base-content/50">
-              {snapshot ? "Out / Plan" : "Observed"}
+              {snapshot ? "Actual / Plan" : "Observed"}
             </div>
           </th>
         </tr></thead>
@@ -473,7 +473,7 @@ export function ApiMonthlySummary({
                       className="w-full rounded-lg border border-base-300/90 border-l-[3px] border-l-[#316be8] bg-base-100 px-1.5 py-1 text-left transition-colors hover:border-[#316be8]/60 hover:bg-base-200/50 disabled:opacity-50 cursor-pointer"
                     >
                       <div className="flex items-baseline justify-between gap-1.5 leading-none">
-                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-blue-600">Out</span>
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-blue-600">Actual</span>
                         <span
                           className={`text-[13px] font-extrabold tabular-nums whitespace-nowrap ${
                             metDayPlan ? "text-emerald-600" : "text-base-content"
