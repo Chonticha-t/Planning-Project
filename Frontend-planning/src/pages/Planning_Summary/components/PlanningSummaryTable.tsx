@@ -13,7 +13,7 @@ import {
   FastForward,
   RotateCcw,
   Calendar,
-  Pin,
+  CalendarCheck2,
 } from "lucide-react";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
@@ -202,10 +202,10 @@ const LotStatusBadge = ({
           e.stopPropagation();
           onOpenWipModal(row);
         }}
-        className={`inline-flex items-center justify-center h-[22px] text-[11px] leading-none whitespace-nowrap shrink-0 cursor-pointer ${
+        className={`inline-flex items-center justify-center h-[22px] text-[11px] leading-none whitespace-nowrap shrink-0 cursor-pointer rounded-md tracking-wider uppercase shadow-xs active:scale-95 transition-all ${
           isAssigned
-            ? "gap-1.5 rounded-full border border-emerald-500/15 bg-emerald-500/5 px-2 font-medium text-base-content/80 transition-colors hover:bg-emerald-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
-            : "lot-badge-wip gap-1 px-2.5 rounded-md tracking-wider uppercase font-semibold shadow-xs hover:ring-2 hover:ring-emerald-500/40 active:scale-95 transition-all"
+            ? "gap-1.5 bg-[#2563eb] text-white px-2.5 font-bold hover:bg-[#1d4ed8] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
+            : "lot-badge-wip gap-1 px-2.5 font-semibold hover:ring-2 hover:ring-sky-500/40"
         }`}
         title={
           isAssigned
@@ -214,9 +214,9 @@ const LotStatusBadge = ({
         }
       >
         {isAssigned && (
-          <Pin size={10} aria-hidden="true" className="rotate-45 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <CalendarCheck2 size={12} aria-hidden="true" className="shrink-0" />
         )}
-        <span className={isAssigned ? "text-emerald-600 dark:text-emerald-400" : undefined}>WIP</span>
+        <span>WIP</span>
         {!isAssigned && (
           <Info size={11} className="opacity-70 shrink-0" />
         )}

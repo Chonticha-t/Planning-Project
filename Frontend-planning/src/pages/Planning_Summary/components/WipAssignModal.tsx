@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Pin,
+  CalendarCheck2,
   X,
   RotateCcw,
   Check,
 } from "lucide-react";
 import type { PlanningSummaryRow } from "../types";
 import { toDMY } from "../../SO_Balance/utils";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 interface WipAssignModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const WipAssignModal: React.FC<WipAssignModalProps> = ({
   onAssign,
   onUnassign,
 }) => {
+  const confirm = useConfirm();
   const [selectedDueDate, setSelectedDueDate] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -89,6 +91,50 @@ export const WipAssignModal: React.FC<WipAssignModalProps> = ({
   };
 
   const handleUndo = async () => {
+    const isConfirmed = await confirm({
+      variant: "save",
+      size: "sm",
+      title: "Confirm Undo Insert?",
+      description: (
+        <div className="flex flex-col gap-2.5 pt-1 text-sm">
+          <p className="text-base-content/70 text-[13px]">
+            Remove this manual WIP assignment and restore the lot back to the normal FIFO queue?
+          </p>
+          <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-base-300 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-base-content/60 font-medium">Product</span>
+              <span className="font-bold text-primary">{row.prd_name}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-base-content/60 font-medium">Lot No</span>
+              <span className="font-mono font-bold text-[15px] text-base-content">{row.lot_no}</span>
+            </div>
+            {row.assigned_due_date && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-base-content/60 font-medium">Inserted Due Date</span>
+                <span className="font-bold text-[14px] text-base-content tabular-nums">
+                  {toDMY(row.assigned_due_date)}
+                </span>
+              </div>
+            )}
+            {row.original_due_date && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-base-content/60 font-medium">Original Due Date</span>
+                <span className="font-bold text-[14px] text-base-content tabular-nums">
+                  {toDMY(row.original_due_date)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+      cancelText: "Cancel",
+      confirmText: "Confirm",
+      hideCancel: false,
+    });
+
+    if (!isConfirmed) return;
+
     setIsSubmitting(true);
     try {
       await onUnassign(row);
@@ -142,16 +188,16 @@ export const WipAssignModal: React.FC<WipAssignModalProps> = ({
           <div className="p-6 flex flex-col gap-4 text-sm max-h-[75vh] overflow-y-auto">
             {/* Current Assignment Status Banner (if assigned) */}
             {isAlreadyAssigned && (
-              <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-slate-800 text-xs">
                 <div className="flex items-center gap-2">
-                  <Pin size={15} className="rotate-45 shrink-0" />
+                  <CalendarCheck2 size={15} className="text-[#2563eb] shrink-0" />
                   <span>
                     Currently inserted into Due Date:{" "}
-                    <strong className="text-sm tabular-nums">
+                    <strong className="text-sm font-bold text-[#2563eb] tabular-nums">
                       {toDMY(row.assigned_due_date)}
                     </strong>
                     {row.original_due_date && (
-                      <span className="text-base-content/60 ml-1">
+                      <span className="text-slate-500 ml-1">
                         (Originally {toDMY(row.original_due_date)})
                       </span>
                     )}
