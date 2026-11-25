@@ -89,10 +89,23 @@ test("history rejects invalid dates and overlong products before querying", asyn
   });
 });
 
-test("history returns compact revision rows including revision zero and NULL values", async () => {
+test("history returns SO/PO line revision rows with active and due-date move status", async () => {
   const rows = [
-    { prd_name: "TEST-PRODUCT", due_date: "2026-11-23", source_rev: 0, po_bal: null, source_update_at: null },
-    { prd_name: "TEST-PRODUCT", due_date: "2026-11-23", source_rev: 1, po_bal: 0, source_update_at: "2026-11-17 08:30:00" },
+    {
+      prd_name: "TEST-PRODUCT", due_date: "2026-11-23", so_no: "SO-001", po_no: "PO-001",
+      source_rev: 0, po_bal: null, source_update_at: null,
+      is_active: true, moved_to_dates: [], moved_from_dates: ["2026-12-01"],
+    },
+    {
+      prd_name: "TEST-PRODUCT", due_date: "2026-11-23", so_no: "SO-001", po_no: "PO-001",
+      source_rev: 1, po_bal: 0, source_update_at: "2026-11-17 08:30:00",
+      is_active: true, moved_to_dates: [], moved_from_dates: ["2026-12-01"],
+    },
+    {
+      prd_name: "TEST-PRODUCT", due_date: "2026-11-23", so_no: "SO-002", po_no: "PO-001",
+      source_rev: 0, po_bal: 50, source_update_at: "2026-11-17 09:00:00",
+      is_active: false, moved_to_dates: ["2026-11-30"], moved_from_dates: [],
+    },
   ];
   await withSOBalanceApi({ rows }, async (get, queries) => {
     const res = await get("/history?prd_name=TEST-PRODUCT&due_date=2026-11-23");
@@ -101,13 +114,31 @@ test("history returns compact revision rows including revision zero and NULL val
     assert.match(res.cacheControl, /no-store/);
     assert.equal(queries.length, 1);
     const { sql, params } = queries[0];
-    assert.match(sql, /FROM planning\.so_balance_history h/);
+    assert.match(sql, /FROM planning\.so_balance_history_so_no h/);
+    assert.match(sql, /LEFT JOIN smart\.smart_pln_po_so_no c/);
+    assert.match(sql, /h\.so_no,/);
+    assert.match(sql, /h\.po_no,/);
     assert.match(sql, /h\.rev::int AS source_rev/);
     assert.match(sql, /to_char\(h\.updated_at,[^\n]+AS source_update_at/);
+    assert.match(sql, /AS is_active,/);
+    assert.match(sql, /AS moved_to_dates,/);
+    assert.match(sql, /AS moved_from_dates/);
     assert.match(sql, /WHERE h\.prd_name = \$1 AND h\.due_date = CAST\(\$2 AS date\)/);
-    assert.match(sql, /ORDER BY h\.rev ASC/);
-    assert.doesNotMatch(sql, /DISTINCT|calculation_state|run_id|calculated_at|unmovement|net_required_pcs/);
+    assert.match(sql, /ORDER BY \(c\.prd_name IS NOT NULL\) DESC, h\.so_no ASC, h\.po_no ASC, h\.rev ASC/);
+    assert.doesNotMatch(sql, /calculation_state|run_id|calculated_at|unmovement|net_required_pcs/);
     assert.deepEqual(Array.from(params), ["TEST-PRODUCT", "2026-11-23"]);
+  });
+});
+
+test("table reads latest source_rev of active lines from planning.so_balance_history_so_no", async () => {
+  await withSOBalanceApi({ rows: [] }, async (get, queries) => {
+    const res = await get("/table");
+    assert.equal(res.status, 200);
+    assert.equal(queries.length, 1);
+    const { sql } = queries[0];
+    assert.match(sql, /FROM planning\.so_balance_history_so_no h/);
+    assert.match(sql, /INNER JOIN smart\.smart_pln_po_so_no c/);
+    assert.doesNotMatch(sql, /FROM planning\.so_balance_history\b/);
   });
 });
 

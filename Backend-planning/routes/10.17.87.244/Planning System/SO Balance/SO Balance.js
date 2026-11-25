@@ -241,10 +241,15 @@ router.get("/table", async (req, res) => {
         v.output_amount::float8                         AS output_amount,
         v.status,
         to_char(v.updated_at, 'YYYY-MM-DD HH24:MI:SS')  AS updated_at,
-        -- revision ล่าสุดของ SO (ตรงกับตัวที่ขึ้น Current ใน History modal)
+        -- revision ล่าสุดของ SO/PO line ที่ยัง active อยู่ในวันส่งนี้
         (
           SELECT MAX(h.rev)::int
-          FROM planning.so_balance_history h
+          FROM planning.so_balance_history_so_no h
+          INNER JOIN smart.smart_pln_po_so_no c
+            ON c.prd_name = h.prd_name
+           AND c.due_date = h.due_date
+           AND c.so_no = h.so_no
+           AND c.po_no = h.po_no
           WHERE h.prd_name = v.prd_name AND h.due_date = v.due_date
         )                                               AS source_rev
       FROM planning.v_so_amount v
@@ -420,16 +425,55 @@ router.get("/history", async (req, res) => {
   }
 
   try {
-    // The primary key guarantees one row per revision; source timestamps are preserved.
+    // One row per SO/PO line revision with current active/moved status against smart_pln_po_so_no.
     const queryStr = `
       SELECT h.prd_name,
              to_char(h.due_date, 'YYYY-MM-DD') AS due_date,
+             h.so_no,
+             h.po_no,
              h.rev::int AS source_rev,
              h.po_bal::float8 AS po_bal,
-             to_char(h.updated_at, 'YYYY-MM-DD HH24:MI:SS') AS source_update_at
-      FROM planning.so_balance_history h
+             to_char(h.updated_at, 'YYYY-MM-DD HH24:MI:SS') AS source_update_at,
+             (c.prd_name IS NOT NULL) AS is_active,
+             CASE WHEN c.prd_name IS NULL THEN COALESCE((
+               SELECT ARRAY_AGG(to_char(c2.due_date, 'YYYY-MM-DD') ORDER BY c2.due_date)
+               FROM (
+                 SELECT DISTINCT due_date
+                 FROM smart.smart_pln_po_so_no
+                 WHERE prd_name = h.prd_name
+                   AND so_no = h.so_no
+                   AND po_no = h.po_no
+                   AND due_date <> h.due_date
+               ) c2
+             ), ARRAY[]::text[]) ELSE ARRAY[]::text[] END AS moved_to_dates,
+             CASE WHEN c.prd_name IS NOT NULL THEN COALESCE((
+               SELECT ARRAY_AGG(to_char(h2.due_date, 'YYYY-MM-DD') ORDER BY h2.due_date)
+               FROM (
+                 SELECT DISTINCT prev.due_date
+                 FROM planning.so_balance_history_so_no prev
+                 WHERE prev.prd_name = h.prd_name
+                   AND prev.so_no = h.so_no
+                   AND prev.po_no = h.po_no
+                   AND prev.due_date <> h.due_date
+                   AND prev.due_date >= CURRENT_DATE
+                   AND NOT EXISTS (
+                     SELECT 1
+                     FROM smart.smart_pln_po_so_no act
+                     WHERE act.prd_name = prev.prd_name
+                       AND act.due_date = prev.due_date
+                       AND act.so_no = prev.so_no
+                       AND act.po_no = prev.po_no
+                   )
+               ) h2
+             ), ARRAY[]::text[]) ELSE ARRAY[]::text[] END AS moved_from_dates
+      FROM planning.so_balance_history_so_no h
+      LEFT JOIN smart.smart_pln_po_so_no c
+        ON c.prd_name = h.prd_name
+       AND c.due_date = h.due_date
+       AND c.so_no = h.so_no
+       AND c.po_no = h.po_no
       WHERE h.prd_name = $1 AND h.due_date = CAST($2 AS date)
-      ORDER BY h.rev ASC
+      ORDER BY (c.prd_name IS NOT NULL) DESC, h.so_no ASC, h.po_no ASC, h.rev ASC
     `;
 
     const { rows } = await query(queryStr, [prd_name, due_date]);

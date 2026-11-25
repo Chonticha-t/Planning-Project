@@ -71,5 +71,10 @@ export interface SOBalanceHistoryRow {
   source_rev: number;
   prd_name: string;
   due_date: string;
+  so_no: string;
+  po_no: string;
   po_bal: number | null;
+  is_active?: boolean;
+  moved_to_dates?: string[];
+  moved_from_dates?: string[];
 }

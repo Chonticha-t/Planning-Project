@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
 import {
@@ -8,12 +8,19 @@ import {
   Layers,
   ArrowDownRight,
   ArrowUpRight,
+  ArrowRight,
   Info,
   Loader2,
   Package,
+  FileText,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { SO_BALANCE_HISTORY_API } from "../hooks/api";
+import {
+  computeLatestLinesTotal,
+  groupHistoryByLine,
+  type SOBalanceHistoryLineGroup,
+} from "../historyGrouping";
 import type { PlanningRow, SOBalanceHistoryRow, ApiResponse } from "../types";
 import { toDMY } from "../utils";
 
@@ -37,7 +44,193 @@ const splitDateTime = (value?: string | null) => {
   return { date: toDMY(value.slice(0, 10)), time: value.slice(11, 16) };
 };
 
-const TH = "px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-base-content/60 whitespace-nowrap";
+const formatDateList = (dates: string[]) => dates.map((d) => toDMY(d)).join(", ");
+
+const TH = "px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-base-content/60 whitespace-nowrap";
+
+const LineHistoryCard: React.FC<{ group: SOBalanceHistoryLineGroup }> = ({ group }) => {
+  const isMoved = !group.isActive && group.movedToDates.length > 0;
+  const isRemoved = !group.isActive && group.movedToDates.length === 0;
+
+  return (
+    <div
+      className={`shrink-0 overflow-hidden rounded-xl border bg-base-100 ${
+        group.isActive
+          ? "border-base-300"
+          : isMoved
+            ? "border-amber-200 bg-amber-50/30"
+            : "border-base-300/80 opacity-85"
+      }`}
+    >
+      {/* SO/PO line header */}
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 border-b px-3.5 py-2 ${
+          group.isActive
+            ? "border-base-300 bg-base-200/70"
+            : isMoved
+              ? "border-amber-200 bg-amber-50"
+              : "border-base-300/80 bg-base-200/50"
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <FileText
+            size={13}
+            className={`shrink-0 ${group.isActive ? "text-primary" : "text-base-content/45"}`}
+          />
+          <span className="font-semibold text-base-content/60">SO</span>
+          <span className="font-mono font-bold text-base-content">{group.so_no || "-"}</span>
+          <span className="text-base-content/30">/</span>
+          <span className="font-semibold text-base-content/60">PO</span>
+          <span className="font-mono font-bold text-base-content">{group.po_no || "-"}</span>
+          <span className="inline-flex h-5 items-center rounded-md bg-base-100 border border-base-300 px-1.5 text-[10.5px] font-semibold text-base-content/65 tabular-nums">
+            {group.revisions.length} {group.revisions.length === 1 ? "rev" : "revs"}
+          </span>
+
+          {/* Active line that moved in from another due date */}
+          {group.isActive && group.movedFromDates.length > 0 && (
+            <span
+              className="inline-flex h-5 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 text-[10.5px] font-semibold text-sky-700"
+              title={`Previously scheduled on ${formatDateList(group.movedFromDates)}`}
+            >
+              Moved from {formatDateList(group.movedFromDates)}
+            </span>
+          )}
+
+          {/* Inactive line that moved to another due date */}
+          {isMoved && (
+            <span
+              className="inline-flex h-5 items-center gap-1 rounded-md border border-amber-300 bg-amber-100 px-1.5 text-[10.5px] font-bold text-amber-800"
+              title={`Moved to ${formatDateList(group.movedToDates)}`}
+            >
+              <span>Moved</span>
+              <ArrowRight size={11} className="shrink-0" />
+              <span>{formatDateList(group.movedToDates)}</span>
+            </span>
+          )}
+
+          {/* Inactive line removed completely */}
+          {isRemoved && (
+            <span className="inline-flex h-5 items-center rounded-md border border-base-300 bg-base-200 px-1.5 text-[10.5px] font-semibold text-base-content/60">
+              Removed
+            </span>
+          )}
+        </div>
+
+        <div className="text-xs text-base-content/65 tabular-nums">
+          {group.isActive ? "Current:" : "Last saved:"}{" "}
+          <strong className={`font-bold ${group.isActive ? "text-primary" : "text-base-content/70"}`}>
+            {num(group.latestPoBal)}
+          </strong>{" "}
+          pcs
+        </div>
+      </div>
+
+      {/* Line revisions table */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[460px] border-collapse text-[13px]">
+          <thead className="bg-base-200/35">
+            <tr className="border-b border-base-300/80">
+              <th className={`${TH} text-left`}>Revision</th>
+              <th className={`${TH} text-left`}>Updated At</th>
+              <th className={`${TH} text-right`}>SO Bal</th>
+              <th className={`${TH} text-right`}>Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.revisions.map((item) => {
+              const updated = splitDateTime(item.source_update_at);
+
+              return (
+                <tr
+                  key={JSON.stringify([
+                    item.prd_name,
+                    item.due_date,
+                    item.so_no,
+                    item.po_no,
+                    item.source_rev,
+                  ])}
+                  className={`border-b border-base-300/70 last:border-b-0 transition-colors ${
+                    item.isCurrent && group.isActive
+                      ? "bg-primary/5 hover:bg-primary/10"
+                      : "hover:bg-base-200/50"
+                  }`}
+                >
+                  {/* Revision */}
+                  <td
+                    className={`px-3 py-2.5 whitespace-nowrap border-l-[3px] ${
+                      item.isCurrent && group.isActive ? "border-l-primary" : "border-l-transparent"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-flex h-6 min-w-12 items-center justify-center rounded-md border border-base-300 bg-base-100 px-2 font-mono text-[11.5px] font-bold text-base-content">
+                        Rev {item.source_rev}
+                      </span>
+                      {item.isCurrent && group.isActive && (
+                        <span className="inline-flex h-5 items-center rounded-md bg-primary px-1.5 text-[10px] font-bold text-primary-content">
+                          Current
+                        </span>
+                      )}
+                      {item.isCurrent && !group.isActive && (
+                        <span className="inline-flex h-5 items-center rounded-md bg-base-200 border border-base-300 px-1.5 text-[10px] font-semibold text-base-content/60">
+                          Last Saved
+                        </span>
+                      )}
+                    </span>
+                  </td>
+
+                  {/* Updated At */}
+                  <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
+                    <span className="font-medium text-base-content">{updated.date}</span>
+                    {updated.time && (
+                      <span className="ml-1.5 text-base-content/50">{updated.time}</span>
+                    )}
+                  </td>
+
+                  {/* SO Bal */}
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    <span
+                      className={`text-[14px] font-bold tabular-nums ${
+                        item.isCurrent && group.isActive
+                          ? "text-primary"
+                          : group.isActive
+                            ? "text-base-content"
+                            : "text-base-content/65"
+                      }`}
+                    >
+                      {num(item.po_bal)}
+                    </span>
+                  </td>
+
+                  {/* Change */}
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap text-[12.5px]">
+                    {item.isInitial ? (
+                      <span className="text-base-content/40">Initial</span>
+                    ) : item.changeFromPrev == null ? (
+                      <span className="text-base-content/40" title="A balance is missing">
+                        -
+                      </span>
+                    ) : item.changeFromPrev < 0 ? (
+                      <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-emerald-600">
+                        <ArrowDownRight size={13} />
+                        {num(item.changeFromPrev)}
+                      </span>
+                    ) : item.changeFromPrev > 0 ? (
+                      <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-rose-500">
+                        <ArrowUpRight size={13} />+{num(item.changeFromPrev)}
+                      </span>
+                    ) : (
+                      <span className="text-base-content/40">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
   isOpen,
@@ -75,10 +268,7 @@ const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
 
         if (controller.signal.aborted) return;
         if (res.data?.status === "OK" && Array.isArray(res.data.data)) {
-          const sortedHistory = [...(res.data.data || [])].sort(
-            (a, b) => (a.source_rev ?? -1) - (b.source_rev ?? -1)
-          );
-          setHistory(sortedHistory);
+          setHistory(res.data.data);
         } else {
           setError(res.data?.message || "Unable to load history.");
         }
@@ -105,12 +295,12 @@ const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
-  if (typeof document === "undefined") return null;
+  const lineGroups = useMemo(() => groupHistoryByLine(history), [history]);
+  const activeGroups = useMemo(() => lineGroups.filter((g) => g.isActive), [lineGroups]);
+  const inactiveGroups = useMemo(() => lineGroups.filter((g) => !g.isActive), [lineGroups]);
+  const activeTotal = useMemo(() => computeLatestLinesTotal(lineGroups), [lineGroups]);
 
-  const highestRev = history.reduce(
-    (maxRev, item) => Math.max(maxRev, item.source_rev ?? -Infinity),
-    -Infinity
-  );
+  if (typeof document === "undefined") return null;
 
   return createPortal(
     <AnimatePresence>
@@ -135,18 +325,28 @@ const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 6 }}
             transition={{ type: "spring", duration: 0.25, bounce: 0.1 }}
-            className="relative z-10 flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
+            className="relative z-10 flex w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-base-300">
+            <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-4 border-b border-base-300">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
                   <History size={18} />
                 </span>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-bold text-base-content">SO Balance History</h2>
+                    {activeGroups.length > 0 && (
+                      <span className="inline-flex h-5 items-center rounded-md bg-primary/10 border border-primary/20 px-2 text-[11px] font-bold text-primary tabular-nums">
+                        {activeGroups.length} {activeGroups.length === 1 ? "active line" : "active lines"}
+                      </span>
+                    )}
+                    {inactiveGroups.length > 0 && (
+                      <span className="inline-flex h-5 items-center rounded-md bg-amber-100 border border-amber-300 px-2 text-[11px] font-bold text-amber-800 tabular-nums">
+                        {inactiveGroups.length} moved / removed
+                      </span>
+                    )}
                     <span className="inline-flex h-5 items-center rounded-md bg-base-200 border border-base-300 px-2 text-[11px] font-bold text-base-content/70 tabular-nums">
                       {history.length} {history.length === 1 ? "revision" : "revisions"}
                     </span>
@@ -182,7 +382,7 @@ const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
             </div>
 
             {/* Body */}
-            <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-5">
+            <div className="flex flex-1 min-h-0 flex-col gap-3.5 overflow-y-auto p-5">
               {loading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-16 text-base-content/60">
                   <Loader2 size={28} className="animate-spin text-primary" />
@@ -193,14 +393,14 @@ const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
                   <Info size={18} />
                   <span>{error}</span>
                 </div>
-              ) : history.length === 0 ? (
+              ) : lineGroups.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-4 py-14 text-center">
                   <div className="mb-3 rounded-full bg-base-200 p-3 text-base-content/40">
                     <Layers size={28} />
                   </div>
                   <h3 className="mb-1 text-base font-bold text-base-content">No history available</h3>
                   <p className="mb-4 max-w-sm text-xs text-base-content/60">
-                    No SO revision history has been recorded for this product and due date.
+                    No SO/PO revision history has been recorded for this product and due date.
                   </p>
                   <div className="inline-flex items-center gap-2 rounded-xl border border-base-300 bg-base-200/70 p-3 text-xs">
                     <span className="text-base-content/60">Current SO balance in the main table:</span>
@@ -209,100 +409,49 @@ const SOBalanceHistoryModal: React.FC<SOBalanceHistoryModalProps> = ({
                 </div>
               ) : (
                 <>
-                  {/* Revisions table */}
-                  <div className="overflow-x-auto rounded-xl border border-base-300">
-                    <table className="w-full min-w-[480px] border-collapse text-[13px]">
-                      <thead className="bg-base-200">
-                        <tr className="border-b border-base-300">
-                          <th className={`${TH} text-left`}>Revision</th>
-                          <th className={`${TH} text-left`}>Updated At</th>
-                          <th className={`${TH} text-right`}>SO Bal</th>
-                          <th className={`${TH} text-right`}>Change</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {history.map((item, idx) => {
-                          const isCurrentRow = item.source_rev === highestRev;
-                          const prevItem = idx > 0 ? history[idx - 1] : null;
-                          const changeFromPrev =
-                            prevItem && item.po_bal != null && prevItem.po_bal != null
-                              ? item.po_bal - prevItem.po_bal
-                              : null;
-                          const updated = splitDateTime(item.source_update_at);
-
-                          return (
-                            <tr
-                              key={JSON.stringify([item.prd_name, item.due_date, item.source_rev])}
-                              className={`border-b border-base-300/70 last:border-b-0 transition-colors ${
-                                isCurrentRow ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-base-200/50"
-                              }`}
-                            >
-                              {/* Revision */}
-                              <td
-                                className={`px-3 py-2.5 whitespace-nowrap border-l-[3px] ${
-                                  isCurrentRow ? "border-l-primary" : "border-l-transparent"
-                                }`}
-                              >
-                                <span className="inline-flex items-center gap-1.5">
-                                  <span className="inline-flex h-6 min-w-12 items-center justify-center rounded-md border border-base-300 bg-base-100 px-2 font-mono text-[11.5px] font-bold text-base-content">
-                                    Rev {item.source_rev}
-                                  </span>
-                                  {isCurrentRow && (
-                                    <span className="inline-flex h-5 items-center rounded-md bg-primary px-1.5 text-[10px] font-bold text-primary-content">
-                                      Current
-                                    </span>
-                                  )}
-                                </span>
-                              </td>
-
-                              {/* Updated At */}
-                              <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
-                                <span className="font-medium text-base-content">{updated.date}</span>
-                                {updated.time && <span className="ml-1.5 text-base-content/50">{updated.time}</span>}
-                              </td>
-
-                              {/* PO Bal */}
-                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                <span className={`text-[14px] font-bold tabular-nums ${isCurrentRow ? "text-primary" : "text-base-content"}`}>
-                                  {num(item.po_bal)}
-                                </span>
-                              </td>
-
-                              {/* Change */}
-                              <td className="px-3 py-2.5 text-right whitespace-nowrap text-[12.5px]">
-                                {idx === 0 ? (
-                                  <span className="text-base-content/40">Initial</span>
-                                ) : changeFromPrev == null ? (
-                                  <span className="text-base-content/40" title="A balance is missing">-</span>
-                                ) : changeFromPrev < 0 ? (
-                                  <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-emerald-600">
-                                    <ArrowDownRight size={13} />
-                                    {num(changeFromPrev)}
-                                  </span>
-                                ) : changeFromPrev > 0 ? (
-                                  <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-rose-500">
-                                    <ArrowUpRight size={13} />+{num(changeFromPrev)}
-                                  </span>
-                                ) : (
-                                  <span className="text-base-content/40">—</span>
-                                )}
-                              </td>
-
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  {/* Summary strip */}
+                  <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-base-300 bg-base-200/50 px-4 py-2.5 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <span className="text-base-content/65">
+                        Main Table SO Bal:{" "}
+                        <strong className="font-bold text-base-content tabular-nums">{num(row.po_bal)} pcs</strong>
+                      </span>
+                      <span className="text-base-content/30">|</span>
+                      <span className="text-base-content/65">
+                        Sum of Active Lines:{" "}
+                        <strong className="font-bold text-primary tabular-nums">{num(activeTotal)} pcs</strong>
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Active SO/PO line cards */}
+                  {activeGroups.map((group) => (
+                    <LineHistoryCard key={group.key} group={group} />
+                  ))}
+
+                  {/* Moved / Removed SO/PO line cards */}
+                  {inactiveGroups.length > 0 && (
+                    <div className="mt-1 flex shrink-0 flex-col gap-3">
+                      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-base-content/55">
+                        <span>Moved / Removed from this Due Date</span>
+                        <span className="font-normal normal-case tracking-normal text-base-content/45">
+                          (not included in current total)
+                        </span>
+                      </div>
+                      {inactiveGroups.map((group) => (
+                        <LineHistoryCard key={group.key} group={group} />
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between gap-3 border-t border-base-300 bg-base-200/40 px-5 py-3 text-xs text-base-content/60">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-300 bg-base-200/40 px-5 py-3 text-xs text-base-content/60">
               <span className="flex items-center gap-1.5">
                 <Info size={13} className="shrink-0 text-primary" />
-                Oldest revision first. The highest revision is marked Current.
+                Grouped by SO / PO line. Active lines match the main table total; moved or removed lines are kept for reference.
               </span>
               <button
                 type="button"
