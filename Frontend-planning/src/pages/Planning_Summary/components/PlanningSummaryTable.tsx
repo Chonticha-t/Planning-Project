@@ -482,17 +482,17 @@ const PlanningSummaryTable = memo(
                 </p>
               </div>
 
-              <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/40">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
-                  <AlertTriangle size={14} />
-                  <span>Lot Problem</span>
+              {effectiveLotProblem && effectiveLotProblem.trim() !== "" && (
+                <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/40">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
+                    <AlertTriangle size={14} />
+                    <span>Lot Problem</span>
+                  </div>
+                  <p className="text-[13px] text-base-content/90 font-medium whitespace-pre-wrap leading-relaxed">
+                    {effectiveLotProblem}
+                  </p>
                 </div>
-                <p className="text-[13px] text-base-content/90 font-medium whitespace-pre-wrap leading-relaxed">
-                  {effectiveLotProblem && effectiveLotProblem.trim() !== ""
-                    ? effectiveLotProblem
-                    : "No lot problem specified"}
-                </p>
-              </div>
+              )}
 
               {row.skipped_due_date && (
                 <div className="flex items-center gap-1.5 px-1 pt-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
