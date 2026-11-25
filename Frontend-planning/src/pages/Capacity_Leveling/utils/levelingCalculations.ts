@@ -17,7 +17,7 @@ import type {
 
 /** Green up to 85%, yellow up to 100%, red above. */
 export const loadStatus = (pct: number): LoadStatus =>
-  pct > 100 ? "red" : pct > 85 ? "yellow" : "green";
+  pct > 90 ? "red" : pct > 80 ? "yellow" : "green";
 
 export const pctPillClass = (pct: number) => {
   const status = loadStatus(pct);
