@@ -246,7 +246,7 @@ const SOBalanceTable = ({
   const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
     <section
-      aria-label="SO Balance table"
+      aria-label="SO Balan ทำce table"
       className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden"
     >
       <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-base-300">

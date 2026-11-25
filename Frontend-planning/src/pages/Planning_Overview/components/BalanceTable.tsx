@@ -200,6 +200,23 @@ const BalanceTable = ({
   const n = indexes.length;
   const colCount = 3 + Math.max(n, 1);
 
+  const dailyShort = useMemo(
+    () =>
+      indexes.map((d) => {
+        let products = 0;
+        let pcs = 0;
+        for (const r of rows) {
+          const bl = r.bl[d] ?? 0;
+          if (bl < 0) {
+            products += 1;
+            pcs += bl;
+          }
+        }
+        return { products, pcs };
+      }),
+    [rows, indexes]
+  );
+
   const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + SCROLL_STEP;
   const startIdx = Math.max(0, scrollAnchorRow - OVERSCAN);
   const endIdx = Math.min(rows.length, scrollAnchorRow + visibleCount + OVERSCAN);
@@ -313,6 +330,52 @@ const BalanceTable = ({
             <tr>
               {indexes.map((d, j) => dayHead(days[d], j))}
             </tr>
+            {n > 0 && (
+              <tr>
+                <th
+                  scope="row"
+                  className="sticky left-0 z-30 h-[48px] px-3 text-left bg-base-100 border-b-2 border-b-base-300 shadow-[1px_0_0_var(--color-base-300)] whitespace-nowrap"
+                >
+                  <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-base-content/80">
+                    <span className="size-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true" />
+                    <span>Daily Short</span>
+                  </div>
+                </th>
+                <th aria-hidden="true" className="h-[48px] bg-base-100 border-b-2 border-b-base-300" />
+                <th aria-hidden="true" className="h-[48px] bg-base-100 border-b-2 border-b-base-300" />
+                {indexes.map((d, j) => {
+                  const s = dailyShort[j];
+                  const hasShort = s.products > 0;
+                  return (
+                    <th
+                      key={`short-${d}`}
+                      title={
+                        hasShort
+                          ? `${dayLabel(days[d].date)} · ${formatQty(s.products)} products short (${formatQty(s.pcs)} pcs)`
+                          : `${dayLabel(days[d].date)} · No short products`
+                      }
+                      className={`h-[48px] px-2.5 text-right whitespace-nowrap bg-base-100 border-b-2 border-b-base-300 ${
+                        j === 0 ? groupStart : dayBorder
+                      } ${hasShort ? "" : "text-base-content/30"}`}
+                    >
+                      {hasShort ? (
+                        <>
+                          <div className="text-[12px] font-bold leading-tight text-rose-600">
+                            {formatQty(s.pcs)}
+                          </div>
+                          <div className="leading-tight mt-0.5 text-base-content/70">
+                            <span className="text-[12px] font-semibold">{formatQty(s.products)}</span>{" "}
+                            <span className="text-[10.5px] font-semibold">prd</span>
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-[11px] font-medium">-</span>
+                      )}
+                    </th>
+                  );
+                })}
+              </tr>
+            )}
           </thead>
 
           <tbody>
