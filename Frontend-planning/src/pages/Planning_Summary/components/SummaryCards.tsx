@@ -1,6 +1,6 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { Target, Cpu, Flame, Boxes, Activity } from "lucide-react";
-import { BlueStatCard, CardStat, StatusBadge } from "@/components/BlueStatCard";
+import { KpiCard, KpiFooter, KpiHeader, KpiMetric, KpiRatioBar, KpiValue } from "@/components/KpiCard";
 import type { PlanningSummaryKPI } from "../types";
 
 interface SummaryCardsProps {
@@ -9,6 +9,10 @@ interface SummaryCardsProps {
 
 const fmt = (n: number | null | undefined) =>
   Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+
+const Pill = ({ className, children }: { className: string; children: ReactNode }) => (
+  <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold leading-none ${className}`}>{children}</span>
+);
 
 const SummaryCards = ({ kpi }: SummaryCardsProps) => {
   const topCount = kpi.top_count ?? 0;
@@ -22,52 +26,72 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       {/* 1. Net Required */}
-      <BlueStatCard icon={Target} tone="blue" title="Net Required" value={fmt(kpi.total_net_required)} unit="pcs">
-        <CardStat label="Demand Plan" value={`${fmt(kpi.total_products)} products`} />
-      </BlueStatCard>
+      <KpiCard>
+        <KpiHeader icon={Target} tone="blue" title="Net Required" />
+        <KpiValue value={fmt(kpi.total_net_required)} unit="pcs" tone="blue" />
+        <KpiFooter cols={1}>
+          <KpiMetric label="Demand Plan" value={`${fmt(kpi.total_products)} products`} />
+        </KpiFooter>
+      </KpiCard>
 
-      {/* 2. Net WIP Qty */}
-      <BlueStatCard
-        icon={Cpu}
-        tone="green"
-        title="Total Net WIP"
-        badge={<StatusBadge tone="green" title="Lots in process">{fmt(kpi.total_lots)} lots</StatusBadge>}
-        value={fmt(kpi.total_net_wip)}
-        unit="pcs"
-      >
-        <CardStat label="In Process" value={`${fmt(kpi.total_lots)} lots`} />
-      </BlueStatCard>
+      {/* 2. Net WIP */}
+      <KpiCard>
+        <KpiHeader icon={Cpu} tone="green" title="Total Net WIP" />
+        <KpiValue value={fmt(kpi.total_net_wip)} unit="pcs" tone="green" />
+        <KpiFooter cols={1}>
+          <KpiMetric label="In Process" value={`${fmt(kpi.total_lots)} lots`} />
+        </KpiFooter>
+      </KpiCard>
 
       {/* 3. Priority: Top / Urgent / High */}
-      <BlueStatCard
-        icon={Flame}
-        tone="red"
-        title="Priority Orders"
-        badge={<StatusBadge tone="red" title="Urgent lines">{fmt(urgentCount)} urgent</StatusBadge>}
-        value={fmt(totalPriority)}
-        unit="lines"
-      >
-        <div className="grid grid-cols-3 gap-2">
-          <CardStat label="Top" value={fmt(topCount)} />
-          <CardStat label="Urgent" value={fmt(urgentCount)} />
-          <CardStat label="High" value={fmt(highCount)} align="right" />
-        </div>
-      </BlueStatCard>
+      <KpiCard>
+        <KpiHeader
+          icon={Flame}
+          tone="red"
+          title="Priority Orders"
+          right={
+            urgentCount > 0 ? <Pill className="bg-rose-100 text-rose-700">{fmt(urgentCount)} urgent</Pill> : undefined
+          }
+        />
+        <KpiValue value={fmt(totalPriority)} unit="lines" tone="red" />
+        <KpiRatioBar
+          segments={[
+            { value: topCount, tone: "red", label: "Top" },
+            { value: urgentCount, tone: "amber", label: "Urgent" },
+            { value: highCount, tone: "blue", label: "High" },
+          ]}
+        />
+        <KpiFooter cols={3}>
+          <KpiMetric label="Top" value={fmt(topCount)} valueClass="text-rose-600" />
+          <KpiMetric label="Urgent" value={fmt(urgentCount)} align="center" valueClass="text-amber-600" />
+          <KpiMetric label="High" value={fmt(highCount)} align="right" valueClass="text-blue-600" />
+        </KpiFooter>
+      </KpiCard>
 
-      {/* 4. Products & Lots */}
-      <BlueStatCard icon={Boxes} title="Products & Lots" value={fmt(kpi.total_products)} unit="products">
-        <CardStat label="Total Lines" value={`${fmt(kpi.total_rows)} lines`} />
-      </BlueStatCard>
+      {/* 4. Products & Lines */}
+      <KpiCard>
+        <KpiHeader icon={Boxes} tone="blue" title="Products & Lots" />
+        <KpiValue value={fmt(kpi.total_products)} unit="products" />
+        <KpiFooter cols={1}>
+          <KpiMetric label="Total Lines" value={`${fmt(kpi.total_rows)} lines`} />
+        </KpiFooter>
+      </KpiCard>
 
-      {/* 5. Lot Status */}
-      <BlueStatCard
-        icon={Activity}
-        title="Lot Status"
-        value={fmt(wipCount)}
-        unit="WIP"
-      >
-        <CardStat label="Pending" value={`${fmt(pendingCount)} lots`} />
-      </BlueStatCard>
+      {/* 5. Lot Status: WIP vs Pending */}
+      <KpiCard>
+        <KpiHeader icon={Activity} tone="blue" title="Lot Status" />
+        <KpiValue value={fmt(wipCount + pendingCount)} unit="lots" />
+        <KpiRatioBar
+          segments={[
+            { value: wipCount, tone: "green", label: "WIP" },
+            { value: pendingCount, tone: "amber", label: "Pending" },
+          ]}
+        />
+        <KpiFooter>
+          <KpiMetric label="WIP" value={`${fmt(wipCount)} lots`} valueClass="text-emerald-600" />
+          <KpiMetric label="Pending" value={`${fmt(pendingCount)} lots`} align="right" valueClass="text-amber-600" />
+        </KpiFooter>
+      </KpiCard>
     </div>
   );
 };

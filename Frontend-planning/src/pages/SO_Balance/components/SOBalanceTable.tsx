@@ -232,6 +232,9 @@ const columnGroupingModel: GridColumnGroupingModel = [
 const GROUP_HEADER_H = 28;
 
 const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
+// หัวคอลัมน์: เทาโทนเย็น (slate) อ่อน ๆ — ผสมกับพื้น theme ใช้ได้ทั้ง light/dark
+const headerBg = "color-mix(in oklab, #64748b 9%, var(--color-base-100))";
+const headerText = "color-mix(in oklab, #475569 70%, var(--color-base-content))";
 const invBgGroup = "#2563eb";
 
 const SOBalanceTable = ({
@@ -321,14 +324,14 @@ const SOBalanceTable = ({
             fontSize: 13.5,
             color: "var(--color-base-content)",
             "--DataGrid-rowBorderColor": border,
-            "--DataGrid-containerBackground": "var(--color-base-200)",
+            "--DataGrid-containerBackground": headerBg,
 
             // ── Header Styling ────────────────────────
             "& .MuiDataGrid-columnHeaders": {
-              backgroundColor: "var(--color-base-200)",
+              backgroundColor: headerBg,
             },
             "& .MuiDataGrid-columnHeader": {
-              backgroundColor: "var(--color-base-200)",
+              backgroundColor: headerBg,
               px: 1.25,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
@@ -336,8 +339,7 @@ const SOBalanceTable = ({
               fontWeight: 700,
               letterSpacing: "0.04em",
               textTransform: "uppercase",
-              color:
-                "color-mix(in oklab, var(--color-base-content) 85%, transparent)",
+              color: headerText,
             },
 
             // คอลัมน์ที่ไม่มีกลุ่ม: จัดข้อความให้อยู่กึ่งกลางความสูง 2 แถว พร้อมเส้นคั่นแนวตั้งยาวเต็ม
@@ -361,7 +363,7 @@ const SOBalanceTable = ({
 
             // ── Inventory Group Header (เฉพาะ INVENTORY เป็นสีน้ำเงินทึบ) ──
             "& .MuiDataGrid-columnHeaderGroupCell": {
-              backgroundColor: "var(--color-base-200)",
+              backgroundColor: headerBg,
             },
             "& .MuiDataGrid-columnHeader.inv-group": {
               backgroundColor: invBgGroup,

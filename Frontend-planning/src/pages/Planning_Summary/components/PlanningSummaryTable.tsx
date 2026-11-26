@@ -241,7 +241,9 @@ const LotStatusBadge = ({
 };
 
 const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
-const headerBg = "var(--color-base-200)";
+// หัวคอลัมน์: เทาโทนเย็น (slate) อ่อน ๆ — ผสมกับพื้น theme ใช้ได้ทั้ง light/dark
+const headerBg = "color-mix(in oklab, #64748b 9%, var(--color-base-100))";
+const headerText = "color-mix(in oklab, #475569 70%, var(--color-base-content))";
 
 const PlanningSummaryTable = memo(
   ({
@@ -958,8 +960,7 @@ const PlanningSummaryTable = memo(
                 fontWeight: 700,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
-                color:
-                  "color-mix(in oklab, var(--color-base-content) 75%, transparent)",
+                color: headerText,
               },
 
               // Borders & Sort Arrows Removal (เหมือนหน้า PO)
