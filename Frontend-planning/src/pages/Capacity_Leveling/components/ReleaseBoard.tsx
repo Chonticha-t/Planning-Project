@@ -15,6 +15,7 @@ import {
   Calendar,
   Clock3,
   GripVertical,
+  Layers,
   LayoutGrid,
   Moon,
   Pencil,
@@ -29,6 +30,7 @@ import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Gr
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
 import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
 import { LotCard } from "./LotCard";
+import { ShiftBoardView } from "./ShiftBoardView";
 import { DatePickerPopover } from "./DatePickerPopover";
 import { MovePositionModal } from "./MovePositionModal";
 
@@ -600,6 +602,20 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
               <Table size={13} />
               <span>Table</span>
             </button>
+            <button
+              type="button"
+              aria-pressed={activeViewMode === "shift"}
+              onClick={() => handleViewModeChange("shift")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                activeViewMode === "shift"
+                  ? "bg-primary text-primary-content shadow-xs"
+                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
+              }`}
+              title="Shift Board View (Day / Night / Overflow by day)"
+            >
+              <Layers size={13} />
+              <span>Shift</span>
+            </button>
           </div>
 
           <button
@@ -719,7 +735,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
         {/* Right: Board Navigation & Display Settings */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Scroll Board Left/Right */}
-          {activeViewMode === "board" && granularity === "days" && (
+          {(activeViewMode === "shift" || (activeViewMode === "board" && granularity === "days")) && (
             <div className="inline-flex items-center gap-1 shrink-0">
               <button
                 type="button"
@@ -1175,6 +1191,42 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             })}
           </div>
         </div>
+      )}
+
+      {/* =========================================================
+          VIEW 2B: SHIFT BOARD VIEW (Day / Night / Overflow per day)
+         ========================================================= */}
+      {activeViewMode === "shift" && (
+        <ShiftBoardView
+          data={data}
+          boardGate={boardGate}
+          boardDays={boardDays}
+          lotsByDate={lotsByDate}
+          shiftAllocations={shiftAllocations}
+          warnings={warnings}
+          selectedLot={selectedLot}
+          onSelectLot={onSelectLot}
+          isEditMode={isEditMode}
+          selectedLotIds={selectedLotIds}
+          onToggleSelection={onToggleSelection}
+          readOnly={readOnly}
+          isFullscreen={isFullscreen}
+          focusedDate={focusedDate}
+          scrollContainerRef={scrollContainerRef}
+          draggedLot={draggedLot}
+          activeMovingLots={activeMovingLots}
+          movingIds={movingIds}
+          currentTargetDate={currentTargetDate}
+          afterMustStartDates={afterMustStartDates}
+          onDragStart={handleCardDragStart}
+          onDragEnd={handleCardDragEnd}
+          onCardDragOver={handleCardDragOver}
+          onCardDrop={handleCardDrop}
+          renderReorderIndicator={renderReorderIndicator}
+          onColDragOver={handleColDragOver}
+          onColDrop={handleColDrop}
+          onMoveLots={onMoveLots}
+        />
       )}
 
       {/* =========================================================
