@@ -502,21 +502,169 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
     handleCardDragEnd();
   };
 
+  const filterControls = (
+    <div className="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
+      {/* Search Input */}
+      <div className={`relative shrink-0 ${isFullscreen ? "w-40 2xl:w-48" : "w-44 sm:w-52"}`}>
+        <Search
+          size={13}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+        />
+        <input
+          type="text"
+          placeholder="Search Lot / Product..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-7 text-xs bg-base-200/40 focus:bg-base-100 placeholder:text-base-content/40"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
+            title="Clear search"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Status Filter */}
+      <select
+        aria-label="Filter by status"
+        value={gateStateFilter}
+        onChange={(e) => setGateStateFilter(e.target.value as BoardGateStateFilter)}
+        className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
+          gateStateFilter !== "ALL"
+            ? "bg-[#eef2ff] border-primary text-primary"
+            : "bg-base-200/40 border-base-300 text-base-content/75"
+        }`}
+      >
+        <option value="ALL">All Status</option>
+        <option value="in_gate">In Gate</option>
+        <option value="coming">Coming</option>
+        <option value="need_wip">Need WIP</option>
+      </select>
+
+      {/* Shift Filter */}
+      <select
+        aria-label="Filter by shift"
+        value={shiftFilter}
+        onChange={(e) => setShiftFilter(e.target.value as "ALL" | BoardShiftAllocation["status"])}
+        className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
+          shiftFilter !== "ALL"
+            ? "bg-[#eef2ff] border-primary text-primary"
+            : "bg-base-200/40 border-base-300 text-base-content/75"
+        }`}
+      >
+        <option value="ALL">All Shift</option>
+        <option value="day">D/S (Day)</option>
+        <option value="night">N/S (Night)</option>
+        <option value="over">Over</option>
+      </select>
+
+      {isEditMode && (
+        <button
+          type="button"
+          onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
+          disabled={selectableLots.length === 0}
+          className="btn btn-xs btn-ghost text-xs text-primary font-semibold shrink-0"
+        >
+          Select all ({selectableLots.length})
+        </button>
+      )}
+    </div>
+  );
+
+  const displayControls = (
+    <div className="flex items-center gap-2 shrink-0">
+      {/* Scroll Board Left/Right */}
+      {(activeViewMode === "shift" || (activeViewMode === "board" && granularity === "days")) && (
+        <div className="inline-flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => scrollBoard("left")}
+            className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70 cursor-pointer"
+            title="Scroll board left"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollBoard("right")}
+            className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70 cursor-pointer"
+            title="Scroll board right"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Hide / Show Holidays */}
+      {granularity === "days" && (
+        <button
+          type="button"
+          aria-pressed={hideOffDays}
+          onClick={() => setHideOffDays((prev) => !prev)}
+          className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+            hideOffDays
+              ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+              : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+          }`}
+          title={hideOffDays ? "Hiding holidays (click to show all days)" : "Showing all days (click to hide holidays)"}
+        >
+          <CalendarOff size={13} />
+          <span>{hideOffDays ? "Hide Holidays" : "Show All Days"}</span>
+        </button>
+      )}
+
+      {/* Density: Normal vs Compact */}
+      {activeViewMode === "board" && (
+        <div
+          role="group"
+          aria-label="Board size"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
+        >
+          {([
+            { label: "Normal", compact: false },
+            { label: "Compact", compact: true },
+          ] as const).map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              aria-pressed={isCompact === option.compact}
+              onClick={() => setIsCompact(option.compact)}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                isCompact === option.compact
+                  ? "bg-primary text-primary-content shadow-xs"
+                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
       className={
         isFullscreen
-          ? "fixed inset-0 z-[100] flex flex-col gap-3 p-4 bg-base-100 overflow-hidden shadow-2xl animate-in fade-in duration-150"
+          ? "fixed inset-0 z-[100] flex flex-col gap-2.5 p-3.5 bg-base-100 overflow-hidden shadow-2xl animate-in fade-in duration-150"
           : "flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs"
       }
     >
-      {/* ── ROW 1: Title, Gate Switcher, Total Badge & Primary Actions ── */}
-      <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-base-200/80">
-        {/* Left: Title + Gate Switcher + Count Badge */}
-        <div className="flex items-center gap-3 min-w-0 flex-wrap sm:flex-nowrap">
-          <h3 className="font-bold text-sm tracking-wide text-base-content uppercase shrink-0">
-            Gate Arrival Board
-          </h3>
+      {/* ── ROW 1: Title, Gate Switcher, Total Badge (& Filters in Fullscreen) & Primary Actions ── */}
+      <div className={`flex items-center justify-between gap-2.5 pb-2.5 border-b border-base-200/80 ${isFullscreen ? "flex-wrap xl:flex-nowrap" : ""}`}>
+        {/* Left: Title + Gate Switcher + Count Badge (+ Filters when Fullscreen) */}
+        <div className="flex items-center gap-2.5 min-w-0 flex-wrap xl:flex-nowrap">
+          {!isFullscreen && (
+            <h3 className="font-bold text-sm tracking-wide text-base-content uppercase shrink-0">
+              Gate Arrival Board
+            </h3>
+          )}
 
           {/* One gate at a time: moving a card changes this gate's date only */}
           <div
@@ -564,11 +712,25 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
               {boardCountLabel(lots)}
             </span>
           )}
+
+          {isFullscreen && (
+            <>
+              <div className="hidden xl:block h-5 w-px bg-base-300/80 shrink-0" />
+              {filterControls}
+            </>
+          )}
         </div>
 
-        {/* Right: View Mode (Board/Table) + Edit Mode + Maximize */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* View Mode Switcher: Board vs Table */}
+        {/* Right: (Display Controls when Fullscreen) + View Mode (Board/Table/Shift) + Edit Mode + Maximize */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap xl:flex-nowrap">
+          {isFullscreen && (
+            <>
+              {displayControls}
+              <div className="hidden xl:block h-5 w-px bg-base-300/80 shrink-0" />
+            </>
+          )}
+
+          {/* View Mode Switcher: Board vs Table vs Shift */}
           <div
             role="group"
             aria-label="View mode"
@@ -657,152 +819,13 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
         </div>
       </div>
 
-      {/* ── ROW 2: Search, Filters & Display Controls ── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
-        {/* Left: Search + Status Dropdown + Select All */}
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Search Input */}
-          <div className="relative w-44 sm:w-52 shrink-0">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-            />
-            <input
-              type="text"
-              placeholder="Search Lot / Product..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-7 text-xs bg-base-200/40 focus:bg-base-100 placeholder:text-base-content/40"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
-                title="Clear search"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          {/* Status Filter */}
-          <select
-            aria-label="Filter by status"
-            value={gateStateFilter}
-            onChange={(e) => setGateStateFilter(e.target.value as BoardGateStateFilter)}
-            className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
-              gateStateFilter !== "ALL"
-                ? "bg-[#eef2ff] border-primary text-primary"
-                : "bg-base-200/40 border-base-300 text-base-content/75"
-            }`}
-          >
-            <option value="ALL">All Status</option>
-            <option value="in_gate">In Gate</option>
-            <option value="coming">Coming</option>
-            <option value="need_wip">Need WIP</option>
-          </select>
-
-          {/* Shift Filter */}
-          <select
-            aria-label="Filter by shift"
-            value={shiftFilter}
-            onChange={(e) => setShiftFilter(e.target.value as "ALL" | BoardShiftAllocation["status"])}
-            className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
-              shiftFilter !== "ALL"
-                ? "bg-[#eef2ff] border-primary text-primary"
-                : "bg-base-200/40 border-base-300 text-base-content/75"
-            }`}
-          >
-            <option value="ALL">All Shift</option>
-            <option value="day">D/S (Day)</option>
-            <option value="night">N/S (Night)</option>
-            <option value="over">Over</option>
-          </select>
-
-          {isEditMode && (
-            <button
-              type="button"
-              onClick={() => onSelectionChange(selectableLots.map((lot) => lot.id))}
-              disabled={selectableLots.length === 0}
-              className="btn btn-xs btn-ghost text-xs text-primary font-semibold shrink-0"
-            >
-              Select all ({selectableLots.length})
-            </button>
-          )}
+      {/* ── ROW 2: Search, Filters & Display Controls (merged into Row 1 when Fullscreen) ── */}
+      {!isFullscreen && (
+        <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+          {filterControls}
+          {displayControls}
         </div>
-
-        {/* Right: Board Navigation & Display Settings */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Scroll Board Left/Right */}
-          {(activeViewMode === "shift" || (activeViewMode === "board" && granularity === "days")) && (
-            <div className="inline-flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => scrollBoard("left")}
-                className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70 cursor-pointer"
-                title="Scroll board left"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollBoard("right")}
-                className="btn btn-xs btn-square h-7 w-7 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content/70 cursor-pointer"
-                title="Scroll board right"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* Hide / Show Holidays */}
-          {granularity === "days" && (
-            <button
-              type="button"
-              aria-pressed={hideOffDays}
-              onClick={() => setHideOffDays((prev) => !prev)}
-              className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
-                hideOffDays
-                  ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
-                  : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
-              }`}
-              title={hideOffDays ? "Hiding holidays (click to show all days)" : "Showing all days (click to hide holidays)"}
-            >
-              <CalendarOff size={13} />
-              <span>{hideOffDays ? "Hide Holidays" : "Show All Days"}</span>
-            </button>
-          )}
-
-          {/* Density: Normal vs Compact */}
-          {activeViewMode === "board" && (
-            <div
-              role="group"
-              aria-label="Board size"
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
-            >
-              {([
-                { label: "Normal", compact: false },
-                { label: "Compact", compact: true },
-              ] as const).map((option) => (
-                <button
-                  key={option.label}
-                  type="button"
-                  aria-pressed={isCompact === option.compact}
-                  onClick={() => setIsCompact(option.compact)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
-                    isCompact === option.compact
-                      ? "bg-primary text-primary-content shadow-xs"
-                      : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {isEditMode && selectedLots.length > 0 && (
         <div className="flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl bg-base-100 border border-base-300 shadow-xs mb-2.5">
@@ -944,7 +967,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                 data-day-col={col.date}
                 onDragOver={(e) => handleColDragOver(e, col.date)}
                 onDrop={(e) => handleColDrop(e, col.date)}
-                className={`shrink-0 flex flex-col ${isFullscreen ? "h-[calc(100vh-140px)]" : "max-h-[580px]"} rounded-xl transition-all ${isCompact ? "w-[160px] p-1.5" : "w-[196px] p-2"} ${
+                className={`shrink-0 flex flex-col ${isFullscreen ? "h-full" : "max-h-[580px]"} rounded-xl transition-all ${isCompact ? "w-[160px] p-1.5" : "w-[196px] p-2"} ${
                   isTargetCol
                     ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
                     : isFocusedCol

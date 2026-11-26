@@ -96,7 +96,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
     const alloc = shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id);
 
     let cardStyle =
-      "border border-base-300/80 bg-base-100 text-base-content hover:border-indigo-300 hover:bg-base-100";
+      "border border-slate-300 bg-base-100 text-base-content hover:border-indigo-400 hover:bg-base-100 shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
     if (isSameProduct) {
       cardStyle = isExactSelected
         ? "border border-[#4f46e5] bg-[#4f46e5] text-white shadow-sm ring-2 ring-[#4f46e5]/30"
@@ -109,10 +109,10 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
         "border border-dashed border-rose-300 bg-rose-50/70 text-base-content hover:border-rose-400";
     } else if (variant === "other") {
       cardStyle =
-        "border border-dashed border-base-300 bg-base-200/40 text-base-content/80 hover:border-base-content/30";
+        "border border-dashed border-slate-400/80 bg-base-200/45 text-base-content/80 hover:border-slate-500";
     } else if (moved) {
       cardStyle =
-        "border border-indigo-300 bg-[#eef2ff]/70 text-base-content hover:border-indigo-400";
+        "border border-indigo-400 bg-[#eef2ff]/70 text-base-content hover:border-indigo-500";
     } else if (isLate) {
       cardStyle =
         "border border-rose-300 bg-rose-50/30 text-base-content hover:border-rose-400";
@@ -195,7 +195,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
             <div
               key={col.date}
               data-day-col={col.date}
-              className="w-[44px] shrink-0 flex flex-col items-center py-2.5 px-1 rounded-xl border border-base-300/60 bg-base-200/35 text-base-content/40 select-none"
+              className="w-[44px] shrink-0 flex flex-col items-center py-2.5 px-1 rounded-xl border border-slate-300 bg-base-200/50 text-base-content/45 select-none"
               title={`${col.dayLabel} ${col.displayDate} — Holiday / Off`}
             >
               <span className="text-[11px] font-semibold leading-tight">
@@ -214,9 +214,6 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
           );
         }
 
-        const isOverloaded =
-          (colPct !== null && colPct > 100) ||
-          (cell?.capacityMin === 0 && (cell?.loadMin ?? 0) > 0);
         const status = colPct !== null ? loadStatus(colPct) : null;
 
         const isTargetCol =
@@ -291,7 +288,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
             onDragOver={(e) => onColDragOver(e, col.date)}
             onDrop={(e) => onColDrop(e, col.date)}
             className={`w-[228px] shrink-0 flex flex-col rounded-xl p-2.5 transition-all ${
-              isFullscreen ? "h-[calc(100vh-140px)]" : "max-h-[680px]"
+              isFullscreen ? "h-full" : "max-h-[680px]"
             } ${
               isTargetCol
                 ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
@@ -299,13 +296,11 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
                 ? "border-2 border-[#4f46e5] bg-[#eef2ff]/20 shadow-xs"
                 : isAfterMustStart
                 ? "border border-rose-200 bg-[repeating-linear-gradient(-45deg,#fff8f8,#fff8f8_7px,#fee2e2_7px,#fee2e2_14px)]"
-                : isOverloaded
-                ? "border border-rose-200/90 bg-rose-50/40"
-                : "border border-base-300/80 bg-base-100"
+                : "border border-slate-300 bg-base-100 shadow-2xs"
             }`}
           >
             {/* Column Header */}
-            <div className="pb-2 mb-2 border-b border-base-200/80 shrink-0">
+            <div className="pb-2 mb-2 border-b border-slate-200 shrink-0">
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-xs font-bold text-base-content tabular-nums">
@@ -314,7 +309,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
                   {colHasOt && (
                     <span
                       title="Overtime active"
-                      className="px-1 py-0.5 rounded border border-base-300 bg-base-200/90 text-[9.5px] font-bold text-base-content/75 leading-none"
+                      className="px-1 py-0.5 rounded border border-slate-300 bg-base-200/90 text-[9.5px] font-bold text-base-content/75 leading-none"
                     >
                       OT
                     </span>
@@ -400,7 +395,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
 
               {/* Other / Need WIP / Pending Section */}
               {otherLots.length > 0 && (
-                <div className="flex flex-col gap-1 pt-1 border-t border-base-200">
+                <div className="flex flex-col gap-1 pt-1 border-t border-slate-200">
                   <div className="flex items-center justify-between text-[11px] text-base-content/50 px-0.5">
                     <span className="font-medium">Other / Need WIP</span>
                     <span className="font-semibold tabular-nums">
