@@ -321,7 +321,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               </div>
 
               {/* Capacity Progress Bar */}
-              <div className="h-1.5 w-full rounded-full bg-base-200 overflow-hidden mt-1.5">
+              <div className="h-[3px] w-full rounded-full bg-base-200 overflow-hidden mt-1.5">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${barColorClass}`}
                   style={{
@@ -337,22 +337,22 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
             </div>
 
             {/* Scrollable Shift Sections */}
-            <div className="flex-1 flex flex-col gap-2.5 overflow-y-auto pr-0.5 min-h-0 thin-scrollbar">
+            <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-0.5 min-h-0 thin-scrollbar">
               {/* Day Shift Section */}
               <div className="flex flex-col gap-1">
                 <div
-                  className="flex items-center justify-between text-[11px] text-base-content/55 px-0.5"
+                  className="flex items-center justify-between text-[11px] px-0.5 text-amber-700"
                   title={
                     dayCapMin !== null
                       ? `Day Shift: ${Math.round(dayUsedMin).toLocaleString()} / ${Math.round(dayCapMin).toLocaleString()} min`
                       : "Day Shift capacity not set"
                   }
                 >
-                  <span className="inline-flex items-center gap-1 font-medium">
+                  <span className="inline-flex items-center gap-1 font-semibold">
                     <Sun size={11} className="text-amber-500 shrink-0" />
                     <span>Day Shift</span>
                   </span>
-                  <span className="font-semibold tabular-nums">
+                  <span className="font-semibold tabular-nums text-amber-700/80">
                     {dayLots.length} lot
                   </span>
                 </div>
@@ -360,20 +360,20 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               </div>
 
               {/* Night Shift Section */}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 pt-2 border-t border-indigo-200">
                 <div
-                  className="flex items-center justify-between text-[11px] text-base-content/55 px-0.5"
+                  className="flex items-center justify-between text-[11px] px-0.5 text-indigo-700"
                   title={
                     nightCapMin !== null
                       ? `Night Shift: ${Math.round(nightUsedMin).toLocaleString()} / ${Math.round(nightCapMin).toLocaleString()} min`
                       : "Night Shift capacity not set"
                   }
                 >
-                  <span className="inline-flex items-center gap-1 font-medium">
+                  <span className="inline-flex items-center gap-1 font-semibold">
                     <Moon size={11} className="text-indigo-500 shrink-0" />
                     <span>Night Shift</span>
                   </span>
-                  <span className="font-semibold tabular-nums">
+                  <span className="font-semibold tabular-nums text-indigo-700/80">
                     {nightLots.length} lot
                   </span>
                 </div>
@@ -382,10 +382,10 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
 
               {/* Overflow Section */}
               {overLots.length > 0 && (
-                <div className="flex flex-col gap-1 pt-1 border-t border-rose-200/70">
-                  <div className="flex items-center justify-between text-[11px] text-rose-600 px-0.5">
-                    <span className="font-bold">Overflow</span>
-                    <span className="font-bold tabular-nums">
+                <div className="flex flex-col gap-1 pt-2 border-t border-dashed border-rose-300">
+                  <div className="flex items-center justify-between text-[11px] px-0.5 text-rose-600">
+                    <span className="font-semibold">Overflow</span>
+                    <span className="font-semibold tabular-nums">
                       +{overLots.length}
                     </span>
                   </div>
@@ -395,9 +395,9 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
 
               {/* Other / Need WIP / Pending Section */}
               {otherLots.length > 0 && (
-                <div className="flex flex-col gap-1 pt-1 border-t border-slate-200">
-                  <div className="flex items-center justify-between text-[11px] text-base-content/50 px-0.5">
-                    <span className="font-medium">Other / Need WIP</span>
+                <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between text-[11px] px-0.5 text-slate-500">
+                    <span className="font-semibold">Other / Need WIP</span>
                     <span className="font-semibold tabular-nums">
                       {otherLots.length}
                     </span>
