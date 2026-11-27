@@ -1164,6 +1164,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           selectedLotIds={selectedLotIds}
           onToggleSelection={onToggleSelection}
           onSelectionChange={onSelectionChange}
+          dayPositions={dayPositions}
           readOnly={readOnly}
           isFullscreen={isFullscreen}
           focusedDate={focusedDate}

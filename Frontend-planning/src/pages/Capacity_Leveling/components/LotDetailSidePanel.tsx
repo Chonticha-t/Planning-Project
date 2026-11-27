@@ -432,9 +432,9 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
                     <div key={entry.id} className="p-2 rounded-lg bg-base-200 border border-base-300 flex flex-col gap-1 text-[11px]">
                       <div className="flex items-center justify-between font-semibold">
                         <div className="flex items-center gap-1 text-base-content">
-                          <span>{isReorder ? `#${entry.fromPosition}` : formatDate(entry.fromDate)}</span>
+                          <span>{isReorder ? entry.fromPosition : formatDate(entry.fromDate)}</span>
                           <ArrowRight size={10} className="text-base-content/40" />
-                          <span className="text-primary font-bold">{isReorder ? `#${entry.toPosition}` : formatDate(entry.toDate)}</span>
+                          <span className="text-primary font-bold">{isReorder ? entry.toPosition : formatDate(entry.toDate)}</span>
                         </div>
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${
                           isReorder || delta < 0 ? "bg-indigo-600" : "bg-amber-600"

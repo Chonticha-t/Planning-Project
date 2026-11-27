@@ -29,6 +29,7 @@ interface ShiftBoardViewProps {
   selectedLotIds: ReadonlySet<string>;
   onToggleSelection: (id: string) => void;
   onSelectionChange: (ids: string[]) => void;
+  dayPositions?: ReadonlyMap<string, { position: number; total: number }>;
   readOnly?: boolean;
   isFullscreen: boolean;
   focusedDate: string | null;
@@ -84,6 +85,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
   selectedLotIds,
   onToggleSelection,
   onSelectionChange,
+  dayPositions,
   readOnly = false,
   isFullscreen,
   focusedDate,
@@ -180,6 +182,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
     const isLate = warning === "late" || warning === "order";
     const isDragging = Boolean(draggedLot) && movingIds.has(lot.id);
     const alloc = shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id);
+    const queuePos = dayPositions?.get(lot.id)?.position;
 
     const shiftLeftBorder =
       variant === "day"
@@ -204,8 +207,6 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
       cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-rose-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
     } else if (variant === "other") {
       cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
-    } else if (isLate) {
-      cardStyle = `border border-rose-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-rose-400`;
     }
 
     const tooltipParts = [
@@ -271,13 +272,26 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
                 className="w-3.5 h-3.5 rounded border border-base-300 text-[#4f46e5] accent-[#4f46e5] shrink-0 cursor-pointer"
               />
             )}
+            {queuePos !== undefined && (
+              <span
+                className={`text-[10px] font-mono font-semibold tabular-nums shrink-0 ${
+                  isExactSelected || isSameProduct
+                    ? "text-white/75"
+                    : "text-base-content/40"
+                }`}
+              >
+                {queuePos}
+              </span>
+            )}
             {moved && (
               <span
-                aria-label="Moved"
-                title={`Moved from ${dayjs(lot.baseDate).format("DD/MM/YYYY")}`}
-                className={`h-2 w-2 rounded-full shrink-0 ${
-                  isSameProduct ? "bg-white" : "bg-blue-600"
+                aria-label={isLate ? "Moved (Late)" : "Moved (On time)"}
+                title={`Moved from ${dayjs(lot.baseDate).format("DD/MM/YYYY")}${
+                  isLate ? " · Late" : " · On time"
                 }`}
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  isLate ? "bg-rose-500" : "bg-emerald-500"
+                } ${isExactSelected || isSameProduct ? "ring-1 ring-white/85" : ""}`}
               />
             )}
             <span className="font-semibold text-[11.5px] leading-tight truncate">
