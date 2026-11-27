@@ -959,7 +959,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                       <span>{dayjs(batchTargetDate).format("DD/MM/YYYY")}</span>
                     </span>
                   ) : (
-                    "Choose target date..."
+                    "Choose target date"
                   )}
                 </span>
                 <ChevronDown
@@ -1047,6 +1047,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           isEditMode={isEditMode}
           selectedLotIds={selectedLotIds}
           onToggleSelection={onToggleSelection}
+          onSelectionChange={onSelectionChange}
           readOnly={readOnly}
           isFullscreen={isFullscreen}
           focusedDate={focusedDate}

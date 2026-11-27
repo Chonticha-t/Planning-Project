@@ -28,6 +28,7 @@ interface ShiftBoardViewProps {
   isEditMode: boolean;
   selectedLotIds: ReadonlySet<string>;
   onToggleSelection: (id: string) => void;
+  onSelectionChange: (ids: string[]) => void;
   readOnly?: boolean;
   isFullscreen: boolean;
   focusedDate: string | null;
@@ -49,6 +50,27 @@ interface ShiftBoardViewProps {
 
 const EMPTY_LOTS: LotItem[] = [];
 
+const GroupCheckbox: React.FC<{
+  lots: LotItem[];
+  selectedLotIds: ReadonlySet<string>;
+  onToggle: (lots: LotItem[]) => void;
+  ariaLabel: string;
+}> = ({ lots, selectedLotIds, onToggle, ariaLabel }) => {
+  const allSelected =
+    lots.length > 0 && lots.every((lot) => selectedLotIds.has(lot.id));
+
+  return (
+    <input
+      type="checkbox"
+      aria-label={ariaLabel}
+      checked={allSelected}
+      onClick={(e) => e.stopPropagation()}
+      onChange={() => onToggle(lots)}
+      className="w-3.5 h-3.5 rounded border border-base-300 text-[#4f46e5] accent-[#4f46e5] shrink-0 cursor-pointer"
+    />
+  );
+};
+
 const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
   data,
   boardGate,
@@ -61,6 +83,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
   isEditMode,
   selectedLotIds,
   onToggleSelection,
+  onSelectionChange,
   readOnly = false,
   isFullscreen,
   focusedDate,
@@ -81,10 +104,10 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
 }) => {
   const [focusedLot, setFocusedLot] = useState<{ id: string; product: string } | null>(null);
 
-  // Clear highlight when switching gates.
+  // Clear highlight when switching gates or entering Edit mode.
   useEffect(() => {
     setFocusedLot(null);
-  }, [boardGate]);
+  }, [boardGate, isEditMode]);
 
   // Clear highlight on Escape or clicking blank space (when detail panel is closed).
   useEffect(() => {
@@ -119,18 +142,30 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
     };
   }, [focusedLot, selectedLot]);
 
-  const highlightedProduct = selectedLot?.product ?? focusedLot?.product ?? null;
-  const activeCardId = selectedLot?.id ?? focusedLot?.id ?? null;
+  const highlightedProduct = isEditMode ? null : (selectedLot?.product ?? focusedLot?.product ?? null);
+  const activeCardId = isEditMode ? null : (selectedLot?.id ?? focusedLot?.id ?? null);
 
   const focusedLotItem = useMemo(() => {
-    if (!focusedLot || selectedLot) return null;
+    if (isEditMode || !focusedLot || selectedLot) return null;
     for (const dayLots of lotsByDate.values()) {
       for (const lot of dayLots) {
         if (lot.id === focusedLot.id) return lot;
       }
     }
     return null;
-  }, [focusedLot, selectedLot, lotsByDate]);
+  }, [isEditMode, focusedLot, selectedLot, lotsByDate]);
+
+  const toggleGroupSelection = (groupLots: LotItem[]) => {
+    if (groupLots.length === 0) return;
+    const allSelected = groupLots.every((lot) => selectedLotIds.has(lot.id));
+    const next = new Set(selectedLotIds);
+    if (allSelected) {
+      for (const lot of groupLots) next.delete(lot.id);
+    } else {
+      for (const lot of groupLots) next.add(lot.id);
+    }
+    onSelectionChange([...next]);
+  };
 
   const renderLotRow = (
     lot: LotItem,
@@ -180,7 +215,9 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
       moved
         ? `Moved from ${dayjs(lot.baseDate).format("DD/MM/YYYY")}`
         : null,
-      "Click to highlight · Double-click for details",
+      isEditMode
+        ? "Click to select / deselect"
+        : "Click to highlight · Double-click for details",
     ].filter(Boolean);
 
     return (
@@ -198,6 +235,10 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
           onDragStart={(e) => onDragStart(e, lot)}
           onDragEnd={onDragEnd}
           onClick={() => {
+            if (isEditMode) {
+              onToggleSelection(lot.id);
+              return;
+            }
             if (selectedLot) {
               setFocusedLot({ id: lot.id, product: lot.product });
               if (selectedLot.id !== lot.id) {
@@ -210,6 +251,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
             );
           }}
           onDoubleClick={() => {
+            if (isEditMode) return;
             setFocusedLot({ id: lot.id, product: lot.product });
             onSelectLot(lot);
           }}
@@ -377,7 +419,27 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
             {/* Column Header */}
             <div className="pb-2 mb-2 border-b border-slate-200 shrink-0">
               <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1.5 min-w-0">
+                <div
+                  className={`flex items-center gap-1.5 min-w-0 ${
+                    isEditMode && colLots.length > 0 ? "cursor-pointer select-none" : ""
+                  }`}
+                  onClick={() => {
+                    if (isEditMode && colLots.length > 0) toggleGroupSelection(colLots);
+                  }}
+                  title={
+                    isEditMode && colLots.length > 0
+                      ? `Select all lots on ${col.dayLabel} ${col.displayDate}`
+                      : undefined
+                  }
+                >
+                  {isEditMode && colLots.length > 0 && (
+                    <GroupCheckbox
+                      lots={colLots}
+                      selectedLotIds={selectedLotIds}
+                      onToggle={toggleGroupSelection}
+                      ariaLabel={`Select all lots on ${col.dayLabel} ${col.displayDate}`}
+                    />
+                  )}
                   <span className="text-xs font-bold text-base-content tabular-nums">
                     {col.dayLabel} {col.displayDate}
                   </span>
@@ -416,14 +478,31 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               {/* Day Shift Section */}
               <div className="flex flex-col gap-1">
                 <div
-                  className="flex items-center justify-between text-[11px] px-0.5 text-base-content/75"
+                  onClick={() => {
+                    if (isEditMode && dayLots.length > 0) toggleGroupSelection(dayLots);
+                  }}
+                  className={`flex items-center justify-between text-[11px] px-0.5 text-base-content/75 ${
+                    isEditMode && dayLots.length > 0
+                      ? "cursor-pointer select-none rounded hover:bg-base-200/60 py-0.5"
+                      : ""
+                  }`}
                   title={
-                    dayCapMin !== null
+                    isEditMode && dayLots.length > 0
+                      ? `Select all Day Shift lots (${dayLots.length})`
+                      : dayCapMin !== null
                       ? `Day Shift: ${Math.round(dayUsedMin).toLocaleString()} / ${Math.round(dayCapMin).toLocaleString()} min`
                       : "Day Shift capacity not set"
                   }
                 >
                   <span className="inline-flex items-center gap-1.5 font-semibold">
+                    {isEditMode && dayLots.length > 0 && (
+                      <GroupCheckbox
+                        lots={dayLots}
+                        selectedLotIds={selectedLotIds}
+                        onToggle={toggleGroupSelection}
+                        ariaLabel={`Select all Day Shift lots on ${col.displayDate}`}
+                      />
+                    )}
                     <Sun size={11} className="text-amber-500 shrink-0" />
                     <span>Day Shift</span>
                   </span>
@@ -437,14 +516,31 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               {/* Night Shift Section */}
               <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
                 <div
-                  className="flex items-center justify-between text-[11px] px-0.5 text-base-content/75"
+                  onClick={() => {
+                    if (isEditMode && nightLots.length > 0) toggleGroupSelection(nightLots);
+                  }}
+                  className={`flex items-center justify-between text-[11px] px-0.5 text-base-content/75 ${
+                    isEditMode && nightLots.length > 0
+                      ? "cursor-pointer select-none rounded hover:bg-base-200/60 py-0.5"
+                      : ""
+                  }`}
                   title={
-                    nightCapMin !== null
+                    isEditMode && nightLots.length > 0
+                      ? `Select all Night Shift lots (${nightLots.length})`
+                      : nightCapMin !== null
                       ? `Night Shift: ${Math.round(nightUsedMin).toLocaleString()} / ${Math.round(nightCapMin).toLocaleString()} min`
                       : "Night Shift capacity not set"
                   }
                 >
                   <span className="inline-flex items-center gap-1.5 font-semibold">
+                    {isEditMode && nightLots.length > 0 && (
+                      <GroupCheckbox
+                        lots={nightLots}
+                        selectedLotIds={selectedLotIds}
+                        onToggle={toggleGroupSelection}
+                        ariaLabel={`Select all Night Shift lots on ${col.displayDate}`}
+                      />
+                    )}
                     <Moon size={11} className="text-indigo-500 shrink-0" />
                     <span>Night Shift</span>
                   </span>
@@ -458,8 +554,32 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               {/* Overflow Section */}
               {overLots.length > 0 && (
                 <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between text-[11px] px-0.5 text-rose-600">
-                    <span className="font-semibold">Overflow</span>
+                  <div
+                    onClick={() => {
+                      if (isEditMode) toggleGroupSelection(overLots);
+                    }}
+                    className={`flex items-center justify-between text-[11px] px-0.5 text-rose-600 ${
+                      isEditMode
+                        ? "cursor-pointer select-none rounded hover:bg-rose-50/70 py-0.5"
+                        : ""
+                    }`}
+                    title={
+                      isEditMode
+                        ? `Select all Overflow lots (${overLots.length})`
+                        : undefined
+                    }
+                  >
+                    <span className="inline-flex items-center gap-1.5 font-semibold">
+                      {isEditMode && (
+                        <GroupCheckbox
+                          lots={overLots}
+                          selectedLotIds={selectedLotIds}
+                          onToggle={toggleGroupSelection}
+                          ariaLabel={`Select all Overflow lots on ${col.displayDate}`}
+                        />
+                      )}
+                      <span>Overflow</span>
+                    </span>
                     <span className="font-semibold tabular-nums">
                       +{overLots.length}
                     </span>
@@ -471,8 +591,32 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               {/* Other / Need WIP / Pending Section */}
               {otherLots.length > 0 && (
                 <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between text-[11px] px-0.5 text-base-content/75">
-                    <span className="font-semibold">Other / Need WIP</span>
+                  <div
+                    onClick={() => {
+                      if (isEditMode) toggleGroupSelection(otherLots);
+                    }}
+                    className={`flex items-center justify-between text-[11px] px-0.5 text-base-content/75 ${
+                      isEditMode
+                        ? "cursor-pointer select-none rounded hover:bg-base-200/60 py-0.5"
+                        : ""
+                    }`}
+                    title={
+                      isEditMode
+                        ? `Select all Other / Need WIP lots (${otherLots.length})`
+                        : undefined
+                    }
+                  >
+                    <span className="inline-flex items-center gap-1.5 font-semibold">
+                      {isEditMode && (
+                        <GroupCheckbox
+                          lots={otherLots}
+                          selectedLotIds={selectedLotIds}
+                          onToggle={toggleGroupSelection}
+                          ariaLabel={`Select all Other / Need WIP lots on ${col.displayDate}`}
+                        />
+                      )}
+                      <span>Other / Need WIP</span>
+                    </span>
                     <span className="font-semibold tabular-nums text-base-content/55">
                       {otherLots.length}
                     </span>
