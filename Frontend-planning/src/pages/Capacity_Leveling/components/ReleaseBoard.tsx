@@ -163,8 +163,52 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
 }) => {
   const lots = useMemo(() => rawLots.filter((lot) => !lot.passedGate), [rawLots]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
   const [gateStateFilter, setGateStateFilter] = useState<BoardGateStateFilter>("ALL");
   const [shiftFilter, setShiftFilter] = useState<"ALL" | BoardShiftAllocation["status"]>("ALL");
+
+  useEffect(() => {
+    if (!searchDropdownOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchDropdownRef.current && !searchDropdownRef.current.contains(e.target as Node)) {
+        setSearchDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSearchDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [searchDropdownOpen]);
+
+  const searchOptions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const productCounts = new Map<string, number>();
+    for (const lot of lots) {
+      if (!lot.product) continue;
+      productCounts.set(lot.product, (productCounts.get(lot.product) ?? 0) + 1);
+    }
+    const products = [...productCounts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([prd]) => !q || prd.toLowerCase().includes(q))
+      .map(([product, count]) => ({ product, count }));
+
+    const matchingLots = q
+      ? lots.filter((lot) => {
+          const isNeedWip =
+            lotKind(lot) === "need" ||
+            lot.label.trim().toUpperCase() === "NEED WIP";
+          return !isNeedWip && (lot.label || "").toLowerCase().includes(q);
+        })
+      : [];
+
+    return { products, matchingLots };
+  }, [lots, searchQuery]);
 
   const filteredLots = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -208,11 +252,11 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   useEffect(() => {
     if (!isFullscreen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsFullscreen(false);
+      if (e.key === "Escape" && !searchDropdownOpen) setIsFullscreen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen]);
+  }, [isFullscreen, searchDropdownOpen]);
   const [batchTargetDate, setBatchTargetDate] = useState("");
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
   const dateDropdownRef = useRef<HTMLDivElement>(null);
@@ -493,28 +537,138 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
 
   const filterControls = (
     <div className="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
-      {/* Search Input */}
-      <div className={`relative shrink-0 ${isFullscreen ? "w-40 2xl:w-48" : "w-44 sm:w-52"}`}>
+      {/* Search Input with Product & Lot Dropdown */}
+      <div
+        ref={searchDropdownRef}
+        className={`relative shrink-0 ${isFullscreen ? "w-44 2xl:w-52" : "w-48 sm:w-56"}`}
+      >
         <Search
           size={13}
           className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
         />
         <input
           type="text"
-          placeholder="Search Lot / Product..."
+          placeholder="Search Product / Lot..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="input input-xs input-bordered w-full pl-7 pr-6 rounded-lg h-7 text-xs bg-base-200/40 focus:bg-base-100 placeholder:text-base-content/40"
+          onFocus={() => setSearchDropdownOpen(true)}
+          onClick={() => setSearchDropdownOpen(true)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setSearchDropdownOpen(true);
+          }}
+          className={`input input-xs input-bordered w-full pl-7 pr-7 rounded-lg h-7 text-xs placeholder:text-base-content/40 ${
+            searchQuery
+              ? "bg-[#eef2ff] border-indigo-300 text-[#4f46e5] font-semibold focus:bg-base-100 focus:text-base-content"
+              : "bg-base-200/40 focus:bg-base-100"
+          }`}
         />
-        {searchQuery && (
+        {searchQuery ? (
           <button
             type="button"
-            onClick={() => setSearchQuery("")}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
+            onClick={() => {
+              setSearchQuery("");
+              setSearchDropdownOpen(false);
+            }}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/45 hover:text-base-content cursor-pointer"
             title="Clear search"
           >
             <X size={12} />
           </button>
+        ) : (
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setSearchDropdownOpen((prev) => !prev)}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content cursor-pointer"
+            aria-label="Toggle product and lot list"
+          >
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${searchDropdownOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+        )}
+
+        {searchDropdownOpen && (
+          <div className="absolute left-0 top-full z-[110] mt-1 w-64 sm:w-72 rounded-xl border border-base-300 bg-base-100 shadow-xl overflow-hidden">
+            <ul className="max-h-80 overflow-y-auto py-1 text-xs thin-scrollbar">
+              {searchOptions.products.length === 0 &&
+              searchOptions.matchingLots.length === 0 ? (
+                <li className="px-3 py-3 text-center text-base-content/40">
+                  No matching product or lot
+                </li>
+              ) : (
+                <>
+                  {searchOptions.products.map(({ product, count }) => {
+                    const isActive =
+                      searchQuery.trim().toLowerCase() === product.toLowerCase();
+                    return (
+                      <li key={`prd-${product}`}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchQuery(product);
+                            setSearchDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-base-200 transition-colors cursor-pointer ${
+                            isActive
+                              ? "font-bold text-[#4f46e5] bg-[#eef2ff]/60"
+                              : "text-base-content font-medium"
+                          }`}
+                        >
+                          <span className="truncate">{product}</span>
+                          <span className="inline-flex items-center gap-1 shrink-0">
+                            <span className="text-[11px] tabular-nums text-base-content/45">
+                              {count}
+                            </span>
+                            {isActive && (
+                              <Check size={13} className="text-[#4f46e5] shrink-0" />
+                            )}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {searchOptions.matchingLots.slice(0, 200).map((lot) => {
+                    const isNeedWip =
+                      lotKind(lot) === "need" ||
+                      lot.label.trim().toUpperCase() === "NEED WIP";
+                    if (isNeedWip) return null;
+                    const isActive =
+                      searchQuery.trim().toLowerCase() === lot.label.toLowerCase();
+                    return (
+                      <li key={`lot-${lot.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchQuery(lot.label);
+                            setSearchDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-base-200 transition-colors cursor-pointer ${
+                            isActive
+                              ? "font-bold text-[#4f46e5] bg-[#eef2ff]/60"
+                              : "text-base-content"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-mono font-semibold text-[11.5px] tabular-nums shrink-0">
+                              {lot.label}
+                            </span>
+                            <span className="text-[11px] text-base-content/50 truncate">
+                              {lot.product}
+                            </span>
+                          </div>
+                          {isActive && (
+                            <Check size={13} className="text-[#4f46e5] shrink-0" />
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </>
+              )}
+            </ul>
+          </div>
         )}
       </div>
 
