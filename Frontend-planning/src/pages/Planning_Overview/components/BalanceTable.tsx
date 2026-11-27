@@ -20,10 +20,10 @@ interface BalanceTableProps {
   headerControls?: ReactNode;
 }
 
-const headCell = "bg-base-200 border-b border-base-300 text-[11px] font-bold uppercase tracking-wider text-base-content/70";
-const groupStart = "border-l-2 border-l-base-300";
-const dayBorder = "border-l border-l-base-200";
-const bodyCell = "h-9 px-2.5 text-right whitespace-nowrap border-b border-base-200 overflow-hidden";
+const headCell = "bg-base-200 border-b border-base-content/12 text-[11px] font-bold uppercase tracking-wider text-base-content/70";
+const groupStart = "border-l-2 border-l-base-content/12";
+const dayBorder = "border-l border-l-base-content/12";
+const bodyCell = "h-9 px-2.5 text-right whitespace-nowrap border-b border-base-content/12 overflow-hidden";
 
 interface BalanceRowProps {
   r: OverviewProduct;
@@ -36,11 +36,11 @@ const BalanceRow = memo(({ r, days, indexes }: BalanceRowProps) => (
     <th
       scope="row"
       title={r.first_short >= 0 ? `${r.prd_name} · Net Req from ${dayLabel(days[r.first_short].date)}` : `${r.prd_name} · Ready through the range`}
-      className="sticky left-0 z-10 h-9 px-3 text-left font-normal bg-base-100 group-hover:bg-base-200 border-b border-base-200 shadow-[1px_0_0_var(--color-base-300)] overflow-hidden text-ellipsis whitespace-nowrap"
+      className="sticky left-0 z-10 h-9 px-3 text-left font-normal bg-base-100 group-hover:bg-base-200 border-b border-base-content/12 shadow-[1px_0_0_color-mix(in_oklab,var(--color-base-content)_12%,transparent)] overflow-hidden text-ellipsis whitespace-nowrap"
     >
       <span className="font-bold text-[13px] text-base-content whitespace-nowrap">{r.prd_name}</span>
     </th>
-    <td className="h-9 px-2 text-center whitespace-nowrap border-b border-base-200 group-hover:bg-base-200/60 overflow-hidden">
+    <td className="h-9 px-2 text-center whitespace-nowrap border-b border-base-content/12 group-hover:bg-base-200/60 overflow-hidden">
       {r.type ? (
         <span className="inline-flex items-center h-[18px] px-1.5 rounded-md text-[10px] font-bold tracking-wide bg-base-200 text-base-content/75 border border-base-300">
           {r.type}
@@ -242,7 +242,7 @@ const BalanceTable = ({
   return (
     <section
       aria-label="Inventory vs Net Required"
-      className={`rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden ${
+      className={`rounded-2xl bg-base-100 border border-base-content/12 shadow-xs overflow-hidden ${
         isFullscreen ? "flex-1 min-h-0 flex flex-col" : ""
       }`}
     >
@@ -262,7 +262,7 @@ const BalanceTable = ({
             className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
               isFullscreen
                 ? "bg-[#4f46e5] border-[#4f46e5] text-white hover:bg-[#4338ca]"
-                : "bg-base-100 border-base-300 text-base-content hover:border-[#4f46e5] hover:text-[#4f46e5]"
+                : "bg-base-100 border-base-content/12 text-base-content hover:border-[#4f46e5] hover:text-[#4f46e5]"
             }`}
           >
             {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
@@ -299,7 +299,7 @@ const BalanceTable = ({
         ref={scrollRef}
         onScroll={handleScroll}
         style={{ overflowAnchor: "none" }}
-        className={`overflow-auto border-t border-base-300 transition-opacity ${
+        className={`overflow-auto border-t border-base-content/12 transition-opacity ${
           isFullscreen ? "flex-1 min-h-0" : "max-h-[calc(100vh-330px)] min-h-[260px]"
         } ${loading && hasData ? "opacity-60" : ""}`}
       >
@@ -334,15 +334,15 @@ const BalanceTable = ({
               <tr>
                 <th
                   scope="row"
-                  className="sticky left-0 z-30 h-[48px] px-3 text-left bg-base-100 border-b-2 border-b-base-300 shadow-[1px_0_0_var(--color-base-300)] whitespace-nowrap"
+                  className="sticky left-0 z-30 h-[48px] px-3 text-left bg-base-100 border-b-2 border-b-base-content/12 shadow-[1px_0_0_color-mix(in_oklab,var(--color-base-content)_12%,transparent)] whitespace-nowrap"
                 >
                   <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-base-content/80">
                     <span className="size-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true" />
                     <span>Daily Short</span>
                   </div>
                 </th>
-                <th aria-hidden="true" className="h-[48px] bg-base-100 border-b-2 border-b-base-300" />
-                <th aria-hidden="true" className="h-[48px] bg-base-100 border-b-2 border-b-base-300" />
+                <th aria-hidden="true" className="h-[48px] bg-base-100 border-b-2 border-b-base-content/12" />
+                <th aria-hidden="true" className="h-[48px] bg-base-100 border-b-2 border-b-base-content/12" />
                 {indexes.map((d, j) => {
                   const s = dailyShort[j];
                   const hasShort = s.products > 0;
@@ -354,7 +354,7 @@ const BalanceTable = ({
                           ? `${dayLabel(days[d].date)} · ${formatQty(s.products)} products short (${formatQty(s.pcs)} pcs)`
                           : `${dayLabel(days[d].date)} · No short products`
                       }
-                      className={`h-[48px] px-2.5 text-right whitespace-nowrap bg-base-100 border-b-2 border-b-base-300 ${
+                      className={`h-[48px] px-2.5 text-right whitespace-nowrap bg-base-100 border-b-2 border-b-base-content/12 ${
                         j === 0 ? groupStart : dayBorder
                       } ${hasShort ? "" : "text-base-content/30"}`}
                     >
@@ -409,7 +409,7 @@ const BalanceTable = ({
         </table>
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 border-t border-base-300 text-xs text-base-content/60 shrink-0">
+      <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 border-t border-base-content/12 text-xs text-base-content/60 shrink-0">
         <span>
           Showing {formatQty(rows.length)} of {formatQty(totalProducts)} products
           {calendarFallback && " · working-day calendar unavailable, Sundays hidden"}

@@ -23,10 +23,12 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
   const wipCount = kpi.wip_count ?? 0;
   const pendingCount = kpi.pending_count ?? 0;
 
+  const cardBorder = "border-base-content/12! [&_.border-t]:border-base-content/10";
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       {/* 1. Net Required */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader icon={Target} tone="blue" title="Net Required" />
         <KpiValue value={fmt(kpi.total_net_required)} unit="pcs" tone="blue" />
         <KpiFooter cols={1}>
@@ -35,7 +37,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       </KpiCard>
 
       {/* 2. Net WIP */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader icon={Cpu} tone="green" title="Total Net WIP" />
         <KpiValue value={fmt(kpi.total_net_wip)} unit="pcs" tone="green" />
         <KpiFooter cols={1}>
@@ -44,7 +46,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       </KpiCard>
 
       {/* 3. Priority: Top / Urgent / High */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader
           icon={Flame}
           tone="red"
@@ -69,7 +71,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       </KpiCard>
 
       {/* 4. Products & Lines */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader icon={Boxes} tone="blue" title="Products & Lots" />
         <KpiValue value={fmt(kpi.total_products)} unit="products" />
         <KpiFooter cols={1}>
@@ -78,7 +80,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
       </KpiCard>
 
       {/* 5. Lot Status: WIP vs Pending */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader icon={Activity} tone="blue" title="Lot Status" />
         <KpiValue value={fmt(wipCount + pendingCount)} unit="lots" />
         <KpiRatioBar

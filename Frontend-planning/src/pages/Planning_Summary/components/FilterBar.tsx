@@ -85,7 +85,7 @@ const SortByDropdown = ({
         className={`inline-flex h-8 items-center gap-1.5 px-3 rounded-lg border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap focus:outline-none ${
           open || activeField
             ? "bg-primary/10 border-primary/40 text-primary"
-            : "bg-base-200/40 border-base-300 text-base-content/80 hover:bg-base-200/70"
+            : "bg-base-200/40 border-base-content/12 text-base-content/80 hover:bg-base-200/70"
         }`}
       >
         {activeField ? (
@@ -202,7 +202,7 @@ const selectClass = (active: boolean) =>
   `select select-sm h-8 min-h-0 w-auto field-sizing-content ps-3 pe-8 text-xs font-semibold rounded-lg focus:border-primary focus:outline-none transition-colors whitespace-nowrap truncate ${
     active
       ? "bg-[#eef2ff] border-indigo-300 text-[#4f46e5]"
-      : "bg-base-200/40 border-base-300 text-base-content/80 hover:bg-base-200/70"
+      : "bg-base-200/40 border-base-content/12 text-base-content/80 hover:bg-base-200/70"
   }`;
 
 // Same pill switcher as PO Balance / Planning Summary Gate
@@ -217,7 +217,7 @@ const PillGroup = <T extends string>({
   options: { value: T; label: string }[];
   onSelect: (value: T) => void;
 }) => (
-  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/12">
     {options.map((opt) => (
       <button
         key={opt.label}
@@ -269,7 +269,7 @@ const FilterBar = ({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
       {/* Type Filter (94 = FPC, 95 = SMT) */}
       <PillGroup
         label="Type"

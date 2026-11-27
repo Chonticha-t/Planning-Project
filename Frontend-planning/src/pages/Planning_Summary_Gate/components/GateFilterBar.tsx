@@ -76,11 +76,11 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
   }, [planWindow, todayStr]);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
       {/* Left controls: Process group, Plan window, Date range, Product Dropdown, Search */}
       <div className="flex flex-wrap items-center gap-2.5">
         {/* Process Group Pill Switcher */}
-        <div role="group" aria-label="Process group" className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+        <div role="group" aria-label="Process group" className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/12">
           {PROCESS_GROUP_OPTIONS.map(({ value, label }) => (
             <button
               key={value}
@@ -101,7 +101,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
         {/* Plan Ahead (2 weeks / 1 month) */}
         <div className="flex items-center gap-1.5 text-xs text-base-content/70 pl-1">
           <span className="font-semibold">Plan ahead</span>
-          <div className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+          <div className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/12">
             <button
               type="button"
               onClick={() => onPlanWindowChange("2w")}
@@ -128,7 +128,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
         </div>
 
         {/* Date Window Display */}
-        <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/60 border border-base-300 text-xs font-semibold text-base-content/80 tabular-nums">
+        <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/60 border border-base-content/12 text-xs font-semibold text-base-content/80 tabular-nums">
           <Calendar size={13} className="text-primary opacity-80" />
           <span>{dateRangeDisplay}</span>
         </div>
@@ -146,7 +146,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
                 className={`inline-flex items-center justify-between gap-2 h-8 px-3 rounded-lg border text-xs font-semibold transition-all cursor-pointer min-w-[170px] max-w-[240px] ${
                   selectedProduct
                     ? "bg-[#eef2ff] border-indigo-300 text-[#4f46e5]"
-                    : "bg-base-200/40 border-base-300 text-base-content/80 hover:bg-base-200/70"
+                    : "bg-base-200/40 border-base-content/12 text-base-content/80 hover:bg-base-200/70"
                 }`}
               >
                 <span className="truncate">
@@ -170,7 +170,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
             </div>
 
             {dropdownOpen && (
-              <div className="absolute left-0 z-50 mt-1.5 w-64 rounded-xl border border-base-300 bg-base-100 shadow-xl overflow-hidden">
+              <div className="absolute left-0 z-50 mt-1.5 w-64 rounded-xl border border-base-content/12 bg-base-100 shadow-xl overflow-hidden">
                 <div className="p-2 border-b border-base-200 bg-base-200/30">
                   <div className="relative">
                     <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40" />
@@ -240,7 +240,7 @@ export const GateFilterBar: React.FC<GateFilterBarProps> = ({
             placeholder="Search Product / Lot No / SO"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input input-xs input-bordered w-full pl-8 pr-7 rounded-lg h-8 text-xs bg-base-200/40 focus:bg-base-100"
+            className="input input-xs input-bordered border-base-content/12 w-full pl-8 pr-7 rounded-lg h-8 text-xs bg-base-200/40 focus:bg-base-100"
           />
           {search && (
             <button

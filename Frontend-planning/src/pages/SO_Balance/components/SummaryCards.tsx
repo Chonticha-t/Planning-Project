@@ -48,10 +48,12 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
     "-";
   const hasUpdated = updatedAt !== "-";
 
+  const cardBorder = "border-base-content/12! [&_.border-t]:border-base-content/10";
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
       {/* ── Total SO ── */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader icon={Package} tone="blue" title="Total SO" />
         <KpiValue value={fmt(totalRows)} unit="SO lines" tone="blue" />
         <KpiFooter>
@@ -61,7 +63,7 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
       </KpiCard>
 
       {/* ── Ready ── */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader
           icon={CheckCircle2}
           tone="green"
@@ -88,7 +90,7 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
       </KpiCard>
 
       {/* ── Production Plan ── */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader
           icon={Factory}
           tone="red"
@@ -119,7 +121,7 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
       </KpiCard>
 
       {/* ── Last Calculated ── */}
-      <KpiCard>
+      <KpiCard className={cardBorder}>
         <KpiHeader icon={Clock} tone="blue" title="Last Calculated" />
         <KpiValue value={hasUpdated ? updatedAt.slice(11, 16) : "-"} unit={hasUpdated ? "น." : undefined} />
         <KpiFooter>

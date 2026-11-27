@@ -64,10 +64,10 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">Gate Arrival Schedule</h3>
-        <div role="group" aria-label="Display units" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5">
+        <div role="group" aria-label="Display units" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/12 bg-base-100 p-0.5">
           {MODES.map(({ mode, label }) => (
             <button key={mode} type="button" aria-pressed={unitMode === mode} onClick={() => onUnitModeChange(mode)}
               className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary ${unitMode === mode ? "bg-primary text-primary-content shadow-xs" : "text-base-content/70 hover:bg-base-200"}`}

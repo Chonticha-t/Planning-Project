@@ -14,7 +14,7 @@ const Card = ({
   valueClass?: string;
   dot?: string;
 }) => (
-  <div className="flex min-w-0 flex-col gap-1 rounded-2xl bg-base-100 border border-base-300 shadow-xs px-4 py-3">
+  <div className="flex min-w-0 flex-col gap-1 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs px-4 py-3">
     <span className="flex items-center gap-1.5 text-[13px] font-semibold text-base-content/70">
       {dot && <span className={`size-2 rounded-full ${dot}`} aria-hidden="true" />}
       {label}

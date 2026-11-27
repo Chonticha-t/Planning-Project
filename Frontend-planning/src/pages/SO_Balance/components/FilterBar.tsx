@@ -77,8 +77,8 @@ const SortByDropdown = ({
         onClick={() => setOpen((prev) => !prev)}
         className={`inline-flex h-8 items-center gap-1.5 px-3 rounded-lg border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap focus:outline-none ${
           open || activeField
-            ? "bg-primary/10 border-primary/40 text-primary"
-            : "bg-base-200/40 border-base-300 text-base-content/80 hover:bg-base-200/70"
+            ? "bg-primary/10 border-primary/50 text-primary"
+            : "bg-base-200/40 border-base-content/12 text-base-content/80 hover:bg-base-200/70"
         }`}
       >
         {activeField ? (
@@ -200,7 +200,7 @@ const PillGroup = <T extends string>({
   options: { value: T; label: string }[];
   onSelect: (value: T) => void;
 }) => (
-  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300">
+  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/12">
     {options.map((opt) => (
       <button
         key={opt.label}
@@ -238,7 +238,7 @@ const FilterBar = ({
   const handleClearDate = () => apply({ ...filter, startdate: "", stopdate: "" });
 
   return (
-    <div className="flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
       {/* Left controls: Type, Status, Product, Due date, Sort */}
       <div className="flex flex-wrap items-center gap-2.5">
         <PillGroup

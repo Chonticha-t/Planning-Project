@@ -240,10 +240,11 @@ const LotStatusBadge = ({
   );
 };
 
-const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
-// หัวคอลัมน์: เทาโทนเย็น (slate) อ่อน ๆ — ผสมกับพื้น theme ใช้ได้ทั้ง light/dark
-const headerBg = "color-mix(in oklab, #64748b 9%, var(--color-base-100))";
-const headerText = "color-mix(in oklab, #475569 70%, var(--color-base-content))";
+const border = "color-mix(in oklab, var(--color-base-content) 12%, transparent)";
+// หัวคอลัมน์: สีน้ำเงินทึบ ตัวหนังสือสีขาวทั้งตาราง
+const headerBg = "#2563eb";
+const headerText = "#ffffff";
+const headerBorder = "rgba(255, 255, 255, 0.2)";
 
 const PlanningSummaryTable = memo(
   ({
@@ -850,9 +851,9 @@ const PlanningSummaryTable = memo(
     );
 
     return (
-      <div className="rounded-2xl border border-base-300/80 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="rounded-2xl border border-base-content/12 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
         {/* Table Top Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-base-300/80 bg-base-100">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-base-content/12 bg-base-100">
           <div className="flex items-center gap-2.5">
             <h2 className="font-bold text-base-content tracking-wide text-sm">
               PLANNING SUMMARY
@@ -945,15 +946,24 @@ const PlanningSummaryTable = memo(
               "--DataGrid-rowBorderColor": border,
               "--DataGrid-containerBackground": headerBg,
 
-              // ── Header Styling: Clean, unified, no rainbow patches ──
+              // Borders & Sort Arrows Removal (เหมือนหน้า PO)
+              "& .MuiDataGrid-withBorderColor": { borderColor: border },
+
+              // ── Header Styling (Solid Blue) ──
               "& .MuiDataGrid-columnHeaders": {
                 backgroundColor: headerBg,
-                borderBottom: `1px solid ${border}`,
+                borderBottom: `1px solid ${headerBorder}`,
+                "& .MuiDataGrid-withBorderColor": {
+                  borderColor: headerBorder,
+                },
               },
+              "& .MuiDataGrid-columnHeader, & .MuiDataGrid-scrollbarFiller--header, & .MuiDataGrid-columnHeaders .MuiDataGrid-filler":
+                {
+                  backgroundColor: headerBg,
+                },
               "& .MuiDataGrid-columnHeader": {
-                backgroundColor: headerBg,
                 px: 2,
-                borderRight: `1px solid ${border} !important`,
+                borderRight: `1px solid ${headerBorder} !important`,
               },
               "& .MuiDataGrid-columnHeaderTitle": {
                 fontSize: 12.5,
@@ -963,8 +973,6 @@ const PlanningSummaryTable = memo(
                 color: headerText,
               },
 
-              // Borders & Sort Arrows Removal (เหมือนหน้า PO)
-              "& .MuiDataGrid-withBorderColor": { borderColor: border },
               "& .MuiDataGrid-columnSeparator": { display: "none" },
               "& .MuiLinearProgress-root": { display: "none" },
               "& .MuiDataGrid-iconButtonContainer": { display: "none" },

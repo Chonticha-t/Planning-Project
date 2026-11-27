@@ -231,11 +231,12 @@ const columnGroupingModel: GridColumnGroupingModel = [
 
 const GROUP_HEADER_H = 28;
 
-const border = "color-mix(in oklab, var(--color-base-content) 10%, transparent)";
-// หัวคอลัมน์: เทาโทนเย็น (slate) อ่อน ๆ — ผสมกับพื้น theme ใช้ได้ทั้ง light/dark
-const headerBg = "color-mix(in oklab, #64748b 9%, var(--color-base-100))";
-const headerText = "color-mix(in oklab, #475569 70%, var(--color-base-content))";
-const invBgGroup = "#2563eb";
+const border = "color-mix(in oklab, var(--color-base-content) 12%, transparent)";
+// หัวคอลัมน์: สีน้ำเงินทึบ ตัวหนังสือสีขาวทั้งตาราง
+const headerBg = "#2563eb";
+const invGroupBg = "#1e40af";
+const headerText = "#ffffff";
+const headerBorder = "rgba(255, 255, 255, 0.2)";
 
 const SOBalanceTable = ({
   rows,
@@ -249,10 +250,10 @@ const SOBalanceTable = ({
   const columns = useMemo(() => getColumns(onViewHistory), [onViewHistory]);
   return (
     <section
-      aria-label="SO Balan ทำce table"
-      className="rounded-2xl bg-base-100 border border-base-300 shadow-xs overflow-hidden"
+      aria-label="SO Balance table"
+      className="rounded-2xl bg-base-100 border border-base-content/12 shadow-xs overflow-hidden"
     >
-      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-base-300">
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-base-content/12">
         <div className="flex items-baseline gap-2.5">
           <h3 className="text-[13.5px] font-extrabold tracking-wide text-base-content uppercase">SO Balance</h3>
           <span className="text-xs font-medium text-base-content/55 tabular-nums">
@@ -326,12 +327,22 @@ const SOBalanceTable = ({
             "--DataGrid-rowBorderColor": border,
             "--DataGrid-containerBackground": headerBg,
 
-            // ── Header Styling ────────────────────────
+            // เส้นคั่นแนวตั้งระหว่างคอลัมน์ (เนื้อหาข้อมูล)
+            "& .MuiDataGrid-withBorderColor": { borderColor: border },
+
+            // ── Header Styling (Solid Blue) ───────────
             "& .MuiDataGrid-columnHeaders": {
               backgroundColor: headerBg,
+              borderColor: headerBorder,
+              "& .MuiDataGrid-withBorderColor": {
+                borderColor: headerBorder,
+              },
             },
+            "& .MuiDataGrid-columnHeader, & .MuiDataGrid-columnHeaderGroupCell, & .MuiDataGrid-scrollbarFiller--header, & .MuiDataGrid-columnHeaders .MuiDataGrid-filler":
+              {
+                backgroundColor: headerBg,
+              },
             "& .MuiDataGrid-columnHeader": {
-              backgroundColor: headerBg,
               px: 1.25,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
@@ -356,32 +367,26 @@ const SOBalanceTable = ({
                   right: -1,
                   width: "1px",
                   height: GROUP_HEADER_H,
-                  backgroundColor: border,
+                  backgroundColor: headerBorder,
                   pointerEvents: "none",
                 },
               },
 
-            // ── Inventory Group Header (เฉพาะ INVENTORY เป็นสีน้ำเงินทึบ) ──
-            "& .MuiDataGrid-columnHeaderGroupCell": {
-              backgroundColor: headerBg,
-            },
+            // ── Inventory Group Header ────────────────
             "& .MuiDataGrid-columnHeader.inv-group": {
-              backgroundColor: invBgGroup,
+              backgroundColor: invGroupBg,
               px: 0,
             },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitle":
               {
                 fontWeight: 800,
                 letterSpacing: "0.06em",
-                color: "#ffffff",
+                color: headerText,
               },
             "& .MuiDataGrid-columnHeader.inv-group .MuiDataGrid-columnHeaderTitleContainer":
               {
-                borderBottom: `1px solid ${border}`,
+                borderBottom: `1px solid ${headerBorder}`,
               },
-
-            // เส้นคั่นแนวตั้งระหว่างคอลัมน์ (หัวตาราง + เนื้อหาข้อมูล)
-            "& .MuiDataGrid-withBorderColor": { borderColor: border },
 
             "& .MuiDataGrid-columnSeparator": { display: "none" },
             "& .MuiLinearProgress-root": { display: "none" },

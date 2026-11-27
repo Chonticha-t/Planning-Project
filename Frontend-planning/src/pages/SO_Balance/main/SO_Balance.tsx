@@ -95,7 +95,7 @@ const SO_Balance = ({ defaultTab = "balance" }: SOBalanceProps) => {
         <div
           role="tablist"
           aria-label="SO Balance views"
-          className="inline-flex items-center gap-1 rounded-xl border border-base-300 bg-base-100 p-1 shadow-2xs"
+          className="inline-flex items-center gap-1 rounded-xl border border-base-content/12 bg-base-100 p-1 shadow-2xs"
         >
           <button
             type="button"

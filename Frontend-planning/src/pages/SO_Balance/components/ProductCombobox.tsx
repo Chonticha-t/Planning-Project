@@ -69,7 +69,7 @@ const ProductCombobox = ({ value, options, onChange, onSelect, onEnter }: Produc
   return (
     <div ref={wrapRef} className="relative w-full">
       {/* ปิด outline หนาของ daisyUI ตอน focus เหลือแค่เส้นขอบสี primary บาง ๆ */}
-      <label className="input input-sm h-8 rounded-lg text-xs w-full bg-base-200/40 border-base-300 focus-within:bg-base-100 focus-within:outline-none focus-within:border-primary">
+      <label className="input input-sm h-8 rounded-lg text-xs w-full bg-base-200/40 border-base-content/12 focus-within:bg-base-100 focus-within:outline-none focus-within:border-primary">
         <Search size={14} className="opacity-50" />
         <input
           type="text"
@@ -94,7 +94,7 @@ const ProductCombobox = ({ value, options, onChange, onSelect, onEnter }: Produc
       {open && matches.length > 0 && (
         <ul
           ref={listRef}
-          className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-box border border-base-300 bg-base-100 py-1 shadow-lg"
+          className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-box border border-base-content/12 bg-base-100 py-1 shadow-lg"
         >
           {matches.map((name, i) => (
             <li
