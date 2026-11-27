@@ -173,7 +173,7 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
               <h4 className="text-[16px] font-bold text-base-content leading-snug break-all">
                 {activeLot.product}
               </h4>
-              <div className="text-xs font-mono font-bold text-base-content/70 mt-0.5">
+              <div className="mt-0.5 font-mono text-[15px] font-bold tracking-wide text-base-content select-all tabular-nums">
                 {activeLot.label}
               </div>
             </div>
@@ -196,8 +196,6 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
                 <span><strong>{formatGateQuantity(activeLot.sheets, "sheet")}</strong> sheets</span>
               </>
             )}
-            <span className="text-base-content/30">•</span>
-            <span>SO Due: <strong className="text-base-content">{formatDate(activeLot.dueDate)}</strong></span>
           </div>
         </div>
 
@@ -219,13 +217,9 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
               <span className="text-base-content/70">Source arrival</span>
               <span className="font-semibold">{formatDate(activeLot.arriveBy)}</span>
             </div>
-            <div className="flex items-center justify-between py-1 border-b border-base-200">
+            <div className={`flex items-center justify-between py-1 ${activeLot.nextGate ? "border-b border-base-200" : ""}`}>
               <span className="font-semibold text-rose-700">Must out</span>
               <span className="font-bold text-rose-700">{formatDate(activeLot.mustOut)}</span>
-            </div>
-            <div className="flex items-center justify-between py-1 border-b border-base-200">
-              <span className="text-base-content/70">Projected completion</span>
-              <span className="font-semibold">{formatDate(projectedEnd ?? null)}</span>
             </div>
             {activeLot.nextGate && (
               <div className="flex items-center justify-between py-1">
@@ -233,6 +227,10 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
                 <span className="font-semibold">{formatDate(nextPlanned)}</span>
               </div>
             )}
+            <div className="flex items-center justify-between -mx-2 px-2 py-1.5 mt-1 rounded-lg bg-blue-700 text-white">
+              <span className="font-semibold">SO Due</span>
+              <span className="font-bold">{formatDate(activeLot.dueDate)}</span>
+            </div>
           </div>
 
           {/* Planned Date */}
@@ -409,33 +407,6 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
               </>
             )}
           </div>
-
-          {/* Source Allocations */}
-          <details className="rounded-xl border border-base-200 p-3 bg-base-100">
-            <summary className="cursor-pointer font-semibold text-xs text-base-content/80 select-none">
-              Source allocations ({activeLot.allocations?.length ?? 0})
-            </summary>
-            <div className="mt-2 max-h-48 overflow-auto">
-              <table className="w-full text-left text-[11px] tabular-nums">
-                <thead className="text-base-content/50 border-b border-base-200">
-                  <tr>
-                    <th className="py-1">Item</th>
-                    <th className="py-1">Due</th>
-                    <th className="py-1 text-right">Qty</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-base-200/50">
-                  {activeLot.allocations?.map((row, index) => (
-                    <tr key={`${row.workKey}-${index}`}>
-                      <td className="py-1.5 font-medium">{row.item || "-"}</td>
-                      <td className="py-1.5 text-base-content/70">{formatDate(row.due_date)}</td>
-                      <td className="py-1.5 text-right font-semibold">{formatGateQuantity(row.qty ?? null, "piece")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
 
           {/* Move History */}
           <div className="rounded-xl border border-base-200 p-3 bg-base-100 flex flex-col gap-2 tabular-nums">
