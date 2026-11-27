@@ -83,7 +83,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
 
   const renderLotRow = (
     lot: LotItem,
-    variant: "normal" | "over" | "other"
+    variant: "day" | "night" | "over" | "other"
   ) => {
     const isExactSelected = selectedLot?.id === lot.id;
     const isSameProduct =
@@ -95,8 +95,16 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
     const isDragging = Boolean(draggedLot) && movingIds.has(lot.id);
     const alloc = shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id);
 
-    let cardStyle =
-      "border border-slate-300 bg-base-100 text-base-content hover:border-indigo-400 hover:bg-base-100 shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+    const shiftLeftBorder =
+      variant === "day"
+        ? "border-l-2 border-l-amber-400"
+        : variant === "night"
+        ? "border-l-2 border-l-indigo-500"
+        : variant === "over"
+        ? "border-l-2 border-l-rose-500"
+        : "border-l-2 border-l-slate-500";
+
+    let cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
     if (isSameProduct) {
       cardStyle = isExactSelected
         ? "border border-[#4f46e5] bg-[#4f46e5] text-white shadow-sm ring-2 ring-[#4f46e5]/30"
@@ -105,17 +113,13 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
       cardStyle =
         "border-[1.5px] border-[#4f46e5] bg-[#eef2ff] text-base-content";
     } else if (variant === "over") {
-      cardStyle =
-        "border border-dashed border-rose-300 bg-rose-50/70 text-base-content hover:border-rose-400";
+      cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-rose-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
     } else if (variant === "other") {
-      cardStyle =
-        "border border-dashed border-slate-400/80 bg-base-200/45 text-base-content/80 hover:border-slate-500";
+      cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
     } else if (moved) {
-      cardStyle =
-        "border border-indigo-400 bg-[#eef2ff]/70 text-base-content hover:border-indigo-500";
+      cardStyle = `border border-indigo-300 ${shiftLeftBorder} bg-[#eef2ff]/55 text-base-content hover:border-indigo-400`;
     } else if (isLate) {
-      cardStyle =
-        "border border-rose-300 bg-rose-50/30 text-base-content hover:border-rose-400";
+      cardStyle = `border border-rose-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-rose-400`;
     }
 
     const tooltipParts = [
@@ -164,7 +168,11 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
           </div>
           <span
             className={`text-[10.5px] font-mono tabular-nums shrink-0 ${
-              isSameProduct ? "text-white/85" : "text-base-content/50"
+              isSameProduct
+                ? "text-white/85"
+                : variant === "other"
+                ? "text-base-content/75 font-medium"
+                : "text-base-content/60"
             }`}
           >
             {lot.label}
@@ -341,48 +349,48 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               {/* Day Shift Section */}
               <div className="flex flex-col gap-1">
                 <div
-                  className="flex items-center justify-between text-[11px] px-0.5 text-amber-700"
+                  className="flex items-center justify-between text-[11px] px-0.5 text-base-content/75"
                   title={
                     dayCapMin !== null
                       ? `Day Shift: ${Math.round(dayUsedMin).toLocaleString()} / ${Math.round(dayCapMin).toLocaleString()} min`
                       : "Day Shift capacity not set"
                   }
                 >
-                  <span className="inline-flex items-center gap-1 font-semibold">
+                  <span className="inline-flex items-center gap-1.5 font-semibold">
                     <Sun size={11} className="text-amber-500 shrink-0" />
                     <span>Day Shift</span>
                   </span>
-                  <span className="font-semibold tabular-nums text-amber-700/80">
+                  <span className="font-semibold tabular-nums text-base-content/55">
                     {dayLots.length} lot
                   </span>
                 </div>
-                {dayLots.map((lot) => renderLotRow(lot, "normal"))}
+                {dayLots.map((lot) => renderLotRow(lot, "day"))}
               </div>
 
               {/* Night Shift Section */}
-              <div className="flex flex-col gap-1 pt-2 border-t border-indigo-200">
+              <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
                 <div
-                  className="flex items-center justify-between text-[11px] px-0.5 text-indigo-700"
+                  className="flex items-center justify-between text-[11px] px-0.5 text-base-content/75"
                   title={
                     nightCapMin !== null
                       ? `Night Shift: ${Math.round(nightUsedMin).toLocaleString()} / ${Math.round(nightCapMin).toLocaleString()} min`
                       : "Night Shift capacity not set"
                   }
                 >
-                  <span className="inline-flex items-center gap-1 font-semibold">
+                  <span className="inline-flex items-center gap-1.5 font-semibold">
                     <Moon size={11} className="text-indigo-500 shrink-0" />
                     <span>Night Shift</span>
                   </span>
-                  <span className="font-semibold tabular-nums text-indigo-700/80">
+                  <span className="font-semibold tabular-nums text-base-content/55">
                     {nightLots.length} lot
                   </span>
                 </div>
-                {nightLots.map((lot) => renderLotRow(lot, "normal"))}
+                {nightLots.map((lot) => renderLotRow(lot, "night"))}
               </div>
 
               {/* Overflow Section */}
               {overLots.length > 0 && (
-                <div className="flex flex-col gap-1 pt-2 border-t border-dashed border-rose-300">
+                <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
                   <div className="flex items-center justify-between text-[11px] px-0.5 text-rose-600">
                     <span className="font-semibold">Overflow</span>
                     <span className="font-semibold tabular-nums">
@@ -396,9 +404,9 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
               {/* Other / Need WIP / Pending Section */}
               {otherLots.length > 0 && (
                 <div className="flex flex-col gap-1 pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between text-[11px] px-0.5 text-slate-500">
+                  <div className="flex items-center justify-between text-[11px] px-0.5 text-base-content/75">
                     <span className="font-semibold">Other / Need WIP</span>
-                    <span className="font-semibold tabular-nums">
+                    <span className="font-semibold tabular-nums text-base-content/55">
                       {otherLots.length}
                     </span>
                   </div>
