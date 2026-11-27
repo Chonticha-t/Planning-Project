@@ -785,7 +785,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
         className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
           gateStateFilter !== "ALL"
             ? "bg-[#eef2ff] border-primary text-primary"
-            : "bg-base-200/40 border-base-300 text-base-content/75"
+            : "bg-base-200/40 border-base-content/9 text-base-content/75"
         }`}
       >
         <option value="ALL">All Status</option>
@@ -802,7 +802,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
         className={`select select-xs h-7 min-h-0 w-28 shrink-0 pl-2.5 pr-6 text-xs font-semibold rounded-lg border focus:outline-none cursor-pointer ${
           shiftFilter !== "ALL"
             ? "bg-[#eef2ff] border-primary text-primary"
-            : "bg-base-200/40 border-base-300 text-base-content/75"
+            : "bg-base-200/40 border-base-content/9 text-base-content/75"
         }`}
       >
         <option value="ALL">All Shift</option>
@@ -857,7 +857,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
             hideOffDays
               ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
-              : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+              : "border-base-content/9 bg-base-100 text-base-content/70 hover:bg-base-200"
           }`}
           title={hideOffDays ? "Hiding holidays (click to show all days)" : "Showing all days (click to hide holidays)"}
         >
@@ -873,11 +873,11 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
       className={
         isFullscreen
           ? "fixed inset-0 z-[100] flex flex-col gap-2.5 p-3.5 bg-base-100 overflow-hidden shadow-2xl animate-in fade-in duration-150"
-          : "flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs"
+          : "flex flex-col gap-3 p-4 rounded-2xl bg-base-100 border border-base-content/9 shadow-xs"
       }
     >
       {/* ── ROW 1: Title, Gate Switcher, Total Badge (& Filters in Fullscreen) & Primary Actions ── */}
-      <div className={`flex items-center justify-between gap-2.5 pb-2.5 border-b border-base-200/80 ${isFullscreen ? "flex-wrap xl:flex-nowrap" : ""}`}>
+      <div className={`flex items-center justify-between gap-2.5 pb-2.5 border-b border-base-content/9 ${isFullscreen ? "flex-wrap xl:flex-nowrap" : ""}`}>
         {/* Left: Title + Gate Switcher + Count Badge (+ Filters when Fullscreen) */}
         <div className="flex items-center gap-2.5 min-w-0 flex-wrap xl:flex-nowrap">
           {!isFullscreen && (
@@ -890,7 +890,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           <div
             role="group"
             aria-label="Gate shown on the board"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/9 bg-base-200/70 p-0.5"
           >
             {gates.map(({ gate }) => (
               <button
@@ -954,7 +954,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           <div
             role="group"
             aria-label="View mode"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/9 bg-base-200/70 p-0.5"
           >
             <button
               type="button"
@@ -1000,7 +1000,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
               isEditMode
                 ? "border-primary bg-primary text-primary-content"
-                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+                : "border-base-content/9 bg-base-100 text-base-content/70 hover:bg-base-200"
             }`}
           >
             {isEditMode ? <Check size={13} /> : <Pencil size={13} />}
@@ -1015,7 +1015,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
               isFullscreen
                 ? "border-primary bg-primary text-primary-content shadow-xs"
-                : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
+                : "border-base-content/9 bg-base-100 text-base-content/70 hover:bg-base-200"
             }`}
             title={isFullscreen ? "Exit full view (Esc)" : "Expand board to full view"}
           >
@@ -1289,8 +1289,8 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           VIEW 3: LIST / TABLE VIEW (Grouped by Date or Weeks)
          ========================================================= */}
       {activeViewMode === "list" && (
-        <div className={`overflow-x-auto rounded-xl border border-base-300 ${isFullscreen ? "flex-1 overflow-y-auto" : ""}`}>
-          <table className="table table-sm table-fixed w-full min-w-[980px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:nth-child(2)]:text-left [&_th:nth-child(2)]:text-left [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-300 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-300/60">
+        <div className={`overflow-x-auto rounded-xl border border-base-content/9 ${isFullscreen ? "flex-1 overflow-y-auto" : ""}`}>
+          <table className="table table-sm table-fixed w-full min-w-[980px] text-center border-collapse [&_th]:text-center [&_td]:text-center [&_td:nth-child(2)]:text-left [&_th:nth-child(2)]:text-left [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle [&_th:not(:last-child)]:border-r [&_th:not(:last-child)]:border-base-content/9 [&_td:not(:last-child)]:border-r [&_td:not(:last-child)]:border-base-content/9">
             <colgroup>
               <col style={{ width: "42px" }} />
               <col style={{ width: "160px" }} />
@@ -1305,7 +1305,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
               <col style={{ width: "72px" }} />
             </colgroup>
             <thead>
-              <tr className="bg-base-200/80 border-b border-base-300 text-[11.5px] font-bold tracking-[0.03em] text-base-content">
+              <tr className="bg-base-200/80 border-b border-base-content/9 text-[11.5px] font-bold tracking-[0.03em] text-base-content">
                 <th className="text-center px-1 py-1">
                   {granularity === "days" ? (
                     <button
@@ -1749,7 +1749,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                     onDragOver={(e) => handleRowDragOver(e, lot)}
                     onDrop={(e) => handleRowDrop(e, lot)}
                     onClick={() => onSelectLot(lot)}
-                    className={`group border-b border-base-300/50 hover:bg-base-200/40 text-[13px] leading-5 cursor-pointer transition-colors relative ${
+                    className={`group border-b border-base-content/9 hover:bg-base-200/40 text-[13px] leading-5 cursor-pointer transition-colors relative ${
                       isSelected ? "bg-[#eef2ff]/80 ring-1 ring-inset ring-[#4f46e5]/40" : ""
                     } ${isDragging ? "opacity-35" : ""} ${
                       isReorderTargetBefore ? "!border-t-2 !border-t-primary" : ""

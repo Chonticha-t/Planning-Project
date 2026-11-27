@@ -78,7 +78,7 @@ const ProductCombobox = ({
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <label className="input input-sm h-8 rounded-lg text-xs w-full border border-base-content/12 bg-base-200/40 focus-within:bg-base-100 focus-within:border-primary focus-within:outline-none transition-colors flex items-center gap-2">
+      <label className="input input-sm h-8 rounded-lg text-xs w-full border border-base-content/9 bg-base-200/40 focus-within:bg-base-100 focus-within:border-primary focus-within:outline-none transition-colors flex items-center gap-2">
         <Search size={14} className="opacity-50 shrink-0" />
         <input
           type="text"
@@ -110,7 +110,7 @@ const ProductCombobox = ({
       {open && matches.length > 0 && (
         <ul
           ref={listRef}
-          className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-auto rounded-lg border border-base-content/12 bg-base-100 py-1 shadow-xl z-50 text-xs"
+          className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-auto rounded-lg border border-base-content/9 bg-base-100 py-1 shadow-xl z-50 text-xs"
         >
           {matches.map((item, idx) => (
             <li

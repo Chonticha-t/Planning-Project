@@ -31,7 +31,7 @@ export const GateFlowCards: React.FC<GateFlowCardsProps> = ({
                 className={`w-full flex flex-col justify-between p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
                   isSelected
                     ? "bg-[#316be8] border-[#316be8] text-white shadow-md shadow-blue-600/15"
-                    : "bg-base-100 border-base-content/12 hover:border-base-content/20 hover:shadow-xs hover:bg-base-200/30"
+                    : "bg-base-100 border-base-content/9 hover:border-base-content/15 hover:shadow-xs hover:bg-base-200/30"
                 }`}
               >
                 {/* Top: Gate Title & Hold Badge */}

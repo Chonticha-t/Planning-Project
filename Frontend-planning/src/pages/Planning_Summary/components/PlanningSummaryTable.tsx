@@ -240,7 +240,7 @@ const LotStatusBadge = ({
   );
 };
 
-const border = "color-mix(in oklab, var(--color-base-content) 12%, transparent)";
+const border = "color-mix(in oklab, var(--color-base-content) 9%, transparent)";
 // หัวคอลัมน์: สีน้ำเงินทึบ ตัวหนังสือสีขาวทั้งตาราง
 const headerBg = "#2563eb";
 const headerText = "#ffffff";
@@ -851,9 +851,9 @@ const PlanningSummaryTable = memo(
     );
 
     return (
-      <div className="rounded-2xl border border-base-content/12 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
+      <div className="rounded-2xl border border-base-content/9 bg-base-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
         {/* Table Top Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-base-content/12 bg-base-100">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-base-content/9 bg-base-100">
           <div className="flex items-center gap-2.5">
             <h2 className="font-bold text-base-content tracking-wide text-sm">
               PLANNING SUMMARY

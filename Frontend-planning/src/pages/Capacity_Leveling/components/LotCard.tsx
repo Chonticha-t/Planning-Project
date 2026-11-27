@@ -199,7 +199,7 @@ const LotCardView: React.FC<LotCardProps> = ({
   }
 
   let borderClass =
-    "border border-base-300 bg-base-100 hover:border-base-content/30 text-base-content";
+    "border border-base-content/9 bg-base-100 hover:border-base-content/30 text-base-content";
   if (isSelected) {
     borderClass =
       "border-2 border-[#4f46e5] bg-[#4f46e5] text-white shadow-md";

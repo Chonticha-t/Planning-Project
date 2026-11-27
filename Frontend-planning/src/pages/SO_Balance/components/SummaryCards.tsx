@@ -48,7 +48,7 @@ const SummaryCards = ({ summary, lastUpdatedAt, productCount }: SummaryCardsProp
     "-";
   const hasUpdated = updatedAt !== "-";
 
-  const cardBorder = "border-base-content/12! [&_.border-t]:border-base-content/10";
+  const cardBorder = "border-base-content/9! [&_.border-t]:border-base-content/8";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">

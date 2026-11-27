@@ -48,7 +48,7 @@ const SortByDropdown = ({
         className={`inline-flex h-8 items-center gap-1.5 px-3 rounded-lg border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap focus:outline-none ${
           open || sort
             ? "bg-primary/10 border-primary/40 text-primary"
-            : "bg-base-200/40 border-base-content/12 text-base-content/80 hover:bg-base-200/70"
+            : "bg-base-200/40 border-base-content/9 text-base-content/80 hover:bg-base-200/70"
         }`}
       >
         {sort ? (
@@ -186,7 +186,7 @@ const PillGroup = <T extends string>({
   options: { value: T; label: string; count?: number; countTone?: "error" }[];
   onSelect: (value: T) => void;
 }) => (
-  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/12">
+  <div role="group" aria-label={label} className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/9">
     {options.map((opt) => {
       const active = value === opt.value;
       return (
@@ -246,7 +246,7 @@ const OverviewFilterBar = ({
     <>
       <PillGroup label="Item unit" value={unit} options={UNIT_OPTIONS} onSelect={onUnitChange} />
 
-      <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/40 border border-base-content/12 text-xs font-semibold text-base-content/85 tabular-nums">
+      <div className="inline-flex h-8 items-center gap-1.5 px-3 rounded-lg bg-base-200/40 border border-base-content/9 text-xs font-semibold text-base-content/85 tabular-nums">
         <CalendarRange size={14} className="text-base-content/60 shrink-0" aria-hidden="true" />
         <span>{rangeLabel(startDate, addDays(startDate, horizon - 1))}</span>
       </div>
@@ -270,7 +270,7 @@ const OverviewFilterBar = ({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
+    <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-base-100 border border-base-content/9 shadow-xs">
       {controls}
 
       <div className="flex-1" />

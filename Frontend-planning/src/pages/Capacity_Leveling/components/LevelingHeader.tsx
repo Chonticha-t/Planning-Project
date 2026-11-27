@@ -108,13 +108,13 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-base-100 border border-base-content/9 shadow-xs">
       {/* Left: Back link, Process Group Pill Switcher, Title & Interactive Plan History Button */}
       <div className="flex flex-wrap items-center gap-2.5">
         <button
           type="button"
           onClick={handleBackClick}
-          className="btn btn-xs h-8 px-2.5 rounded-lg border border-base-300 bg-base-100 hover:bg-base-200 text-base-content/75 hover:text-base-content text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+          className="btn btn-xs h-8 px-2.5 rounded-lg border border-base-content/9 bg-base-100 hover:bg-base-200 text-base-content/75 hover:text-base-content text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
           title="Back to Planning Summary Gate"
         >
           <ArrowLeft size={14} className="text-base-content/60" />
@@ -125,7 +125,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         <div
           role="group"
           aria-label="Process group"
-          className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-300"
+          className="inline-flex h-8 items-center gap-0.5 bg-base-200/80 p-0.5 rounded-lg border border-base-content/9"
         >
           {PROCESS_GROUP_OPTIONS.map(({ value, label }) => (
             <button
@@ -164,7 +164,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
             className={`group inline-flex h-7 items-center gap-1.5 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-2xs focus-visible:outline-2 focus-visible:outline-primary ${
               isDraftModified
                 ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100/80 hover:border-amber-400"
-                : "bg-base-100 text-base-content/80 border-base-300 hover:bg-base-200 hover:border-base-content/30"
+                : "bg-base-100 text-base-content/80 border-base-content/9 hover:bg-base-200 hover:border-base-content/30"
             }`}
           >
             <History
@@ -197,7 +197,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
         {editingPresence}
 
         {/* Date Window Display */}
-        <div className="inline-flex h-8 items-center gap-1.5 px-2.5 rounded-lg bg-base-200/60 border border-base-300 text-xs font-semibold text-base-content/80 tabular-nums">
+        <div className="inline-flex h-8 items-center gap-1.5 px-2.5 rounded-lg bg-base-200/60 border border-base-content/9 text-xs font-semibold text-base-content/80 tabular-nums">
           <Calendar size={13} className="text-primary opacity-80" />
           <span>{dateRangeText}</span>
         </div>
@@ -209,7 +209,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
             onClick={onOpenCapacityModal}
             disabled={readOnly}
             title="Configure machines (MC), shifts, and OT calendar"
-            className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            className="btn btn-xs h-8 px-3 rounded-lg bg-base-100 border border-base-content/9 hover:bg-base-200 text-xs font-semibold text-base-content flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Settings size={13} className="text-base-content/70" />
             <span>Capacity & OT</span>
@@ -221,7 +221,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
             disabled={isLoading || readOnly}
             title="Reload work and capacity from Summary Gate. Unsaved draft moves are kept."
             aria-label="Reload data"
-            className="btn btn-xs h-8 w-8 p-0 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-base-content flex items-center justify-center cursor-pointer shadow-2xs transition-colors"
+            className="btn btn-xs h-8 w-8 p-0 rounded-lg bg-base-100 border border-base-content/9 hover:bg-base-200 text-base-content flex items-center justify-center cursor-pointer shadow-2xs transition-colors"
           >
             <RefreshCw
               size={13}
@@ -241,7 +241,7 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
               onClick={() => setConfirmDialog("discard")}
               disabled={isLoading}
               title="Discard unsaved draft moves and restore the current saved plan"
-              className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-base-300 hover:bg-base-200 text-xs font-semibold text-base-content/80 hover:text-base-content flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+              className="btn btn-xs h-8 px-2.5 rounded-lg bg-base-100 border border-base-content/9 hover:bg-base-200 text-xs font-semibold text-base-content/80 hover:text-base-content flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
             >
               <Undo2 size={13} />
               <span>Discard Draft</span>
@@ -287,14 +287,14 @@ export const LevelingHeader: React.FC<LevelingHeaderProps> = ({
                 className={`btn btn-xs h-8 w-8 p-0 rounded-lg border text-base-content/70 hover:text-base-content flex items-center justify-center cursor-pointer shadow-2xs transition-colors ${
                   moreMenuOpen
                     ? "bg-base-200 border-base-content/30"
-                    : "bg-base-100 border-base-300 hover:bg-base-200"
+                    : "bg-base-100 border-base-content/9 hover:bg-base-200"
                 }`}
               >
                 <MoreHorizontal size={15} />
               </button>
 
               {moreMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-base-300 bg-base-100 py-1 shadow-lg z-50">
+                <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-base-content/9 bg-base-100 py-1 shadow-lg z-50">
                   <button
                     type="button"
                     onClick={() => {

@@ -247,7 +247,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
                             className={`w-full h-[54px] min-h-[54px] rounded-[8px] border border-dashed flex flex-col items-center justify-center text-[10.5px] font-bold ${
                               gInfo && gInfo.lotCount > 0
                                 ? "border-rose-300 bg-rose-50 text-rose-700"
-                                : "border-slate-200/80 bg-slate-50/80 text-slate-400"
+                                : "border-slate-300/55 bg-slate-50/80 text-slate-400"
                             }`}
                           >
                             <span>{!gInfo || gInfo.off ? "OFF" : "No capacity"}</span>
@@ -305,10 +305,10 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
                     const originalPct = gInfo.pct;
                     const status = loadStatus(displayPct);
                     const pillStyle = status === "red"
-                      ? "bg-[#fee2e2] text-[#991b1b] font-bold"
+                      ? "bg-[#fee2e2] text-[#991b1b] border border-rose-300/45 font-bold"
                       : status === "yellow"
-                      ? "bg-[#fef3c7] text-[#92400e] font-bold"
-                      : "bg-[#d1fae5] text-[#065f46] font-semibold";
+                      ? "bg-[#fef3c7] text-[#92400e] border border-amber-300/45 font-bold"
+                      : "bg-[#d1fae5] text-[#065f46] border border-emerald-300/45 font-semibold";
 
                     return (
                       <td key={col.date} className="p-[3px] align-middle">
@@ -426,15 +426,22 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
                     : total.overloadGates > 0
                     ? "bg-rose-50 text-rose-700"
                     : "bg-slate-50/80 text-slate-400";
+                  const totalStatus = total.pct !== null ? loadStatus(total.pct) : null;
                   const totalBorder = preview
                     ? "border-dashed border-[#4f46e5]"
-                    : total.pct !== null
-                    ? "border-transparent"
+                    : isZero
+                    ? "border-dashed border-slate-300/55"
+                    : totalStatus === "red"
+                    ? "border-rose-300/45"
+                    : totalStatus === "yellow"
+                    ? "border-amber-300/45"
+                    : totalStatus === "green"
+                    ? "border-emerald-300/45"
                     : total.incompleteGates > 0
                     ? "border-dashed border-amber-300"
                     : total.overloadGates > 0
                     ? "border-dashed border-rose-300"
-                    : "border-dashed border-slate-200/80";
+                    : "border-dashed border-slate-300/55";
                   return (
                     <td key={col.date} className="p-[3px] align-top">
                       <div
@@ -490,7 +497,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
   );
 
   return (
-    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-300 shadow-xs">
+    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-content/9 shadow-xs">
       {/* Header Row with Unit Switcher & Compact Summary Badges */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -502,7 +509,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
           <div
             role="group"
             aria-label="Display units"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/9 bg-base-100 p-0.5"
           >
             {UNIT_MODES.map(({ mode, label }) => (
               <button
@@ -526,7 +533,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
             {/* 1. Overload Cells */}
             <div
               title={kpis.overloadDetail}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-content/9 text-xs"
             >
               <span className="text-base-content/60 font-medium">Overload</span>
               <span className="font-bold text-base-content">
@@ -542,7 +549,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
             {/* 2. Late / At Risk Lots */}
             <div
               title={`${kpis.lateDetail}${kpis.orderCards ? ` · ${kpis.orderCards} with impossible gate order` : ""}`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-content/9 text-xs"
             >
               <span className="text-base-content/60 font-medium">
                 After must-out
@@ -555,7 +562,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
             {/* 3. Moved Lots */}
             <div
               title={`${kpis.movedEarlier} earlier · ${kpis.movedLater} later`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-300 text-xs"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-base-100 border border-base-content/9 text-xs"
             >
               <span className="text-base-content/60 font-medium">Moved</span>
               <span className="font-bold text-base-content">
@@ -592,7 +599,7 @@ const GateLoadGridView: React.FC<GateLoadGridProps> = ({
         <div
           role="group"
           aria-label="Plan mode"
-          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-100 p-0.5"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/9 bg-base-100 p-0.5"
         >
           <button
             type="button"

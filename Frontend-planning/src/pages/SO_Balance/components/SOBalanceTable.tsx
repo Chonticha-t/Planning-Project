@@ -231,7 +231,7 @@ const columnGroupingModel: GridColumnGroupingModel = [
 
 const GROUP_HEADER_H = 28;
 
-const border = "color-mix(in oklab, var(--color-base-content) 12%, transparent)";
+const border = "color-mix(in oklab, var(--color-base-content) 9%, transparent)";
 // หัวคอลัมน์: สีน้ำเงินทึบ ตัวหนังสือสีขาวทั้งตาราง
 const headerBg = "#2563eb";
 const invGroupBg = "#1e40af";
@@ -251,9 +251,9 @@ const SOBalanceTable = ({
   return (
     <section
       aria-label="SO Balance table"
-      className="rounded-2xl bg-base-100 border border-base-content/12 shadow-xs overflow-hidden"
+      className="rounded-2xl bg-base-100 border border-base-content/9 shadow-xs overflow-hidden"
     >
-      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-base-content/12">
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-base-content/9">
         <div className="flex items-baseline gap-2.5">
           <h3 className="text-[13.5px] font-extrabold tracking-wide text-base-content uppercase">SO Balance</h3>
           <span className="text-xs font-medium text-base-content/55 tabular-nums">

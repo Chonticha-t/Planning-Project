@@ -48,7 +48,7 @@ export const GateMustOutChart: React.FC<GateMustOutChartProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
+    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-content/9 shadow-xs">
       {/* Title & Legend Header */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">

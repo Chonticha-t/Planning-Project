@@ -23,7 +23,7 @@ const SummaryCards = ({ kpi }: SummaryCardsProps) => {
   const wipCount = kpi.wip_count ?? 0;
   const pendingCount = kpi.pending_count ?? 0;
 
-  const cardBorder = "border-base-content/12! [&_.border-t]:border-base-content/10";
+  const cardBorder = "border-base-content/9! [&_.border-t]:border-base-content/8";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">

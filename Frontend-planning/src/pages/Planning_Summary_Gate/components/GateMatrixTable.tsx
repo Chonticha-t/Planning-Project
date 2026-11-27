@@ -33,12 +33,12 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
   }, [matrixRows, unit]);
 
   const shading = (value: number | null) => {
-    if (value === null || value === 0 || maxValue === 0) return "bg-base-200 text-base-content";
+    if (value === null || value === 0 || maxValue === 0) return "bg-base-200 text-base-content border border-base-content/9";
     const ratio = value / maxValue;
-    if (ratio <= 0.25) return "bg-[#e6f0fd] text-[#1e293b]";
-    if (ratio <= 0.5) return "bg-[#cfe3fc] text-[#1e293b]";
-    if (ratio <= 0.75) return "bg-[#a3caf9] text-[#0f172a]";
-    return "bg-[#76aef4] text-white";
+    if (ratio <= 0.25) return "bg-[#e6f0fd] text-[#1e293b] border border-blue-200/60";
+    if (ratio <= 0.5) return "bg-[#cfe3fc] text-[#1e293b] border border-blue-300/50";
+    if (ratio <= 0.75) return "bg-[#a3caf9] text-[#0f172a] border border-blue-400/45";
+    return "bg-[#76aef4] text-white border border-blue-500/45";
   };
 
   const renderCell = (gate: string, cell: MatrixDayCell) => {
@@ -51,7 +51,7 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
           aria-label={`${gate} ${cell.dateStr}: ${formatGateQuantity(value, unit)} ${GATE_UNIT_LABELS[unit]}, ${cell.needCount} Need WIP requests`}
           onClick={() => onSelectCell(gate, cell.dateStr)}
           title={value === null ? "Quantity unavailable: missing or invalid quantity/conversion data." : `${GATE_UNIT_TITLES[unit]}${cell.needCount ? `; ${cell.needCount} Need WIP requests` : ""}`}
-          className={`w-full h-[48px] min-h-[48px] rounded-[6px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${selected ? "ring-2 ring-[#4f46e5]" : "hover:brightness-95"} ${populated ? shading(value) : `border border-dashed border-slate-200/80 ${cell.isHoliday ? "bg-slate-50/80 text-slate-400" : "text-slate-300"}`}`}
+          className={`w-full h-[48px] min-h-[48px] rounded-[6px] flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-primary ${selected ? "ring-2 ring-[#4f46e5]" : "hover:brightness-95"} ${populated ? shading(value) : `border border-dashed border-slate-300/55 ${cell.isHoliday ? "bg-slate-50/80 text-slate-400" : "text-slate-300"}`}`}
         >
           {populated ? <>
             <span className="text-[11px] font-extrabold tabular-nums leading-none whitespace-nowrap">{formatGateQuantity(value, unit)}</span>
@@ -64,10 +64,10 @@ export const GateMatrixTable: React.FC<GateMatrixTableProps> = memo(({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-content/12 shadow-xs">
+    <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-base-100 border border-base-content/9 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="font-bold text-sm tracking-wide text-base-content uppercase">Gate Arrival Schedule</h3>
-        <div role="group" aria-label="Display units" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/12 bg-base-100 p-0.5">
+        <div role="group" aria-label="Display units" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-content/9 bg-base-100 p-0.5">
           {MODES.map(({ mode, label }) => (
             <button key={mode} type="button" aria-pressed={unitMode === mode} onClick={() => onUnitModeChange(mode)}
               className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary ${unitMode === mode ? "bg-primary text-primary-content shadow-xs" : "text-base-content/70 hover:bg-base-200"}`}
