@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Info, Moon, Sun, X } from "lucide-react";
+import { Info, Moon, Redo2, Sun, Undo2, X } from "lucide-react";
 import type {
   BoardShiftAllocation,
   DayGateLoad,
@@ -47,6 +47,14 @@ interface ShiftBoardViewProps {
   onColDragOver: (e: React.DragEvent<HTMLElement>, dayDate: string) => void;
   onColDrop: (e: React.DragEvent<HTMLElement>, dayDate: string) => void;
   onMoveLots: (lots: LotItem[], targetDate: string) => void;
+  isDraftModified?: boolean;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  undoLabel?: string | null;
+  redoLabel?: string | null;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onFocusedLotChange?: (hasFocused: boolean) => void;
 }
 
 const EMPTY_LOTS: LotItem[] = [];
@@ -103,6 +111,14 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
   onColDragOver,
   onColDrop,
   onMoveLots,
+  isDraftModified = false,
+  canUndo = false,
+  canRedo = false,
+  undoLabel = null,
+  redoLabel = null,
+  onUndo,
+  onRedo,
+  onFocusedLotChange,
 }) => {
   const [focusedLot, setFocusedLot] = useState<{ id: string; product: string } | null>(null);
 
@@ -156,6 +172,11 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
     }
     return null;
   }, [isEditMode, focusedLot, selectedLot, lotsByDate]);
+
+  useEffect(() => {
+    onFocusedLotChange?.(Boolean(focusedLotItem));
+  }, [focusedLotItem, onFocusedLotChange]);
+  useEffect(() => () => onFocusedLotChange?.(false), [onFocusedLotChange]);
 
   const toggleGroupSelection = (groupLots: LotItem[]) => {
     if (groupLots.length === 0) return;
@@ -700,6 +721,33 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
             <Info size={12} />
             <span>View Details</span>
           </button>
+          {!readOnly && isDraftModified && (canUndo || canRedo) && (
+            <>
+              <div className="h-4 w-px bg-base-300 shrink-0" />
+              <div className="inline-flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={!canUndo}
+                  onClick={() => onUndo?.()}
+                  title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)"}
+                  aria-label="Undo"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full hover:bg-base-200 text-base-content disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                >
+                  <Undo2 size={13} />
+                </button>
+                <button
+                  type="button"
+                  disabled={!canRedo}
+                  onClick={() => onRedo?.()}
+                  title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y)"}
+                  aria-label="Redo"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full hover:bg-base-200 text-base-content disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                >
+                  <Redo2 size={13} />
+                </button>
+              </div>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setFocusedLot(null)}

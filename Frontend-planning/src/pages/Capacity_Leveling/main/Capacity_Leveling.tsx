@@ -53,6 +53,15 @@ import { uniqueScopes, type EditingScope } from "../utils/editingPresence";
 
 /** Days shown from today, inclusive. */
 const RANGE_DAYS = 28;
+const MAX_UNDO_STEPS = 50;
+
+interface UndoEntry {
+  id: string;
+  undoLabel: string;
+  redoLabel: string;
+  lots: LotItem[];
+  boardCardOrder: BoardCardOrder;
+}
 
 interface CapacityLevelingProps {
   snapshot?: LevelingData;
@@ -75,6 +84,12 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   const [failure, setFailure] = useState<ApiFailure | null>(null);
   const [lots, setLots] = useState<LotItem[]>(() => snapshot?.cards.map(toLotItem) ?? []);
   const [boardCardOrder, setBoardCardOrder] = useState<BoardCardOrder>(new Map());
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
+  const undoStackRef = useRef<UndoEntry[]>([]);
+  const redoStackRef = useRef<UndoEntry[]>([]);
+  undoStackRef.current = undoStack;
+  redoStackRef.current = redoStack;
   const [saving, setSaving] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [requiredReset, setRequiredReset] = useState(false);
@@ -154,6 +169,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         draftRef.current = new Map();
         draftHistoryRef.current = new Map();
         setBoardCardOrder(new Map());
+        setUndoStack([]);
+        setRedoStack([]);
       }
       if (mode === "reset") {
         setSelectedLotId(null);
@@ -354,6 +371,8 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     draftRef.current = new Map();
     draftHistoryRef.current = new Map();
     setBoardCardOrder(new Map());
+    setUndoStack([]);
+    setRedoStack([]);
     setLots(data.cards.map(toLotItem));
     setSelectedLotId(null);
     setSelectedLotIds(new Set());
@@ -363,6 +382,67 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
     setHoverTargetDate(null);
     toast.success("Unsaved draft discarded. Restored to the current saved plan.");
   }, [readOnly, data, loading, saving]);
+
+  const handleUndo = useCallback(() => {
+    if (readOnly || loading || saving) return;
+    const current = undoStackRef.current;
+    if (current.length === 0) return;
+    const top = current[current.length - 1];
+    setUndoStack(current.slice(0, -1));
+    setRedoStack((prev) => [
+      ...prev.slice(-(MAX_UNDO_STEPS - 1)),
+      { id: top.id, undoLabel: top.undoLabel, redoLabel: top.redoLabel, lots, boardCardOrder: new Map(boardCardOrder) },
+    ]);
+    setLots(top.lots);
+    setBoardCardOrder(top.boardCardOrder);
+    setPendingMove(null);
+    setPendingReorder(null);
+    setSelectedLotIds(new Set());
+    toast.success(`Undone: ${top.undoLabel}`, { id: "undo-redo", duration: 2500 });
+  }, [readOnly, loading, saving, lots, boardCardOrder]);
+
+  const handleRedo = useCallback(() => {
+    if (readOnly || loading || saving) return;
+    const current = redoStackRef.current;
+    if (current.length === 0) return;
+    const top = current[current.length - 1];
+    setRedoStack(current.slice(0, -1));
+    setUndoStack((prev) => [
+      ...prev.slice(-(MAX_UNDO_STEPS - 1)),
+      { id: top.id, undoLabel: top.undoLabel, redoLabel: top.redoLabel, lots, boardCardOrder: new Map(boardCardOrder) },
+    ]);
+    setLots(top.lots);
+    setBoardCardOrder(top.boardCardOrder);
+    setPendingMove(null);
+    setPendingReorder(null);
+    setSelectedLotIds(new Set());
+    toast.success(`Redone: ${top.redoLabel}`, { id: "undo-redo", duration: 2500 });
+  }, [readOnly, loading, saving, lots, boardCardOrder]);
+
+  // Ctrl+Z (Undo) and Ctrl+Y / Ctrl+Shift+Z (Redo) shortcuts
+  useEffect(() => {
+    if (readOnly || preview || (undoStack.length === 0 && redoStack.length === 0)) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (saveModalOpen || capacityModalOpen || historyModalOpen || resetModalOpen) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        if (undoStackRef.current.length > 0) {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        if (redoStackRef.current.length > 0) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [readOnly, preview, undoStack.length, redoStack.length, saveModalOpen, capacityModalOpen, historyModalOpen, resetModalOpen, handleUndo, handleRedo]);
 
   const editingScopes = useMemo(() => {
     const scopes: EditingScope[] = [...capacityEditingScopes];
@@ -466,14 +546,34 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       return;
     }
     const timestamp = Date.now();
+    const reorderEventId = `mh-order-${timestamp}-${++moveSequenceRef.current}`;
     const history = reorderMoveHistory(ordered, applyBoardCardOrder(board, next), movingIds,
-      { id: `mh-order-${timestamp}-${++moveSequenceRef.current}`, changedAt: new Date(timestamp).toISOString(),
+      { id: reorderEventId, changedAt: new Date(timestamp).toISOString(),
         changedBy: `${user?.full_name || user?.username || "Planner"} · Draft` });
+    const dayStr = dayjs(before[0].plannedDate).format("DD/MM");
+    let undoLabel = `${movingIds.length} lots · ${dayStr} (revert order)`;
+    let redoLabel = `${movingIds.length} lots · ${dayStr} (reorder)`;
+    if (movingIds.length === 1) {
+      const movedId = movingIds[0];
+      const beforePos = before.findIndex((item) => item.id === movedId) + 1;
+      const afterPos = pendingReorder.after.findIndex((item) => item.id === movedId) + 1;
+      const movedLot = before.find((item) => item.id === movedId);
+      const lotLabel = movedLot?.label ?? "1 lot";
+      if (beforePos > 0 && afterPos > 0) {
+        undoLabel = `${lotLabel} · ${dayStr} (pos ${afterPos} → ${beforePos})`;
+        redoLabel = `${lotLabel} · ${dayStr} (pos ${beforePos} → ${afterPos})`;
+      }
+    }
+    setUndoStack((prev) => [
+      ...prev.slice(-(MAX_UNDO_STEPS - 1)),
+      { id: reorderEventId, undoLabel, redoLabel, lots, boardCardOrder: new Map(boardCardOrder) },
+    ]);
+    setRedoStack([]);
     setBoardCardOrder((current) => new Map([...current,
       ...[...next].filter(([key, ids]) => ids !== effectiveBoardCardOrder.get(key))]));
     setLots((current) => appendMoveHistory(current, history));
     setPendingReorder(null);
-  }, [saving, loading, readOnly, data, lots, effectiveBoardCardOrder, pendingReorder, user, canEditPlanning, requirePlanner]);
+  }, [saving, loading, readOnly, data, lots, boardCardOrder, effectiveBoardCardOrder, pendingReorder, user, canEditPlanning, requirePlanner]);
 
   // Stage the whole group without changing dates until the confirmation succeeds.
   const handleStageMoveLots = useCallback(
@@ -571,6 +671,22 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       const boardIds = new Map(lotsToMove.flatMap((lot) => (lot.sourceIds ?? [lot.id]).map((id) => [id, lot.id] as const)));
       const changedAt = new Date(moveTimestamp).toISOString();
       const changedBy = `${user?.full_name || user?.username || "Planner"} · Draft`;
+      const toStr = dayjs(targetDate).format("DD/MM");
+      const fromDates = Array.from(new Set(lotsToMove.map((lot) => lot.plannedDate)));
+      const subject = lotsToMove.length === 1 ? lotsToMove[0].label : `${lotsToMove.length} lots`;
+      const undoLabel =
+        fromDates.length === 1
+          ? `${subject} · ${toStr} → ${dayjs(fromDates[0]).format("DD/MM")}`
+          : `${subject} · ${toStr} → previous dates`;
+      const redoLabel =
+        fromDates.length === 1
+          ? `${subject} · ${dayjs(fromDates[0]).format("DD/MM")} → ${toStr}`
+          : `${subject} → ${toStr}`;
+      setUndoStack((prev) => [
+        ...prev.slice(-(MAX_UNDO_STEPS - 1)),
+        { id: eventId, undoLabel, redoLabel, lots, boardCardOrder: new Map(boardCardOrder) },
+      ]);
+      setRedoStack([]);
       setLots((prevLots) => prevLots.map((lot) => {
         if (!ids.has(lot.id) || lot.plannedDate === targetDate) return lot;
         const shiftDays = dayjs(targetDate).diff(dayjs(lot.plannedDate), "day");
@@ -595,7 +711,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         { id: "move-lots", duration: 2500 }
       );
     },
-    [lots, isValidMoveTarget, user, data, plannedIndex, readOnly, canEditPlanning, requirePlanner]
+    [lots, boardCardOrder, isValidMoveTarget, user, data, plannedIndex, readOnly, canEditPlanning, requirePlanner]
   );
 
   const handleConfirmSave = useCallback(
@@ -850,6 +966,13 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 activeMovingLots={activeMovingLots}
                 activePreviewTargetDate={activePreviewTargetDate}
                 focusedDate={focusedBoardDate}
+                isDraftModified={isDraftModified}
+                canUndo={undoStack.length > 0}
+                canRedo={redoStack.length > 0}
+                undoLabel={undoStack[undoStack.length - 1]?.undoLabel ?? null}
+                redoLabel={redoStack[redoStack.length - 1]?.redoLabel ?? null}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
               />
             </div>
           )}

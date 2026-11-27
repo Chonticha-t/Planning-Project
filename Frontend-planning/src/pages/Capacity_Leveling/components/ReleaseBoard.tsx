@@ -15,9 +15,11 @@ import {
   LayoutGrid,
   Moon,
   Pencil,
+  Redo2,
   Search,
   Sun,
   Table,
+  Undo2,
   Maximize2,
   Minimize2,
   X,
@@ -67,6 +69,13 @@ interface ReleaseBoardProps {
   activeMovingLots: LotItem[];
   activePreviewTargetDate: string | null;
   focusedDate?: string | null;
+  isDraftModified?: boolean;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  undoLabel?: string | null;
+  redoLabel?: string | null;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 interface WeekGroup {
@@ -160,6 +169,13 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   activePreviewTargetDate,
   focusedDate = null,
   readOnly = false,
+  isDraftModified = false,
+  canUndo = false,
+  canRedo = false,
+  undoLabel = null,
+  redoLabel = null,
+  onUndo,
+  onRedo,
 }) => {
   const lots = useMemo(() => rawLots.filter((lot) => !lot.passedGate), [rawLots]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -246,6 +262,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   const isFiltered = searchQuery.trim() !== "" || gateStateFilter !== "ALL" || shiftFilter !== "ALL";
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [hasFocusedLot, setHasFocusedLot] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hideOffDays, setHideOffDays] = useState(true);
   const [batchTargetDate, setBatchTargetDate] = useState("");
@@ -1132,6 +1149,36 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             </>
           )}
 
+          {isDraftModified && canUndo && (
+            <>
+              <div className="h-5 w-px bg-base-300 shrink-0" />
+
+              {/* Undo / Redo curved arrow buttons */}
+              <div className="inline-flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={!canUndo}
+                  onClick={() => onUndo?.()}
+                  title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)"}
+                  aria-label="Undo"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-base-300 bg-base-100 hover:bg-base-200 text-base-content disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
+                >
+                  <Undo2 size={14} />
+                </button>
+                <button
+                  type="button"
+                  disabled={!canRedo}
+                  onClick={() => onRedo?.()}
+                  title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y)"}
+                  aria-label="Redo"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-base-300 bg-base-100 hover:bg-base-200 text-base-content disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
+                >
+                  <Redo2 size={14} />
+                </button>
+              </div>
+            </>
+          )}
+
           <div className="h-5 w-px bg-base-300 shrink-0" />
 
           {/* Right: Clear Exit Edit Mode button */}
@@ -1144,6 +1191,51 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             <X size={13} />
             <span>Exit Edit</span>
           </button>
+        </div>
+      )}
+
+      {/* Standalone Floating Undo / Redo Pill (when not in Edit mode, no highlight bar, and draft still has changes) */}
+      {!isEditMode && !hasFocusedLot && !readOnly && isDraftModified && canUndo && (
+        <div
+          role="region"
+          aria-label="Undo and redo actions"
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[110] inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-base-100/95 backdrop-blur-sm pl-1.5 pr-3.5 py-1.5 shadow-xl max-w-[92vw]"
+        >
+          <div className="inline-flex items-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              disabled={!canUndo}
+              onClick={() => onUndo?.()}
+              title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)"}
+              aria-label="Undo"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-base-200 text-base-content disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo}
+              onClick={() => onRedo?.()}
+              title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : "Redo (Ctrl+Y)"}
+              aria-label="Redo"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-base-200 text-base-content disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+            >
+              <Redo2 size={14} />
+            </button>
+          </div>
+          {(undoLabel || redoLabel) && (
+            <>
+              <div className="h-4 w-px bg-base-300 shrink-0" />
+              <div className="flex items-center gap-1.5 text-xs whitespace-nowrap truncate">
+                <span className="text-[11px] font-medium text-base-content/55 shrink-0">
+                  {canUndo ? "Undo:" : "Redo:"}
+                </span>
+                <span className="font-semibold text-base-content tabular-nums truncate">
+                  {canUndo ? undoLabel : redoLabel}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1182,6 +1274,14 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           onColDragOver={handleColDragOver}
           onColDrop={handleColDrop}
           onMoveLots={onMoveLots}
+          isDraftModified={isDraftModified}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          undoLabel={undoLabel}
+          redoLabel={redoLabel}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          onFocusedLotChange={setHasFocusedLot}
         />
       )}
 
