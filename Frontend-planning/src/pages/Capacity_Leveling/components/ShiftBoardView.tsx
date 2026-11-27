@@ -204,8 +204,6 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
       cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-rose-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
     } else if (variant === "other") {
       cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
-    } else if (moved) {
-      cardStyle = `border border-indigo-300 ${shiftLeftBorder} bg-[#eef2ff]/55 text-base-content hover:border-indigo-400`;
     } else if (isLate) {
       cardStyle = `border border-rose-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-rose-400`;
     }
@@ -271,6 +269,15 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
                 onClick={(e) => e.stopPropagation()}
                 onChange={() => onToggleSelection(lot.id)}
                 className="w-3.5 h-3.5 rounded border border-base-300 text-[#4f46e5] accent-[#4f46e5] shrink-0 cursor-pointer"
+              />
+            )}
+            {moved && (
+              <span
+                aria-label="Moved"
+                title={`Moved from ${dayjs(lot.baseDate).format("DD/MM/YYYY")}`}
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  isSameProduct ? "bg-white" : "bg-blue-600"
+                }`}
               />
             )}
             <span className="font-semibold text-[11.5px] leading-tight truncate">
