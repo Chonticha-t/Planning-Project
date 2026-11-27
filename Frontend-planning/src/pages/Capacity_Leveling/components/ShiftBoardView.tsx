@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Moon, Sun } from "lucide-react";
+import { Info, Moon, Sun, X } from "lucide-react";
 import type {
   BoardShiftAllocation,
   DayGateLoad,
@@ -79,13 +79,64 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
   onColDrop,
   onMoveLots,
 }) => {
-  const highlightedProduct = selectedLot?.product ?? null;
+  const [focusedLot, setFocusedLot] = useState<{ id: string; product: string } | null>(null);
+
+  // Clear highlight when switching gates.
+  useEffect(() => {
+    setFocusedLot(null);
+  }, [boardGate]);
+
+  // Clear highlight on Escape or clicking blank space (when detail panel is closed).
+  useEffect(() => {
+    if (!focusedLot || selectedLot) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-lot-id], button, a, input, select, textarea, [role='dialog']")) {
+        return;
+      }
+      // Do not clear highlight when grabbing a horizontal or vertical scrollbar.
+      const rect = target.getBoundingClientRect();
+      const onHorizontalScrollbar =
+        target.scrollWidth > target.clientWidth &&
+        e.clientY >= rect.top + target.clientTop + target.clientHeight;
+      const onVerticalScrollbar =
+        target.scrollHeight > target.clientHeight &&
+        e.clientX >= rect.left + target.clientLeft + target.clientWidth;
+      if (onHorizontalScrollbar || onVerticalScrollbar) {
+        return;
+      }
+      setFocusedLot(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFocusedLot(null);
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [focusedLot, selectedLot]);
+
+  const highlightedProduct = selectedLot?.product ?? focusedLot?.product ?? null;
+  const activeCardId = selectedLot?.id ?? focusedLot?.id ?? null;
+
+  const focusedLotItem = useMemo(() => {
+    if (!focusedLot || selectedLot) return null;
+    for (const dayLots of lotsByDate.values()) {
+      for (const lot of dayLots) {
+        if (lot.id === focusedLot.id) return lot;
+      }
+    }
+    return null;
+  }, [focusedLot, selectedLot, lotsByDate]);
 
   const renderLotRow = (
     lot: LotItem,
     variant: "day" | "night" | "over" | "other"
   ) => {
-    const isExactSelected = selectedLot?.id === lot.id;
+    const isExactSelected = activeCardId === lot.id;
     const isSameProduct =
       highlightedProduct !== null && lot.product === highlightedProduct;
     const isBatchSelected = selectedLotIds.has(lot.id);
@@ -129,6 +180,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
       moved
         ? `Moved from ${dayjs(lot.baseDate).format("DD/MM/YYYY")}`
         : null,
+      "Click to highlight · Double-click for details",
     ].filter(Boolean);
 
     return (
@@ -145,9 +197,24 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
           draggable={!readOnly}
           onDragStart={(e) => onDragStart(e, lot)}
           onDragEnd={onDragEnd}
-          onClick={() => onSelectLot(lot)}
+          onClick={() => {
+            if (selectedLot) {
+              setFocusedLot({ id: lot.id, product: lot.product });
+              if (selectedLot.id !== lot.id) {
+                onSelectLot(lot);
+              }
+              return;
+            }
+            setFocusedLot((prev) =>
+              prev?.id === lot.id ? null : { id: lot.id, product: lot.product }
+            );
+          }}
+          onDoubleClick={() => {
+            setFocusedLot({ id: lot.id, product: lot.product });
+            onSelectLot(lot);
+          }}
           title={tooltipParts.join(" | ")}
-          className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-all select-none ${
+          className={`group flex items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-all select-none ${
             readOnly ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
           } ${isDragging ? "opacity-45 border-dashed" : ""} ${cardStyle}`}
         >
@@ -438,6 +505,43 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
           </div>
         );
       })}
+
+      {/* Floating action bar when a card is highlighted (makes "View Details" immediately obvious) */}
+      {focusedLotItem && (
+        <div
+          role="region"
+          aria-label="Highlighted lot actions"
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-2.5 rounded-full border border-slate-300 bg-base-100/95 backdrop-blur-sm pl-3.5 pr-2 py-1.5 shadow-xl text-xs"
+        >
+          <span className="inline-block h-2 w-2 rounded-full bg-[#4f46e5] shrink-0" />
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-bold text-base-content truncate max-w-[180px]">
+              {focusedLotItem.product}
+            </span>
+            <span className="rounded-md border border-slate-300 bg-base-200/80 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-base-content tabular-nums shrink-0">
+              {focusedLotItem.label}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-base-300 shrink-0" />
+          <button
+            type="button"
+            onClick={() => onSelectLot(focusedLotItem)}
+            className="inline-flex items-center gap-1 rounded-full bg-[#4f46e5] hover:bg-[#4338ca] px-3 py-1 text-[11.5px] font-semibold text-white shadow-2xs transition-colors cursor-pointer shrink-0"
+          >
+            <Info size={12} />
+            <span>View Details</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFocusedLot(null)}
+            title="Clear highlight (Esc)"
+            aria-label="Clear highlight"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full text-base-content/50 hover:text-base-content hover:bg-base-200 transition-colors cursor-pointer shrink-0"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

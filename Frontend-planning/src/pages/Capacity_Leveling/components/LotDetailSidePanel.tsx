@@ -143,23 +143,11 @@ const LotDetailSidePanelView: React.FC<LotDetailSidePanelProps> = ({
 
   return createPortal(
     <>
-      {/* Subtle backdrop that closes the drawer when clicked (disabled while dragging) */}
-      <div
-        aria-hidden="true"
-        onClick={onCancel}
-        className={`fixed inset-0 z-[90] bg-slate-900/25 transition-opacity duration-300 ${
-          isOpen
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none"
-        }`}
-      />
-
-      {/* Full-height right drawer with the details of one card */}
+      {/* Non-blocking right drawer with the details of one card */}
       <aside
         role="dialog"
         aria-label="Card detail drawer"
-        aria-modal="true"
-        className={`planning-summary-gate fixed inset-y-0 right-0 z-[100] w-[400px] max-w-[92vw] h-dvh bg-base-100 border-l border-base-300 shadow-2xl flex flex-col text-base-content transition-transform duration-300 ease-out ${
+        className={`planning-summary-gate fixed inset-y-0 right-0 z-[115] w-[400px] max-w-[92vw] h-dvh bg-base-100 border-l border-base-300 shadow-2xl flex flex-col text-base-content transition-transform duration-300 ease-out ${
           isOpen ? "translate-x-0" : "translate-x-full pointer-events-none"
         }`}
       >
