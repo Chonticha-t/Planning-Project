@@ -433,8 +433,78 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
     if (readOnly) { e.preventDefault(); return; }
     e.dataTransfer.setData("text/plain", lot.id);
     e.dataTransfer.effectAllowed = "move";
+
+    const dragCount = selectedLotIds.has(lot.id) ? selectedLots.length : 1;
+    if (dragCount > 1 && typeof document !== "undefined") {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "fixed";
+      wrapper.style.top = "-9999px";
+      wrapper.style.left = "-9999px";
+      wrapper.style.padding = "12px";
+      wrapper.style.pointerEvents = "none";
+
+      const card = document.createElement("div");
+      card.style.position = "relative";
+      card.style.display = "flex";
+      card.style.alignItems = "center";
+      card.style.justifyContent = "space-between";
+      card.style.gap = "10px";
+      card.style.minWidth = "190px";
+      card.style.maxWidth = "240px";
+      card.style.padding = "6px 10px";
+      card.style.borderRadius = "8px";
+      card.style.border = "1.5px solid #4f46e5";
+      card.style.background = "#eef2ff";
+      card.style.color = "#0f172a";
+      card.style.fontFamily = "system-ui, -apple-system, sans-serif";
+      card.style.fontSize = "11.5px";
+      card.style.fontWeight = "600";
+      card.style.boxShadow = "0 6px 16px rgba(79, 70, 229, 0.22)";
+
+      const prdSpan = document.createElement("span");
+      prdSpan.textContent = lot.product;
+      prdSpan.style.overflow = "hidden";
+      prdSpan.style.textOverflow = "ellipsis";
+      prdSpan.style.whiteSpace = "nowrap";
+
+      const lotSpan = document.createElement("span");
+      lotSpan.textContent = lot.label;
+      lotSpan.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, monospace";
+      lotSpan.style.fontSize = "10.5px";
+      lotSpan.style.color = "#475569";
+      lotSpan.style.flexShrink = "0";
+
+      const badge = document.createElement("div");
+      badge.textContent = String(dragCount);
+      badge.style.position = "absolute";
+      badge.style.top = "-10px";
+      badge.style.right = "-10px";
+      badge.style.minWidth = "22px";
+      badge.style.height = "22px";
+      badge.style.padding = "0 6px";
+      badge.style.borderRadius = "9999px";
+      badge.style.background = "#4f46e5";
+      badge.style.color = "#ffffff";
+      badge.style.fontSize = "11px";
+      badge.style.fontWeight = "700";
+      badge.style.display = "flex";
+      badge.style.alignItems = "center";
+      badge.style.justifyContent = "center";
+      badge.style.border = "2px solid #ffffff";
+      badge.style.boxShadow = "0 2px 6px rgba(79, 70, 229, 0.45)";
+
+      card.appendChild(prdSpan);
+      card.appendChild(lotSpan);
+      card.appendChild(badge);
+      wrapper.appendChild(card);
+      document.body.appendChild(wrapper);
+
+      e.dataTransfer.setDragImage(wrapper, 28, 24);
+      requestAnimationFrame(() => wrapper.remove());
+    }
+
     onDragStart(lot);
-  }, [readOnly, onDragStart]);
+  }, [readOnly, onDragStart, selectedLotIds, selectedLots.length]);
 
   const handleCardDragEnd = useCallback(() => {
     setReorderTarget(null);
