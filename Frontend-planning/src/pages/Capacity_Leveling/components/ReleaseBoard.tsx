@@ -248,18 +248,36 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hideOffDays, setHideOffDays] = useState(true);
+  const [batchTargetDate, setBatchTargetDate] = useState("");
+  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
+  const dateDropdownRef = useRef<HTMLDivElement>(null);
+
+  const exitEditMode = useCallback(() => {
+    onSelectionChange([]);
+    setBatchTargetDate("");
+    setDateDropdownOpen(false);
+    setIsEditMode(false);
+  }, [onSelectionChange]);
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !dateDropdownOpen && !searchDropdownOpen) {
+        exitEditMode();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isEditMode, dateDropdownOpen, searchDropdownOpen, exitEditMode]);
 
   useEffect(() => {
     if (!isFullscreen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !searchDropdownOpen) setIsFullscreen(false);
+      if (e.key === "Escape" && !searchDropdownOpen && !isEditMode) setIsFullscreen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen, searchDropdownOpen]);
-  const [batchTargetDate, setBatchTargetDate] = useState("");
-  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
-  const dateDropdownRef = useRef<HTMLDivElement>(null);
+  }, [isFullscreen, searchDropdownOpen, isEditMode]);
 
   useEffect(() => {
     if (!dateDropdownOpen) return;
@@ -957,10 +975,10 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             aria-pressed={isEditMode}
             onClick={() => {
               if (isEditMode) {
-                onSelectionChange([]);
-                setBatchTargetDate("");
+                exitEditMode();
+              } else {
+                setIsEditMode(true);
               }
-              setIsEditMode((prev) => !prev);
             }}
             className={`inline-flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
               isEditMode
@@ -968,8 +986,8 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                 : "border-base-300 bg-base-100 text-base-content/70 hover:bg-base-200"
             }`}
           >
-            <Pencil size={13} />
-            <span>Edit</span>
+            {isEditMode ? <Check size={13} /> : <Pencil size={13} />}
+            <span>{isEditMode ? "Done" : "Edit"}</span>
           </button>
 
           {/* Expand / Maximize Board Toggle */}
@@ -998,106 +1016,134 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
         </div>
       )}
 
-      {isEditMode && selectedLots.length > 0 && (
-        <div className="flex items-center justify-between gap-3 px-3.5 py-2 rounded-xl bg-base-100 border border-base-300 shadow-xs mb-2.5">
-          {/* Left: Count Badge */}
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#4f46e5] text-white tabular-nums shadow-2xs shrink-0">
-              {selectedLots.length} {selectedLots.length === 1 ? "card" : "cards"} selected
+      {/* Floating Bottom Bar for Edit Mode (always visible while editing, with clear exit button) */}
+      {isEditMode && (
+        <div
+          role="region"
+          aria-label="Edit mode actions"
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-2.5 rounded-2xl border border-slate-300 bg-base-100/95 backdrop-blur-sm px-3.5 py-2 shadow-xl text-xs max-w-[95vw]"
+        >
+          {/* Left: Mode / Count Badge */}
+          {selectedLots.length > 0 ? (
+            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#4f46e5] text-white tabular-nums shadow-2xs shrink-0">
+              {selectedLots.length} {selectedLots.length === 1 ? "lot" : "lots"} selected
             </span>
-            <span className="text-xs text-base-content/55 hidden md:inline truncate">
-              Drag selected cards or move directly to date:
-            </span>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="inline-block h-2 w-2 rounded-full bg-[#4f46e5]" />
+              <span className="font-semibold text-base-content">Edit mode</span>
+              <span className="text-base-content/55 hidden sm:inline">
+                Select cards to move
+              </span>
+            </div>
+          )}
 
-          {/* Right: Actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Custom Aligned Date Dropdown */}
-            <div className="relative" ref={dateDropdownRef}>
+          {/* Middle: Batch Move Controls (when cards are selected) */}
+          {selectedLots.length > 0 && (
+            <>
+              <div className="h-5 w-px bg-base-300 shrink-0" />
+
+              {/* Custom Aligned Date Dropdown (opens upward) */}
+              <div className="relative" ref={dateDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setDateDropdownOpen((prev) => !prev)}
+                  className="h-8 px-3 rounded-lg border border-base-300 bg-base-100 text-xs font-medium text-base-content hover:bg-base-200/60 inline-flex items-center gap-2 cursor-pointer shadow-2xs transition-colors whitespace-nowrap"
+                >
+                  <Calendar size={13} className="text-[#4f46e5] shrink-0" />
+                  <span className="tabular-nums">
+                    {batchTargetDate ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-bold text-[#4f46e5] uppercase text-[11px]">
+                          {dayjs(batchTargetDate).format("ddd")}
+                        </span>
+                        <span>{dayjs(batchTargetDate).format("DD/MM/YYYY")}</span>
+                      </span>
+                    ) : (
+                      "Choose target date"
+                    )}
+                  </span>
+                  <ChevronDown
+                    size={13}
+                    className={`text-base-content/40 transition-transform shrink-0 ${
+                      dateDropdownOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {dateDropdownOpen && (
+                  <div className="absolute right-0 bottom-full mb-2 z-[120] w-52 max-h-64 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl thin-scrollbar">
+                    {planningDays.map((day) => {
+                      const isSelected = batchTargetDate === day.date;
+                      return (
+                        <button
+                          key={day.date}
+                          type="button"
+                          onClick={() => {
+                            setBatchTargetDate(day.date);
+                            setDateDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer text-left ${
+                            isSelected
+                              ? "bg-[#eef2ff] text-[#4f46e5] font-bold"
+                              : "text-base-content hover:bg-base-200/70"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 tabular-nums">
+                            <span
+                              className={`w-9 text-[11px] font-bold uppercase shrink-0 ${
+                                isSelected ? "text-[#4f46e5]" : "text-base-content/50"
+                              }`}
+                            >
+                              {dayjs(day.date).format("ddd")}
+                            </span>
+                            <span className="font-mono text-xs font-semibold tracking-wide">
+                              {dayjs(day.date).format("DD/MM/YYYY")}
+                            </span>
+                          </div>
+                          {isSelected && <Check size={14} className="text-[#4f46e5] shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
-                onClick={() => setDateDropdownOpen((prev) => !prev)}
-                className="h-8 px-3 rounded-lg border border-base-300 bg-base-100 text-xs font-medium text-base-content hover:bg-base-200/60 inline-flex items-center gap-2 cursor-pointer shadow-2xs transition-colors"
+                disabled={!planningDates.has(batchTargetDate)}
+                onClick={() => onMoveLots(selectedLots, batchTargetDate)}
+                className="btn btn-xs h-8 px-3.5 rounded-lg bg-[#4f46e5] hover:bg-[#4338ca] text-white border-none text-xs font-semibold disabled:bg-base-200 disabled:text-base-content/30 cursor-pointer shadow-2xs shrink-0"
               >
-                <Calendar size={13} className="text-[#4f46e5]" />
-                <span className="tabular-nums">
-                  {batchTargetDate ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="font-bold text-[#4f46e5] uppercase text-[11px]">
-                        {dayjs(batchTargetDate).format("ddd")}
-                      </span>
-                      <span>{dayjs(batchTargetDate).format("DD/MM/YYYY")}</span>
-                    </span>
-                  ) : (
-                    "Choose target date"
-                  )}
-                </span>
-                <ChevronDown
-                  size={13}
-                  className={`text-base-content/40 transition-transform ${
-                    dateDropdownOpen ? "rotate-180" : ""
-                  }`}
-                />
+                Move {selectedLots.length > 1 ? `(${selectedLots.length})` : ""}
               </button>
 
-              {dateDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-52 max-h-64 overflow-y-auto rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl thin-scrollbar">
-                  {planningDays.map((day) => {
-                    const isSelected = batchTargetDate === day.date;
-                    return (
-                      <button
-                        key={day.date}
-                        type="button"
-                        onClick={() => {
-                          setBatchTargetDate(day.date);
-                          setDateDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer text-left ${
-                          isSelected
-                            ? "bg-[#eef2ff] text-[#4f46e5] font-bold"
-                            : "text-base-content hover:bg-base-200/70"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 tabular-nums">
-                          <span
-                            className={`w-9 text-[11px] font-bold uppercase shrink-0 ${
-                              isSelected ? "text-[#4f46e5]" : "text-base-content/50"
-                            }`}
-                          >
-                            {dayjs(day.date).format("ddd")}
-                          </span>
-                          <span className="font-mono text-xs font-semibold tracking-wide">
-                            {dayjs(day.date).format("DD/MM/YYYY")}
-                          </span>
-                        </div>
-                        {isSelected && <Check size={14} className="text-[#4f46e5] shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectionChange([]);
+                  setBatchTargetDate("");
+                  setDateDropdownOpen(false);
+                }}
+                className="btn btn-xs btn-ghost h-8 px-2.5 rounded-lg text-xs font-medium text-base-content/60 hover:text-base-content hover:bg-base-200 cursor-pointer shrink-0"
+              >
+                Clear
+              </button>
+            </>
+          )}
 
-            <button
-              type="button"
-              disabled={!planningDates.has(batchTargetDate)}
-              onClick={() => onMoveLots(selectedLots, batchTargetDate)}
-              className="btn btn-xs h-8 px-3.5 rounded-lg bg-[#4f46e5] hover:bg-[#4338ca] text-white border-none text-xs font-semibold disabled:bg-base-200 disabled:text-base-content/30 cursor-pointer shadow-2xs"
-            >
-              Move {selectedLots.length > 1 ? `(${selectedLots.length})` : ""}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onSelectionChange([]);
-                setBatchTargetDate("");
-                setDateDropdownOpen(false);
-              }}
-              className="btn btn-xs btn-ghost h-8 px-2.5 rounded-lg text-xs font-medium text-base-content/60 hover:text-base-content hover:bg-base-200 cursor-pointer"
-            >
-              Clear
-            </button>
-          </div>
+          <div className="h-5 w-px bg-base-300 shrink-0" />
+
+          {/* Right: Clear Exit Edit Mode button */}
+          <button
+            type="button"
+            onClick={exitEditMode}
+            title="Exit edit mode (Esc)"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 bg-base-100 hover:bg-base-200 px-3 text-xs font-semibold text-base-content transition-colors cursor-pointer shrink-0"
+          >
+            <X size={13} />
+            <span>Exit Edit</span>
+          </button>
         </div>
       )}
 

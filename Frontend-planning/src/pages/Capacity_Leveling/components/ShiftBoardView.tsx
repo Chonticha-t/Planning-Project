@@ -581,7 +581,7 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
                       <span>Overflow</span>
                     </span>
                     <span className="font-semibold tabular-nums">
-                      +{overLots.length}
+                      {overLots.length} lot
                     </span>
                   </div>
                   {overLots.map((lot) => renderLotRow(lot, "over"))}
