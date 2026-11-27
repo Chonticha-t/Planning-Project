@@ -1,21 +1,17 @@
 import React, { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import dayjs from "dayjs";
 import {
-  AlertCircle,
   ArrowUpDown,
   CalendarOff,
   Check,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
   ChevronsDown,
   ChevronsUp,
   Calendar,
   Clock3,
   GripVertical,
-  Layers,
   LayoutGrid,
   Moon,
   Pencil,
@@ -28,8 +24,7 @@ import {
 } from "lucide-react";
 import type { BoardShiftAllocation, LotItem, DayGateLoad, GateInfo, ViewMode, Granularity, LevelingData, BoardGateStateFilter } from "../types";
 import { formatGateQuantity } from "../../Planning_Summary_Gate/gateUnits";
-import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning, occupancyWindow, WARNING_TEXT, ZERO_LOAD_TEXT, zeroLoadReason } from "../utils/levelingCalculations";
-import { LotCard } from "./LotCard";
+import { boardCountLabel, lotKind, cellPct, isMoved, loadStatus, moveWarning } from "../utils/levelingCalculations";
 import { ShiftBoardView } from "./ShiftBoardView";
 import { DatePickerPopover } from "./DatePickerPopover";
 import { MovePositionModal } from "./MovePositionModal";
@@ -207,7 +202,6 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   const isFiltered = searchQuery.trim() !== "" || gateStateFilter !== "ALL" || shiftFilter !== "ALL";
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hideOffDays, setHideOffDays] = useState(true);
 
@@ -262,15 +256,10 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
     anchorEl: HTMLElement;
   } | null>(null);
   const [listPositionLot, setListPositionLot] = useState<LotItem | null>(null);
-  const [expandedDayCols, setExpandedDayCols] = useState<
-    Record<string, boolean>
-  >({});
-  const maxVisibleCardsPerDay = isCompact ? 8 : 5;
 
   // Scroll the day column into view when a cell/day is clicked in Gate Load by Day
   useEffect(() => {
     if (!focusedDate || !scrollContainerRef.current) return;
-    setExpandedDayCols((previous) => ({ ...previous, [focusedDate]: true }));
     const colEl = scrollContainerRef.current.querySelector<HTMLElement>(
       `[data-day-col="${focusedDate}"]`
     );
@@ -579,7 +568,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
   const displayControls = (
     <div className="flex items-center gap-2 shrink-0">
       {/* Scroll Board Left/Right */}
-      {(activeViewMode === "shift" || (activeViewMode === "board" && granularity === "days")) && (
+      {activeViewMode === "board" && (
         <div className="inline-flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -616,34 +605,6 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           <CalendarOff size={13} />
           <span>{hideOffDays ? "Hide Holidays" : "Show All Days"}</span>
         </button>
-      )}
-
-      {/* Density: Normal vs Compact */}
-      {activeViewMode === "board" && (
-        <div
-          role="group"
-          aria-label="Board size"
-          className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-base-300 bg-base-200/70 p-0.5"
-        >
-          {([
-            { label: "Normal", compact: false },
-            { label: "Compact", compact: true },
-          ] as const).map((option) => (
-            <button
-              key={option.label}
-              type="button"
-              aria-pressed={isCompact === option.compact}
-              onClick={() => setIsCompact(option.compact)}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
-                isCompact === option.compact
-                  ? "bg-primary text-primary-content shadow-xs"
-                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
       )}
     </div>
   );
@@ -721,7 +682,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
           )}
         </div>
 
-        {/* Right: (Display Controls when Fullscreen) + View Mode (Board/Table/Shift) + Edit Mode + Maximize */}
+        {/* Right: (Display Controls when Fullscreen) + View Mode (Board/Table) + Edit Mode + Maximize */}
         <div className="flex items-center gap-2 shrink-0 flex-wrap xl:flex-nowrap">
           {isFullscreen && (
             <>
@@ -730,7 +691,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             </>
           )}
 
-          {/* View Mode Switcher: Board vs Table vs Shift */}
+          {/* View Mode Switcher: Board vs Table */}
           <div
             role="group"
             aria-label="View mode"
@@ -745,7 +706,7 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
                   ? "bg-primary text-primary-content shadow-xs"
                   : "text-base-content/70 hover:text-base-content hover:bg-base-100"
               }`}
-              title="Board View (Card columns by day)"
+              title="Board View (Day / Night / Overflow by day)"
             >
               <LayoutGrid size={13} />
               <span>Board</span>
@@ -763,20 +724,6 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
             >
               <Table size={13} />
               <span>Table</span>
-            </button>
-            <button
-              type="button"
-              aria-pressed={activeViewMode === "shift"}
-              onClick={() => handleViewModeChange("shift")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
-                activeViewMode === "shift"
-                  ? "bg-primary text-primary-content shadow-xs"
-                  : "text-base-content/70 hover:text-base-content hover:bg-base-100"
-              }`}
-              title="Shift Board View (Day / Night / Overflow by day)"
-            >
-              <Layers size={13} />
-              <span>Shift</span>
             </button>
           </div>
 
@@ -931,295 +878,9 @@ const ReleaseBoardView: React.FC<ReleaseBoardProps> = ({
       )}
 
       {/* =========================================================
-          VIEW 1: BOARD VIEW — DAYS (Horizontally Scrollable across ALL planning days)
+          VIEW 1: BOARD VIEW (Day / Night / Overflow per day)
          ========================================================= */}
-      {activeViewMode === "board" && granularity === "days" && (
-        <div
-          ref={scrollContainerRef}
-          className={`flex overflow-x-auto pb-2 scroll-smooth ${isCompact ? "gap-1.5 min-h-[400px]" : "gap-2 min-h-[480px]"} ${isFullscreen ? "flex-1 min-h-0" : ""}`}
-        >
-          {/* Scrollable Day Columns for ALL planning days */}
-          {boardDays.map((col) => {
-            const colLots = lotsByDate.get(col.date) ?? EMPTY_LOTS;
-            const colPct = cellPct(col.gates[boardGate]);
-            const colCap = data.capacity?.[boardGate]?.[col.date];
-            const colHasOt = Boolean(colCap?.hasOt);
-            const isDayExpanded = Boolean(expandedDayCols[col.date]);
-            const visibleLots = isDayExpanded
-              ? colLots
-              : colLots.slice(0, maxVisibleCardsPerDay);
-            const hiddenLotsCount = Math.max(
-              0,
-              colLots.length - visibleLots.length
-            );
-
-            const isTargetCol =
-              activeMovingLots.some((lot) => lot.plannedDate !== col.date) &&
-              currentTargetDate === col.date &&
-              activeMovingLots.length > 0;
-            const isAfterMustStart = afterMustStartDates.has(col.date);
-
-            const isFocusedCol = focusedDate === col.date;
-
-            return (
-              <div
-                key={col.date}
-                data-day-col={col.date}
-                onDragOver={(e) => handleColDragOver(e, col.date)}
-                onDrop={(e) => handleColDrop(e, col.date)}
-                className={`shrink-0 flex flex-col ${isFullscreen ? "h-full" : "max-h-[580px]"} rounded-xl transition-all ${isCompact ? "w-[160px] p-1.5" : "w-[196px] p-2"} ${
-                  isTargetCol
-                    ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
-                    : isFocusedCol
-                    ? "border-2 border-[#4f46e5] bg-[#eef2ff]/25 shadow-xs"
-                    : isAfterMustStart
-                    ? "border border-rose-200 bg-[repeating-linear-gradient(-45deg,#fff8f8,#fff8f8_7px,#fee2e2_7px,#fee2e2_14px)]"
-                    : "border border-base-300/80 bg-base-200/35"
-                }`}
-              >
-                {/* Sticky Column Header */}
-                <div className="px-0.5 pb-2 border-b border-base-300/60 mb-2 shrink-0">
-                  <div className="flex items-start justify-between">
-                    <div className="leading-tight">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10.5px] font-semibold uppercase text-base-content/50">
-                          {col.dayLabel}
-                        </span>
-                        {colHasOt && (
-                          <span
-                            title="Overtime active"
-                            className="px-1 py-0.5 rounded border border-base-300 bg-base-200/90 text-[9.5px] font-bold text-base-content/75 leading-none"
-                          >
-                            OT
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs font-bold text-base-content tabular-nums mt-0.5 flex flex-col items-start gap-1">
-                        <span>{col.displayDate}</span>
-                        {colLots.length > 0 && (
-                          <span className="px-1.5 py-0 rounded bg-base-200 text-[10px] font-semibold text-base-content/60 whitespace-normal">
-                            {boardCountLabel(colLots)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      title={colPct === null ? `Arrival load is unavailable for ${boardGate}` : `${boardGate} arrival load on this day; cards below use the same arrivals`}
-                      className={`text-xs font-bold tabular-nums ${
-                        colPct === null
-                          ? "text-base-content/40"
-                          : loadStatus(colPct) === "red"
-                          ? "text-rose-600"
-                          : loadStatus(colPct) === "yellow"
-                          ? "text-amber-600"
-                          : "text-emerald-600"
-                      }`}
-                    >
-                      {colPct === null ? "—" : `${colPct}%`}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Internally Scrollable Column Cards Body */}
-                <div className={`flex-1 flex flex-col overflow-y-auto pr-1 min-h-0 thin-scrollbar ${isCompact ? "gap-1.5" : "gap-2"}`}>
-                  {visibleLots.map((lot, index) => {
-                    const isThisMovingPreview =
-                      movingIds.has(lot.id) &&
-                      Boolean(currentTargetDate) &&
-                      currentTargetDate !== lot.plannedDate;
-
-                    return (
-                      <React.Fragment key={lot.id}>
-                      {lotKind(lot) !== "lot" && (index === 0 || lotKind(visibleLots[index - 1]) !== lotKind(lot)) && (
-                        <div className="text-[10px] font-bold text-base-content/60 uppercase">{lotKind(lot) === "need" ? "Need WIP (no load)" : "Missing lot ID"}</div>
-                      )}
-                      <div className="relative shrink-0"
-                        onDragOver={(e) => handleCardDragOver(e, lot)}
-                        onDrop={(e) => handleCardDrop(e, lot)}>
-                      {renderReorderIndicator(lot)}
-                      <LotCard
-                        readOnly={readOnly}
-                        lot={lot}
-                        shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
-                        showSelection={isEditMode}
-                        compact={isCompact}
-                        isBatchSelected={selectedLotIds.has(lot.id)}
-                        onToggleSelection={toggleLotSelection}
-                        isSelected={selectedLot?.id === lot.id}
-                        isBeingDragged={Boolean(draggedLot) && movingIds.has(lot.id)}
-                        isMovingPreview={isThisMovingPreview}
-                        previewTargetDate={
-                          isThisMovingPreview ? currentTargetDate : null
-                        }
-                        warning={warnings.get(lot.id) ?? "none"}
-                        days={planningDays}
-                        data={data}
-                        plannedIndex={plannedIndex}
-                        queuePosition={dayPositions?.get(lot.id)}
-                        onReorderToPosition={onReorderToPosition}
-                        onSelect={onSelectLot}
-                        onDragStart={handleCardDragStart}
-                        onDragEnd={handleCardDragEnd}
-                        onDateChange={onMoveLot}
-                      />
-                      </div>
-                      </React.Fragment>
-                    );
-                  })}
-
-                  {/* Expand days that exceed the visible-card limit for the current size. */}
-                  {colLots.length > maxVisibleCardsPerDay && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedDayCols((prev) => ({
-                          ...prev,
-                          [col.date]: !prev[col.date],
-                        }))
-                      }
-                      className="mt-0.5 w-full py-1.5 px-2 rounded-lg border border-dashed border-indigo-200 bg-[#eef2ff]/70 hover:bg-[#eef2ff] text-[#4f46e5] text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer shrink-0 tabular-nums"
-                    >
-                      {isDayExpanded ? (
-                        <>
-                          <ChevronUp size={12} />
-                          <span>Show less</span>
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown size={12} />
-                          <span>+{hiddenLotsCount} more card(s)</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {/* Dashed Drop Zone Placeholder */}
-                  {isTargetCol && (
-                    <button type="button"
-                      onClick={() => onMoveLots(activeMovingLots, col.date)}
-                      className="mt-0.5 rounded-xl border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff] px-2 py-3 text-center text-xs font-semibold text-[#4f46e5] leading-snug cursor-pointer hover:bg-indigo-100/80 transition-colors shrink-0"
-                    >
-                      <div>Move {activeMovingLots.length} card(s) here</div>
-                      <div className="tabular-nums mt-0.5">
-                        {dayjs(col.date).format("DD/MM/YYYY")}
-                      </div>
-                    </button>
-                  )}
-
-                  {/* After Must Out Warning Text */}
-                  {isAfterMustStart && (
-                    <div className="mt-2 px-1 text-center text-[11px] font-semibold text-rose-700 leading-snug shrink-0">
-                      Projected completion is after must-out or overlaps another gate
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* =========================================================
-          VIEW 2: BOARD VIEW — WEEKS GRANULARITY
-         ========================================================= */}
-      {activeViewMode === "board" && granularity === "weeks" && (
-        <div className="flex gap-3 overflow-x-auto min-h-[480px]">
-          {/* One column per calendar week */}
-          <div className={`grid grid-cols-1 gap-3 flex-1 ${isCompact ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-2 xl:grid-cols-3"}`}>
-            {weekGroups.map((wg) => {
-              const weekLots = lotsByWeek.get(wg.id) ?? EMPTY_LOTS;
-              const isWeekHovered =
-                hoverTargetDate !== null && wg.days.some((day) => day.date === hoverTargetDate);
-
-              return (
-                <div
-                  key={wg.id}
-                  onDragOver={(e) =>
-                    handleColDragOver(e, wg.defaultTargetDate)
-                  }
-                  onDrop={(e) => handleColDrop(e, wg.defaultTargetDate)}
-                  className={`flex flex-col rounded-xl p-3 border transition-all ${
-                    isWeekHovered
-                      ? "border-[1.5px] border-dashed border-[#4f46e5] bg-[#eef2ff]/30"
-                      : "border-base-300/80 bg-base-200/35"
-                  }`}
-                >
-                  {/* Week Column Header */}
-                  <div className="pb-2.5 mb-2.5 border-b border-base-300/70">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[11px] font-bold uppercase text-primary tracking-wide">
-                          {wg.title}
-                        </div>
-                        <div className="text-sm font-bold text-base-content tabular-nums">
-                          {wg.rangeLabel}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span
-                          className={`text-xs font-bold tabular-nums px-2 py-0.5 rounded-md ${
-                            wg.avgWorkPct === null
-                              ? "bg-base-200 text-base-content/50"
-                              : loadStatus(wg.avgWorkPct) === "red"
-                              ? "bg-rose-100 text-rose-800"
-                              : loadStatus(wg.avgWorkPct) === "yellow"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-emerald-100 text-emerald-800"
-                          }`}
-                        >
-                          {wg.avgWorkPct === null ? "MC not set" : `Avg ${wg.avgWorkPct}%`}
-                        </span>
-                        <div className="text-[11px] text-base-content/50 mt-0.5 tabular-nums">
-                          {boardCountLabel(weekLots)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Week Lots Grid (2 columns of cards per week) */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {weekLots.map((lot) => (
-                      <div key={lot.id} className="relative"
-                        onDragOver={(e) => handleCardDragOver(e, lot)}
-                        onDrop={(e) => handleCardDrop(e, lot)}>
-                      {renderReorderIndicator(lot)}
-                      <LotCard
-                        readOnly={readOnly}
-                        lot={lot}
-                        shiftAllocation={shiftAllocations.get(lot.sourceIds?.[0] ?? lot.id)}
-                        showSelection={isEditMode}
-                        compact={isCompact}
-                        isBatchSelected={selectedLotIds.has(lot.id)}
-                        onToggleSelection={toggleLotSelection}
-                        isSelected={selectedLot?.id === lot.id}
-                        isBeingDragged={Boolean(draggedLot) && movingIds.has(lot.id)}
-                        isMovingPreview={movingIds.has(lot.id) && Boolean(currentTargetDate) && currentTargetDate !== lot.plannedDate}
-                        previewTargetDate={movingIds.has(lot.id) ? currentTargetDate : null}
-                        warning={warnings.get(lot.id) ?? "none"}
-                        days={planningDays}
-                        data={data}
-                        plannedIndex={plannedIndex}
-                        queuePosition={dayPositions?.get(lot.id)}
-                        onReorderToPosition={onReorderToPosition}
-                        onSelect={onSelectLot}
-                        onDragStart={handleCardDragStart}
-                        onDragEnd={handleCardDragEnd}
-                        onDateChange={onMoveLot}
-                      />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================
-          VIEW 2B: SHIFT BOARD VIEW (Day / Night / Overflow per day)
-         ========================================================= */}
-      {activeViewMode === "shift" && (
+      {activeViewMode === "board" && (
         <ShiftBoardView
           data={data}
           boardGate={boardGate}

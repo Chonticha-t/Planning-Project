@@ -498,7 +498,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
       }
       // Grid and board use the same arrival date and process filter.
       setFocusedBoardDate(dateStr);
-      setViewMode((current) => (current === "shift" ? "shift" : "board"));
+      setViewMode("board");
       setGranularity("days");
     },
     []
