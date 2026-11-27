@@ -8,8 +8,8 @@ const { createPresenceRouter } = require("./capacityLevelingPresence");
 const { buildLevelingView } = require("./capacityLevelingView");
 const { buildSavedMoveHistory } = require("./capacityLevelingHistory");
 const {
-  LEVELING_GATES, SHIFTS, NORMAL_VALID_FROM, NORMAL_VALID_TO, ValidationError,
-  isDate, dayCapacity, buildCapacityConfig, parseSettingsPayload, sameShift,
+  LEVELING_GATES, VALID_RESOURCE_GROUPS, SHIFTS, NORMAL_VALID_FROM, NORMAL_VALID_TO, ValidationError,
+  isDate, dayCapacity, buildCapacityConfig, buildCapacityConfigByGroup, parseSettingsPayload, sameShift,
   arrivalWorkKey, buildArrivalCards, arrivalEndDate, parsePlanPayload, resolveBoardCardOrder,
   mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus, applyCapacityConfigToSnapshot,
   attachRouteLeads, dropUnroutedFromSnapshot,
@@ -25,12 +25,12 @@ const MAX_RANGE_DAYS = 62;
 const SPECIAL_WINDOW_DAYS = 62;
 
 const SETTINGS_SQL = `
-  SELECT setting_id, gate_name, shift_code, setting_kind, to_char(valid_from, 'YYYY-MM-DD') AS valid_from,
+  SELECT setting_id, gate_name, resource_group, shift_code, setting_kind, to_char(valid_from, 'YYYY-MM-DD') AS valid_from,
          is_working_day, resource_count, manpower, regular_minutes_per_shift::float8, ot_enabled,
          ot_minutes_per_shift::float8, break1_enabled, break1_minutes::float8, break2_enabled,
          break2_minutes::float8, lunch_enabled, lunch_minutes::float8, efficiency::float8
   FROM planning.capacity_setting
-  WHERE is_active AND resource_group = 'ALL' AND gate_name = ANY($1)
+  WHERE is_active AND resource_group = ANY($2) AND gate_name = ANY($1)
     AND (setting_kind = 'normal' OR valid_from >= CURRENT_DATE - ${SPECIAL_WINDOW_DAYS})`;
 
 const INSERT_SETTING_SQL = `
@@ -39,12 +39,12 @@ const INSERT_SETTING_SQL = `
     shift_code, is_working_day, resource_count, manpower, regular_minutes_per_shift, ot_enabled,
     ot_minutes_per_shift, break1_enabled, break1_minutes, break2_enabled, break2_minutes,
     lunch_enabled, lunch_minutes, efficiency, created_by
-  ) VALUES ($1, $2, 'ALL', 'machine', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`;
+  ) VALUES ($1, $2, $21, 'machine', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`;
 
-const settingParams = (gate, code, kind, from, to, shift, actor) => [
+const settingParams = (gate, code, kind, from, to, shift, actor, resourceGroup = "ALL") => [
   randomUUID(), gate, kind, from, to, code, shift.enabled, shift.mcLines, shift.manpower, shift.minPerShift,
   shift.otEnabled, shift.otMinutes, shift.break1, shift.break1Min, shift.break2, shift.break2Min,
-  shift.lunch, shift.lunchMin, shift.efficiency, actor,
+  shift.lunch, shift.lunchMin, shift.efficiency, actor, resourceGroup,
 ];
 
 // Summary Gate already resolves the routing-specific lead time from the gate master.
@@ -338,7 +338,22 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
     }
   };
 
-  const readConfig = async (db) => buildCapacityConfig((await db.query(SETTINGS_SQL, [LEVELING_GATES])).rows);
+  const parseResourceGroup = (raw) => {
+    if (raw === undefined || raw === null || raw === "") return "ALL";
+    if (typeof raw !== "string" || !VALID_RESOURCE_GROUPS.includes(raw)) {
+      throw new ValidationError("Unknown capacity resource group.");
+    }
+    return raw;
+  };
+  const readConfigRows = async (db) => (await db.query(SETTINGS_SQL, [LEVELING_GATES, VALID_RESOURCE_GROUPS])).rows;
+  const readConfig = async (db, resourceGroup = "ALL") => buildCapacityConfig(await readConfigRows(db), resourceGroup);
+  const readConfigBundle = async (db) => {
+    const rows = await readConfigRows(db);
+    return {
+      config: buildCapacityConfig(rows, "ALL"),
+      configByGroup: buildCapacityConfigByGroup(rows),
+    };
+  };
   const actorOf = (req) => String(req.user?.username || "admin").slice(0, 150);
 
   const historyFail = (res, error) => {
@@ -432,10 +447,10 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
     const cacheKey = `${planId}|${plan.isActive ? "active" : "older"}|${compact ? "compact" : "full"}`;
     const cached = await livePlanCache.read(cacheKey, async () => {
       // Run immutable snapshot read, live Summary Gate query, and current capacity config in parallel.
-      const [detail, worksRes, config] = await Promise.all([
+      const [detail, worksRes, { config, configByGroup }] = await Promise.all([
         loadImmutablePlanDetail(planId),
         pool.query(WORKS_SQL, [LEVELING_GATES]),
-        readConfig(pool),
+        readConfigBundle(pool),
       ]);
       if (!detail || !detail.baseSnapshot) return null;
       const routes = await readRouteRows(pool, (detail.baseSnapshot.arrivalRows ?? []).map((row) => row.prd_name));
@@ -460,7 +475,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
           extraCalendarDays = missing.map((date) => ({ date, isWorking: calendar.isWorking(date) }));
         }
       }
-      const liveSnapshot = applyCapacityConfigToSnapshot(enriched, config, extraCalendarDays);
+      const liveSnapshot = applyCapacityConfigToSnapshot(enriched, config, extraCalendarDays, configByGroup);
       const snapshot = compact ? compactLiveSnapshot(liveSnapshot) : liveSnapshot;
       return JSON.stringify({
         status: "OK",
@@ -640,20 +655,22 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
   router.get("/capacity", async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
-      const gates = await readConfig(pool);
-      return res.json({ status: "OK", data: { gates, revision: capacityRevision(gates) } });
+      const resourceGroup = parseResourceGroup(req.query.resourceGroup);
+      const gates = await readConfig(pool, resourceGroup);
+      return res.json({ status: "OK", data: { gates, resourceGroup, revision: capacityRevision(gates) } });
     } catch (error) {
       return fail(res, error, "Unable to load capacity settings. Please try again.");
     }
   });
 
   // Changed shifts are retired and re-inserted so earlier settings stay on record. Special days
-  // are saved in the same transaction: a day type per date, for that gate and shift only.
+  // are saved in the same transaction: a day type per date, for that gate, resource group and shift only.
   router.put("/capacity", verifyPlanner, async (req, res) => {
     try {
+      const resourceGroup = parseResourceGroup(req.body?.resourceGroup);
       const gates = parseSettingsPayload(req.body);
       const config = await inTransaction(async (client) => {
-        const current = await readConfig(client);
+        const current = await readConfig(client, resourceGroup);
         if (req.body.baseRevision !== undefined && req.body.baseRevision !== capacityRevision(current)) {
           const error = new Error("Someone updated capacity settings. Reopen Capacity Configuration to load the latest settings before saving again.");
           error.code = "CAPACITY_VERSION_CONFLICT";
@@ -670,28 +687,38 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
                   WHERE setting_id = $1`, [before.settingId]);
               }
               await client.query(INSERT_SETTING_SQL, settingParams(
-                gate.gate, code, "normal", NORMAL_VALID_FROM, NORMAL_VALID_TO, after, actorOf(req)));
+                gate.gate, code, "normal", NORMAL_VALID_FROM, NORMAL_VALID_TO, after, actorOf(req), resourceGroup));
             }
             if (!specialDays) continue;
             const changed = [...new Set([...Object.keys(before.specialDays), ...Object.keys(specialDays)])]
               .filter((date) => before.specialDays[date] !== specialDays[date]);
+            // When saving a group for the first time (migrating from 'ALL' fallback), persist all active specialDays for this group.
+            const datesToWrite = before.settingId
+              ? changed.filter((day) => specialDays[day])
+              : Object.keys(specialDays).filter((day) => specialDays[day]);
             if (changed.length) {
-              await client.query(`UPDATE planning.capacity_setting SET is_active = false, updated_at = CURRENT_TIMESTAMP
-                WHERE is_active AND setting_kind = 'exception' AND resource_group = 'ALL'
-                  AND gate_name = $1 AND shift_code = $2 AND valid_from = ANY($3::date[])`, [gate.gate, code, changed]);
+              if (resourceGroup === "ALL") {
+                await client.query(`UPDATE planning.capacity_setting SET is_active = false, updated_at = CURRENT_TIMESTAMP
+                  WHERE is_active AND setting_kind = 'exception' AND resource_group = 'ALL'
+                    AND gate_name = $1 AND shift_code = $2 AND valid_from = ANY($3::date[])`, [gate.gate, code, changed]);
+              } else {
+                await client.query(`UPDATE planning.capacity_setting SET is_active = false, updated_at = CURRENT_TIMESTAMP
+                  WHERE is_active AND setting_kind = 'exception' AND resource_group = $4
+                    AND gate_name = $1 AND shift_code = $2 AND valid_from = ANY($3::date[])`, [gate.gate, code, changed, resourceGroup]);
+              }
             }
-            for (const date of changed.filter((day) => specialDays[day])) {
+            for (const date of datesToWrite) {
               // The table needs a complete row; only the day type is read back from it.
               const row = { ...after, enabled: specialDays[date] !== "off", otEnabled: specialDays[date] === "ot" };
-              await client.query(INSERT_SETTING_SQL, settingParams(gate.gate, code, "exception", date, date, row, actorOf(req)));
+              await client.query(INSERT_SETTING_SQL, settingParams(gate.gate, code, "exception", date, date, row, actorOf(req), resourceGroup));
             }
           }
         }
-        return readConfig(client);
+        return readConfig(client, resourceGroup);
       });
       loadCache.invalidate();
       livePlanCache.invalidate();
-      return res.json({ status: "OK", data: { gates: config, revision: capacityRevision(config) }, message: "Capacity settings saved." });
+      return res.json({ status: "OK", data: { gates: config, resourceGroup, revision: capacityRevision(config) }, message: "Capacity settings saved." });
     } catch (error) {
       if (error.code === "CAPACITY_VERSION_CONFLICT") return res.status(409).json({ status: "ERROR", code: error.code, message: error.message });
       return fail(res, error, "Unable to save capacity settings. Nothing was changed.");
@@ -716,14 +743,14 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         throw new ValidationError(`A valid date range of up to ${MAX_RANGE_DAYS} days is required.`);
       }
       // Small dependency reads stay fresh, including changes made by another backend process.
-      const [config, plan] = await Promise.all([
-        readConfig(db),
+      const [{ config, configByGroup }, plan] = await Promise.all([
+        readConfigBundle(db),
         db.query(LATEST_PLAN_SQL, [PLAN_METHOD]),
       ]);
       const latest = plan.rows[0];
       const force = req.query.refresh === "true";
       const reset = req.query.reset === "true";
-      const key = JSON.stringify([today, start, end, capacityRevision(config), latest?.plan_id ?? null, latest?.version_no ?? 0, ...(reset ? ["reset"] : [])]);
+      const key = JSON.stringify([today, start, end, capacityRevision({ config, configByGroup }), latest?.plan_id ?? null, latest?.version_no ?? 0, ...(reset ? ["reset"] : [])]);
       const reading = performance.now();
       const cached = await loadCache.read(key, async () => {
         const lockedRows = reset ? null : await readLockedSourceRows(db, latest);
@@ -734,7 +761,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
             .then(results => results.some(result => result.rows.length > 0)),
         ]);
         const sourceRows = await withRouteLeads(db, lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, works.rows) : works.rows);
-        return buildLevelingView({ sourceRows, moves, config, today, start, end,
+        return buildLevelingView({ sourceRows, moves, config, configByGroup, today, start, end,
           loadCalendar: force ? (from, to) => loadCalendar(from, to, { force: true }) : loadCalendar,
           history: latest?.move_history, order: latest?.board_card_order,
           plan: planInfo(latest), legacy, calculationMethod: PLAN_METHOD });
@@ -763,7 +790,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
         const lockedRows = resetToRequired ? null : await readLockedSourceRows(client, latest);
         const liveRows = (await client.query(WORKS_SQL, [LEVELING_GATES])).rows;
         const sourceRows = await withRouteLeads(client, lockedRows ? mergeLiveStatusIntoLockedRows(lockedRows, liveRows) : liveRows);
-        const config = await readConfig(client);
+        const { config, configByGroup } = await readConfigBundle(client);
         const { cards } = buildArrivalCards(sourceRows, [], today, config);
         const source = new Map(cards.map((card) => [`${card.workKey}|${card.gate}`, card]));
         const missing = moves.filter((move) => !source.has(`${move.workKey}|${move.gate}`));
@@ -826,7 +853,7 @@ const createCapacityLevelingRouter = ({ pool, verifyPlanner, loadCalendar, cache
             saved_pri: row.pri,
           };
         });
-        const view = await buildLevelingView({ sourceRows: snapshotSourceRows, config, today, start: today, end, loadCalendar,
+        const view = await buildLevelingView({ sourceRows: snapshotSourceRows, config, configByGroup, today, start: today, end, loadCalendar,
           moves: storedMoves.map((move) => ({ work_key: move.workKey, gate_name: move.gate,
             original_date: source.get(`${move.workKey}|${move.gate}`).baseDate, planned_date: move.plannedDate })),
           history, order, calculationMethod: PLAN_METHOD });

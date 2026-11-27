@@ -1,10 +1,10 @@
 const {
   SHIFTS, dateRange, occupancyCalendarRange, buildArrivalCards, shiftMinutesPerMachine,
-  capacityGrid, arrivalWorkKey, isDate, resolveBoardCardOrder, ValidationError,
+  capacityGrid, capacityGridsByGroup, arrivalWorkKey, isDate, resolveBoardCardOrder, ValidationError,
 } = require("./capacityLeveling");
 
 // Build both the live response and the saved view from server-owned inputs.
-async function buildLevelingView({ sourceRows, moves, config, today, start, end, loadCalendar,
+async function buildLevelingView({ sourceRows, moves, config, configByGroup = null, today, start, end, loadCalendar,
   history = {}, order = [], plan = null, legacy = false, calculationMethod }) {
   const { cards, orphanMoves, undated, duplicates } = buildArrivalCards(sourceRows, moves, today, config);
   const range = occupancyCalendarRange(cards, start, end);
@@ -28,13 +28,21 @@ async function buildLevelingView({ sourceRows, moves, config, today, start, end,
     if (isDate(card.plannedDate)) capacityDateSet.add(card.plannedDate);
   }
   const capacityDays = [...capacityDateSet].sort().map((date) => ({ date, isWorking: calendar.isWorking(date) }));
+  const capResult = configByGroup
+    ? capacityGridsByGroup(configByGroup, config, capacityDays)
+    : { combined: capacityGrid(config, capacityDays), byGroup: null };
+  const reqCapResult = configByGroup
+    ? capacityGridsByGroup(configByGroup, config, capacityDays, { includeOt: false })
+    : { combined: capacityGrid(config, capacityDays, { includeOt: false }), byGroup: null };
   return {
     today, days, calendarDays,
     gates: config.map(({ gate, group, shifts }) => ({ gate, group,
       standardShiftMin: Object.fromEntries(SHIFTS.map((code) => [code, shiftMinutesPerMachine(shifts[code], false)])),
     })),
-    capacity: capacityGrid(config, capacityDays),
-    requiredCapacity: capacityGrid(config, capacityDays, { includeOt: false }),
+    capacity: capResult.combined,
+    requiredCapacity: reqCapResult.combined,
+    ...(capResult.byGroup ? { capacityByGroup: capResult.byGroup } : {}),
+    ...(reqCapResult.byGroup ? { requiredCapacityByGroup: reqCapResult.byGroup } : {}),
     cards: cards.map((card) => ({ ...card, moveHistory: Array.isArray(history?.[card.id]) ? history[card.id] : [] })),
     orphanMoves, undatedCount: undated,
     arrivalRows: sourceRows.map((row, index) => ({ ...row, workKey: arrivalWorkKey(row, index) })),

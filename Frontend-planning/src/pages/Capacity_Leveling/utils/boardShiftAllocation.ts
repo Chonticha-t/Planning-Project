@@ -1,5 +1,14 @@
-import type { BoardShiftAllocation, LevelingData, LotItem } from "../types";
+import type { BoardShiftAllocation, CapacityResourceGroup, LevelingData, LotItem } from "../types";
 import { lotKind, ZERO_LOAD_TEXT, zeroLoadReason } from "./levelingCalculations.ts";
+
+const SMT_GATES = new Set(["MMOT", "MBLK", "MFIN"]);
+
+const lotResourceGroup = (lot: LotItem): CapacityResourceGroup => {
+  // FULL products keep EFPC_GEN / EFPC_AUTO even on SMT gates, so SMT gates always use SMT capacity.
+  if (SMT_GATES.has(lot.gate) || lot.processGroup === "SMT") return "SMT";
+  if (lot.processGroup === "EFPC_AUTO") return "EFPC_AUTO";
+  return "EFPC_GEN";
+};
 
 // Use hundredths of a minute so exact capacity boundaries do not leave rounding overflow.
 const minuteUnits = (value: number | null | undefined): number | null => {
@@ -38,7 +47,7 @@ const overCapacityReason = (demand: number, budget: Budget): string => {
  * single full shift overflow on their own without locking remaining shift capacity for normal lots.
  */
 export const allocateBoardShifts = (
-  data: Pick<LevelingData, "capacity">,
+  data: Pick<LevelingData, "capacity" | "capacityByGroup">,
   orderedLots: LotItem[],
   options: { excludePassed?: boolean } = {}
 ) => {
@@ -59,10 +68,16 @@ export const allocateBoardShifts = (
     const existing = physicalLots.get(physicalKey);
     if (existing) { record(lot, existing); continue; }
 
-    const key = JSON.stringify([lot.gate, lot.plannedDate]);
+    const hasGroupedCapacity = Boolean(data.capacityByGroup);
+    const resourceGroup = hasGroupedCapacity ? lotResourceGroup(lot) : "ALL";
+    const key = hasGroupedCapacity
+      ? JSON.stringify([resourceGroup, lot.gate, lot.plannedDate])
+      : JSON.stringify([lot.gate, lot.plannedDate]);
     let budget = budgets.get(key);
     if (!budget) {
-      const capacity = data.capacity[lot.gate]?.[lot.plannedDate];
+      const capacity = hasGroupedCapacity
+        ? data.capacityByGroup?.[resourceGroup as CapacityResourceGroup]?.[lot.gate]?.[lot.plannedDate] ?? data.capacity[lot.gate]?.[lot.plannedDate]
+        : data.capacity[lot.gate]?.[lot.plannedDate];
       const day = capacity?.shifts?.day;
       const night = capacity?.shifts?.night;
       const dayUnits = capacity?.off ? 0 : day ? minuteUnits(day.open ? day.capacityMin : 0) : null;

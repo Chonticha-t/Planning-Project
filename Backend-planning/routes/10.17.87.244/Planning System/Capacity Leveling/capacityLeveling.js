@@ -3,6 +3,8 @@
 // FFPC, MFPC, W/H and MW/H are intentionally not leveled.
 const LEVELING_GATES = ["FVAC", "FADL", "FIN", "MMOT", "MBLK", "MFIN"];
 const GATE_GROUP = { FVAC: "FPC", FADL: "FPC", FIN: "FPC", MMOT: "SMT", MBLK: "SMT", MFIN: "SMT" };
+const CAPACITY_RESOURCE_GROUPS = ["EFPC_GEN", "EFPC_AUTO", "SMT"];
+const VALID_RESOURCE_GROUPS = ["ALL", ...CAPACITY_RESOURCE_GROUPS];
 const SHIFTS = ["day", "night"];
 const SPECIAL_ACTIONS = ["ot", "work", "off"];
 const NORMAL_VALID_FROM = "1900-01-01";
@@ -159,6 +161,62 @@ const capacityGrid = (config, days, options) => Object.fromEntries(config.map((g
   Object.fromEntries(days.map((day) => [day.date, dayCapacity(gate, day.date, day.isWorking, options)])),
 ]));
 
+const sumShiftCapacity = (a, b) => {
+  const open = Boolean(a?.open || b?.open);
+  if (!open) return { open: false, otOn: false, capacityMin: 0, isDefaultMc: false };
+  const aMin = a?.open ? a.capacityMin : 0;
+  const bMin = b?.open ? b.capacityMin : 0;
+  const capacityMin = aMin === null || bMin === null ? null : round2(aMin + bMin);
+  return {
+    open: true,
+    otOn: Boolean((a?.open && a.otOn) || (b?.open && b.otOn)),
+    capacityMin,
+    isDefaultMc: Boolean((a?.open && a.isDefaultMc) || (b?.open && b.isDefaultMc)),
+  };
+};
+
+const sumDayCapacity = (a, b) => {
+  const shifts = Object.fromEntries(SHIFTS.map((code) => [code, sumShiftCapacity(a?.shifts?.[code], b?.shifts?.[code])]));
+  const open = SHIFTS.map((code) => shifts[code]).filter((shift) => shift.open);
+  const configured = open.every((shift) => shift.capacityMin !== null);
+  return {
+    off: open.length === 0,
+    hasOt: open.some((shift) => shift.otOn),
+    isDefaultMc: open.some((shift) => shift.isDefaultMc),
+    capacityMin: open.length === 0 ? 0 : configured
+      ? round2(open.reduce((sum, shift) => sum + shift.capacityMin, 0)) : null,
+    shifts,
+  };
+};
+
+// Build capacity grids per resource group plus a combined grid for "ALL" view.
+// When an FPC gate has dedicated EFPC_GEN or EFPC_AUTO rows, "ALL" sums GEN + AUTO;
+// otherwise it keeps the legacy "ALL" row without double-counting.
+const capacityGridsByGroup = (configByGroup, fallbackConfig, days, options) => {
+  const byGroup = Object.fromEntries(
+    CAPACITY_RESOURCE_GROUPS.map((group) => [group, capacityGrid(configByGroup[group], days, options)])
+  );
+  const fallbackGrid = capacityGrid(fallbackConfig, days, options);
+  const combined = {};
+  for (const gate of LEVELING_GATES) {
+    if (GATE_GROUP[gate] === "SMT") {
+      combined[gate] = byGroup.SMT[gate] ?? fallbackGrid[gate];
+    } else {
+      const genCfg = configByGroup.EFPC_GEN.find((item) => item.gate === gate);
+      const autoCfg = configByGroup.EFPC_AUTO.find((item) => item.gate === gate);
+      const hasSplit = Boolean(genCfg?.hasOwnGroupRows || autoCfg?.hasOwnGroupRows);
+      if (!hasSplit) {
+        combined[gate] = fallbackGrid[gate];
+      } else {
+        combined[gate] = Object.fromEntries(
+          days.map((day) => [day.date, sumDayCapacity(byGroup.EFPC_GEN[gate]?.[day.date], byGroup.EFPC_AUTO[gate]?.[day.date])])
+        );
+      }
+    }
+  }
+  return { combined, byGroup };
+};
+
 // Green up to 85%, yellow up to 100%, red above.
 const loadStatus = (pct) => (pct > 100 ? "red" : pct > 85 ? "yellow" : "green");
 
@@ -180,19 +238,37 @@ const shiftFromRow = (row) => ({
 
 // Normal rows give the settings; exception rows only contribute the day type, so a later
 // change of MC or breaks also applies to special days.
-const buildCapacityConfig = (rows) => LEVELING_GATES.map((gate) => {
+// When resourceGroup is specified (e.g. EFPC_GEN / EFPC_AUTO / SMT), rows for that group take
+// precedence and fall back to legacy 'ALL' rows if the group has no saved settings yet.
+const buildCapacityConfig = (rows, resourceGroup = "ALL") => LEVELING_GATES.map((gate) => {
   const shifts = {};
+  let hasOwnGroupRows = false;
   for (const code of SHIFTS) {
-    const own = rows.filter((row) => row.gate_name === gate && row.shift_code === code);
-    const normal = own.find((row) => row.setting_kind === "normal");
+    const matching = rows.filter((row) => row.gate_name === gate && row.shift_code === code);
+    const groupOwn = resourceGroup === "ALL"
+      ? matching.filter((row) => !row.resource_group || row.resource_group === "ALL")
+      : matching.filter((row) => row.resource_group === resourceGroup);
+    if (resourceGroup !== "ALL" && groupOwn.length > 0) hasOwnGroupRows = true;
+    const fallbackOwn = matching.filter((row) => !row.resource_group || row.resource_group === "ALL");
+    const ownNormal = groupOwn.find((row) => row.setting_kind === "normal");
+    const fallbackNormal = ownNormal ?? fallbackOwn.find((row) => row.setting_kind === "normal");
+    const normalRow = ownNormal ?? fallbackNormal;
+    const exceptionRows = groupOwn.some((row) => row.setting_kind === "exception") || ownNormal
+      ? groupOwn.filter((row) => row.setting_kind === "exception")
+      : fallbackOwn.filter((row) => row.setting_kind === "exception");
     shifts[code] = {
-      ...(normal ? shiftFromRow(normal) : DEFAULT_SHIFT),
-      specialDays: Object.fromEntries(own.filter((row) => row.setting_kind === "exception")
-        .map((row) => [row.valid_from, specialFromRow(row)])),
+      ...(normalRow ? shiftFromRow(normalRow) : DEFAULT_SHIFT),
+      // Only expose settingId when it belongs to this exact resourceGroup so saving never retires 'ALL'.
+      settingId: ownNormal ? ownNormal.setting_id : null,
+      specialDays: Object.fromEntries(exceptionRows.map((row) => [row.valid_from, specialFromRow(row)])),
     };
   }
-  return { gate, group: GATE_GROUP[gate], shifts };
+  return { gate, group: GATE_GROUP[gate], resourceGroup, hasOwnGroupRows, shifts };
 });
+
+const buildCapacityConfigByGroup = (rows) => Object.fromEntries(
+  CAPACITY_RESOURCE_GROUPS.map((group) => [group, buildCapacityConfig(rows, group)])
+);
 
 const minutes = (value, name) => {
   const number = Number(value);
@@ -474,7 +550,7 @@ const enrichSnapshotWithLiveStatus = (snapshotData, liveRows) => {
   return { ...snapshotData, arrivalRows, cards };
 };
 
-const applyCapacityConfigToSnapshot = (snapshotData, config, extraCalendarDays = []) => {
+const applyCapacityConfigToSnapshot = (snapshotData, config, extraCalendarDays = [], configByGroup = null) => {
   if (!snapshotData || !Array.isArray(snapshotData.cards) || !snapshotData.capacity || typeof snapshotData.capacity !== "object") {
     return snapshotData;
   }
@@ -520,7 +596,9 @@ const applyCapacityConfigToSnapshot = (snapshotData, config, extraCalendarDays =
     : snapshotData.gates;
 
   const updateGrid = (existingGrid, options) => {
-    const freshGrid = capacityGrid(config, daysForCapacity, options);
+    const freshGrid = configByGroup
+      ? capacityGridsByGroup(configByGroup, config, daysForCapacity, options).combined
+      : capacityGrid(config, daysForCapacity, options);
     const next = { ...existingGrid };
     for (const cfg of config) {
       next[cfg.gate] = { ...(existingGrid[cfg.gate] ?? {}), ...freshGrid[cfg.gate] };
@@ -531,6 +609,12 @@ const applyCapacityConfigToSnapshot = (snapshotData, config, extraCalendarDays =
   const requiredCapacity = snapshotData.requiredCapacity && typeof snapshotData.requiredCapacity === "object"
     ? updateGrid(snapshotData.requiredCapacity, { includeOt: false })
     : snapshotData.requiredCapacity;
+  const capacityByGroup = configByGroup
+    ? capacityGridsByGroup(configByGroup, config, daysForCapacity).byGroup
+    : snapshotData.capacityByGroup;
+  const requiredCapacityByGroup = configByGroup
+    ? capacityGridsByGroup(configByGroup, config, daysForCapacity, { includeOt: false }).byGroup
+    : snapshotData.requiredCapacityByGroup;
 
   const cards = snapshotData.cards.map((card) => {
     const gateCfg = configByGate.get(card.gate);
@@ -565,7 +649,16 @@ const applyCapacityConfigToSnapshot = (snapshotData, config, extraCalendarDays =
     calendarDays = [...merged.keys()].sort().map((date) => merged.get(date));
   }
 
-  return { ...snapshotData, gates, capacity, requiredCapacity, cards, calendarDays };
+  return {
+    ...snapshotData,
+    gates,
+    capacity,
+    requiredCapacity,
+    ...(capacityByGroup ? { capacityByGroup } : {}),
+    ...(requiredCapacityByGroup ? { requiredCapacityByGroup } : {}),
+    cards,
+    calendarDays,
+  };
 };
 
 // Summary Gate uses arrival as the boundary: completion is leadDays working days later.
@@ -717,9 +810,9 @@ const resolveBoardCardOrder = (groups, cards, today, strict = false) => {
 };
 
 module.exports = {
-  LEVELING_GATES, GATE_GROUP, SHIFTS, SPECIAL_ACTIONS, NORMAL_VALID_FROM, NORMAL_VALID_TO, DEFAULT_SHIFT,
-  ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid,
-  loadStatus, buildCapacityConfig, parseSettingsPayload, sameShift,
+  LEVELING_GATES, GATE_GROUP, CAPACITY_RESOURCE_GROUPS, VALID_RESOURCE_GROUPS, SHIFTS, SPECIAL_ACTIONS, NORMAL_VALID_FROM, NORMAL_VALID_TO, DEFAULT_SHIFT,
+  ValidationError, isDate, dateRange, shiftMinutesPerMachine, effectiveShift, dayCapacity, capacityGrid, capacityGridsByGroup,
+  loadStatus, buildCapacityConfig, buildCapacityConfigByGroup, parseSettingsPayload, sameShift,
   workKey, buildCards, occupancyCalendarRange, parsePlanPayload, arrivalWorkKey, buildArrivalCards, arrivalEndDate, resolveBoardCardOrder,
   mergeLiveStatusIntoLockedRows, enrichSnapshotWithLiveStatus, applyCapacityConfigToSnapshot,
   ROUTE_GATE_ALIASES, attachRouteLeads, routeLoadBasis, dropUnroutedFromSnapshot,

@@ -29,6 +29,7 @@ import {
   toLotItem,
   requiredLots,
   requiredGridSignature,
+  resolveCapacityForCategory,
 } from "../utils/levelingCalculations";
 import { allocateBoardShifts } from "../utils/boardShiftAllocation";
 import { applyBoardCardOrder, readBoardCardOrder, reorderBoardCards, serializeBoardCardOrder, type BoardCardOrder } from "../utils/boardCardOrder";
@@ -192,6 +193,21 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   }, [lots, requiredReset]);
 
   const today = data?.today ?? dayjs().format("YYYY-MM-DD");
+  const activeCapacity = useMemo(
+    () => (data ? resolveCapacityForCategory(data, category, false) : {}),
+    [data, category]
+  );
+  const categoryData = useMemo(
+    () =>
+      data
+        ? {
+            ...data,
+            capacity: activeCapacity,
+            requiredCapacity: resolveCapacityForCategory(data, category, true),
+          }
+        : null,
+    [data, activeCapacity, category]
+  );
   const gates = useMemo(() => data?.gates ?? [], [data]);
   const visibleGridGates = useMemo(
     () => category === "ALL" ? gates : gates.filter((gate) => gate.group === (category === "SMT" ? "SMT" : "FPC")),
@@ -375,10 +391,10 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
   // A card can only land on a day from today on which its gate is open.
   const isValidMoveTarget = useCallback(
     (gate: string, targetDate: string) => {
-      const day = data?.capacity[gate]?.[targetDate];
+      const day = activeCapacity[gate]?.[targetDate];
       return Boolean(day && !day.off && targetDate >= today);
     },
-    [data, today]
+    [activeCapacity, today]
   );
 
   const handleStageReorder = useCallback((movingIds: string[], targetId: string, position: "before" | "after") => {
@@ -807,7 +823,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
                 onBoardGateChange={handleBoardGateChange}
                 lots={boardLots}
                 shiftAllocations={shiftAllocations}
-                data={data}
+                data={categoryData!}
                 beyondRangeCount={beyondRangeCount}
                 pastArrivalCount={pastArrivalCount}
                 gridData={grid}
@@ -841,12 +857,12 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
           {/* 4. Right Navigation Drawer (details of one card) */}
           <LotDetailSidePanel
             readOnly={readOnly}
-            data={data}
+            data={categoryData!}
             allLots={lots}
             category={category}
             lot={selectedLot}
             gridData={grid}
-            capacity={data.capacity}
+            capacity={activeCapacity}
             today={today}
             plannedIndex={plannedIndex}
             planVersion={data.plan?.version ?? 0}
@@ -909,6 +925,7 @@ const Capacity_Leveling: React.FC<CapacityLevelingProps> = ({ snapshot, onExitPr
         onClose={() => setCapacityModalOpen(false)}
         onSaved={() => void load(true)}
         initialGate={capacityModalTarget.gate}
+        initialCategory={category}
         initialTab={capacityModalTarget.tab}
         initialDate={capacityModalTarget.date}
       />

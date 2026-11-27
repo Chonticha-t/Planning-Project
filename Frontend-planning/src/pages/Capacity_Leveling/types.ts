@@ -1,6 +1,7 @@
 import type { GateQuantitySummary, PlanningSummaryGateRow } from "../Planning_Summary_Gate/types";
 
 export type ProcessCategory = "ALL" | "EFPC_GEN" | "EFPC_AUTO" | "SMT";
+export type CapacityResourceGroup = "EFPC_GEN" | "EFPC_AUTO" | "SMT";
 
 export type ViewMode = "board" | "list";
 export type Granularity = "days" | "weeks";
@@ -181,6 +182,10 @@ export interface LevelingData {
   capacity: Record<string, Record<string, CapacityDay>>;
   /** Daily capacity before OT (excludes default OT and Special-Day OT overrides). */
   requiredCapacity?: Record<string, Record<string, CapacityDay>>;
+  /** Per-machine-group daily capacity (FPC-GEN, FPC-AUTO, SMT). */
+  capacityByGroup?: Record<CapacityResourceGroup, Record<string, Record<string, CapacityDay>>>;
+  /** Per-machine-group daily capacity before OT. */
+  requiredCapacityByGroup?: Record<CapacityResourceGroup, Record<string, Record<string, CapacityDay>>>;
   cards: ApiCard[];
   arrivalRows: GateArrivalRow[];
   undatedArrivalCount: number;

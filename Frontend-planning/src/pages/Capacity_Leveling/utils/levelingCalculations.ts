@@ -369,6 +369,20 @@ export const buildBoardLots = (data: LevelingData, lots: LotItem[], category: Pr
     .map(({ lot }) => lot);
 };
 
+export const resolveCapacityForCategory = (
+  data: Pick<LevelingData, "capacity" | "requiredCapacity" | "capacityByGroup" | "requiredCapacityByGroup">,
+  category: ProcessCategory = "ALL",
+  useBaseDates = false
+): Record<string, Record<string, CapacityDay>> => {
+  if (category !== "ALL") {
+    const byGroup = useBaseDates
+      ? (data.requiredCapacityByGroup ?? data.capacityByGroup)
+      : data.capacityByGroup;
+    if (byGroup?.[category]) return byGroup[category];
+  }
+  return useBaseDates ? (data.requiredCapacity ?? data.capacity) : data.capacity;
+};
+
 /** Same arrival buckets and physical-lot counting helper as Summary Gate. */
 export const buildGrid = (
   data: LevelingData,
@@ -376,7 +390,7 @@ export const buildGrid = (
   useBaseDates = false,
   category: ProcessCategory = "ALL"
 ): DayGateLoad[] => {
-  const capacityByGate = useBaseDates ? (data.requiredCapacity ?? data.capacity) : data.capacity;
+  const capacityByGate = resolveCapacityForCategory(data, category, useBaseDates);
   const grid: DayGateLoad[] = data.days.map((day) => {
     const gates: DayGateLoad["gates"] = {};
     for (const { gate } of data.gates) gates[gate] = emptyCell(capacityByGate[gate]?.[day.date]);
@@ -533,12 +547,13 @@ const projectGrid = (
   }
   if (!changes.size) return currentGrid;
 
+  const capacityByGate = resolveCapacityForCategory(data, category, false);
   const standardByGate = standardShiftByGate(data);
   const changedDays = new Map<string, DayGateLoad>();
   for (const [key, { date, gate, removed, added }] of changes) {
     const rows = (source.buckets.get(key)?.rows ?? []).filter((row) => !removed.has(row)).concat(added);
     if (added.length) rows.sort((a, b) => index.get(a)! - index.get(b)!);
-    const cell = emptyCell(data.capacity[gate]?.[date]);
+    const cell = emptyCell(capacityByGate[gate]?.[date]);
     // Lead days are unchanged by a move, so the current cards give the same lot-days.
     if (rows.length) fillCellLoad(cell, rows, source.cards, standardByGate);
     const base = byDate.get(date)!;

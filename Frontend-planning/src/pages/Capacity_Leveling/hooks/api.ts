@@ -1,6 +1,6 @@
 import axios from "axios";
 import { getApiBaseUrl } from "@/utils/apiConfig";
-import type { BoardCardOrderGroup, GateShiftConfig, LevelingData, PlanInfo, PlanHistoryPage, PlanHistoryDetail } from "../types";
+import type { BoardCardOrderGroup, CapacityResourceGroup, GateShiftConfig, LevelingData, LotNoteEntry, PlanInfo, PlanHistoryPage, PlanHistoryDetail } from "../types";
 
 const BASE = `${getApiBaseUrl()}/capacity_leveling`;
 
@@ -41,13 +41,24 @@ export const fetchLevelingData = async (startdate: string, stopdate: string, sig
   return next;
 };
 
-export const fetchCapacity = async (signal?: AbortSignal) => {
-  const { data } = await axios.get<{ data: { gates: GateShiftConfig[]; revision: string } }>(`${BASE}/capacity`, { signal });
+export const fetchCapacity = async (signal?: AbortSignal, resourceGroup?: CapacityResourceGroup | "ALL") => {
+  const { data } = await axios.get<{ data: { gates: GateShiftConfig[]; revision: string; resourceGroup?: string } }>(`${BASE}/capacity`, {
+    params: resourceGroup ? { resourceGroup } : undefined,
+    signal,
+  });
   return data.data;
 };
 
-export const saveCapacity = async (gates: GateShiftConfig[], baseRevision: string) => {
-  const { data } = await axios.put<{ data: { gates: GateShiftConfig[] } }>(`${BASE}/capacity`, { gates, baseRevision });
+export const saveCapacity = async (
+  gates: GateShiftConfig[],
+  baseRevision: string,
+  resourceGroup?: CapacityResourceGroup | "ALL"
+) => {
+  const { data } = await axios.put<{ data: { gates: GateShiftConfig[] } }>(`${BASE}/capacity`, {
+    gates,
+    baseRevision,
+    ...(resourceGroup ? { resourceGroup } : {}),
+  });
   return data.data.gates;
 };
 
