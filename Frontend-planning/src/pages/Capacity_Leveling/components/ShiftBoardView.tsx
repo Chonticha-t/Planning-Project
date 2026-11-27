@@ -191,10 +191,12 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
         : "border-l-2 border-l-slate-500";
 
     let cardStyle = `border border-slate-300 ${shiftLeftBorder} bg-base-100 text-base-content hover:border-slate-400 shadow-[0_1px_2px_rgba(15,23,42,0.04)]`;
-    if (isSameProduct) {
-      cardStyle = isExactSelected
-        ? "border border-[#4f46e5] bg-[#4f46e5] text-white shadow-sm ring-2 ring-[#4f46e5]/30"
-        : "border border-[#4f46e5] bg-[#4f46e5] text-white shadow-xs";
+    if (isExactSelected) {
+      cardStyle =
+        "border-2 border-[#1e1b4b] bg-[#4f46e5] text-white shadow-sm";
+    } else if (isSameProduct) {
+      cardStyle =
+        "border border-[#4f46e5] bg-[#4f46e5] text-white shadow-xs";
     } else if (isBatchSelected) {
       cardStyle =
         "border-[1.5px] border-[#4f46e5] bg-[#eef2ff] text-base-content";
@@ -277,7 +279,9 @@ const ShiftBoardViewComponent: React.FC<ShiftBoardViewProps> = ({
           </div>
           <span
             className={`text-[10.5px] font-mono tabular-nums shrink-0 ${
-              isSameProduct
+              isExactSelected
+                ? "text-white font-semibold"
+                : isSameProduct
                 ? "text-white/85"
                 : variant === "other"
                 ? "text-base-content/75 font-medium"
